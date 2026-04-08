@@ -1,5 +1,5 @@
 {
-  "name": "@bugsmanaged/widget",
+  "name": "@bugoutmanaged/widget",
   "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.js",

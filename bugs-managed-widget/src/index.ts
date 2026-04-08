@@ -1,2 +1,2 @@
-export { default as BugsManagedWidget } from './BugsManagedWidget';
-export type { BugsManagedConfig } from './types';
+export { default as BugOutManagedWidget } from './BugOutManagedWidget';
+export type { BugOutManagedConfig } from './types';

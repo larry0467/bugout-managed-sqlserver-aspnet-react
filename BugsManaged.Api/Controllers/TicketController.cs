@@ -24,9 +24,9 @@ public class TicketController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Create([FromBody] Ticket ticket)
     {
-        var apiKey = Request.Headers["X-BM-API-Key"].FirstOrDefault();
+        var apiKey = Request.Headers["X-BOM-API-Key"].FirstOrDefault();
         if (string.IsNullOrEmpty(apiKey))
-            return Unauthorized(new { message = "Missing X-BM-API-Key header" });
+            return Unauthorized(new { message = "Missing X-BOM-API-Key header" });
 
         var project = await _db.Projects.FirstOrDefaultAsync(p => p.ApiKey == apiKey);
         if (project == null)

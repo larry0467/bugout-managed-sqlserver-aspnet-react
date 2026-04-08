@@ -5,7 +5,7 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-BugsManaged2026!}"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-BugOutManaged2026!}"
       MSSQL_PID: "Express"
     ports:
       - "1433:1433"
@@ -25,11 +25,11 @@ services:
     ports:
       - "8090:8090"
     environment:
-      ConnectionStrings__DefaultConnection: "Server=db;Database=bugs_managed;User Id=sa;Password=${DB_PASSWORD:-BugsManaged2026!};TrustServerCertificate=True;"
-      BugsManaged__Jwt__Secret: "${JWT_SECRET:-BugsManaged2026SecretKeyMustBeAtLeast256BitsLong!}"
-      BugsManaged__Jwt__ExpirationMs: "86400000"
-      BugsManaged__VideoStoragePath: "/app/videos"
-      BugsManaged__Cors__AllowedOrigins: "${CORS_ORIGINS:-http://localhost,http://localhost:80}"
+      ConnectionStrings__DefaultConnection: "Server=db;Database=bugout_managed;User Id=sa;Password=${DB_PASSWORD:-BugOutManaged2026!};TrustServerCertificate=True;"
+      BugOutManaged__Jwt__Secret: "${JWT_SECRET:-BugOutManaged2026SecretKeyMustBeAtLeast256BitsLong!}"
+      BugOutManaged__Jwt__ExpirationMs: "86400000"
+      BugOutManaged__VideoStoragePath: "/app/videos"
+      BugOutManaged__Cors__AllowedOrigins: "${CORS_ORIGINS:-http://localhost,http://localhost:80}"
     volumes:
       - videos:/app/videos
     depends_on:

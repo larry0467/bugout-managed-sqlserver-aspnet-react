@@ -90,15 +90,15 @@ const ProjectsPage: React.FC = () => {
     },
   ];
 
-  const integrationCode = (apiKey: string) => `import { BugsManagedWidget } from '@bugsmanaged/widget';
+  const integrationCode = (apiKey: string) => `import { BugOutManagedWidget } from '@bugoutmanaged/widget';
 
 function App() {
   return (
     <>
       {/* Your app content */}
-      <BugsManagedWidget
+      <BugOutManagedWidget
         apiKey="${apiKey}"
-        apiUrl="https://bugs.bugsmanaged.com/api"
+        apiUrl="https://bugout.managed.com/api"
         userEmail={currentUser.email}
       />
     </>
@@ -106,14 +106,14 @@ function App() {
 }`;
 
   const managedIntegrationCode = (apiKey: string) => `// For managed platform apps (multi-tenant)
-import { BugsManagedWidget } from '@bugsmanaged/widget';
+import { BugOutManagedWidget } from '@bugoutmanaged/widget';
 
 function App() {
   return (
     <>
-      <BugsManagedWidget
+      <BugOutManagedWidget
         apiKey="${apiKey}"
-        apiUrl="https://bugs.bugsmanaged.com/api"
+        apiUrl="https://bugout.managed.com/api"
         userEmail={currentUser.email}
         tenantId={currentTenant.id}
         tenantName={currentTenant.name}
@@ -143,7 +143,7 @@ function App() {
           expandedRowRender: (record) => (
             <Card size="small" title="Integration Instructions" style={{ background: '#141414' }}>
               <Paragraph>1. Install the widget:</Paragraph>
-              <Paragraph code>npm install @bugsmanaged/widget</Paragraph>
+              <Paragraph code>npm install @bugoutmanaged/widget</Paragraph>
               <Paragraph>2. Add to your React app (standard):</Paragraph>
               <pre style={{
                 background: '#0d1117',

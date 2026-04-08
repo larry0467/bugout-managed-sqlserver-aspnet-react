@@ -84,9 +84,9 @@ const SettingsPage: React.FC = () => {
             <Form.Item
               name="slackChannel"
               label="Slack Channel"
-              extra="The channel name where bug reports appear (e.g., #bugs-financials-managed)."
+              extra="The channel name where bug reports appear (e.g., #bugout-financials-managed)."
             >
-              <Input placeholder="#bugs-reports" />
+              <Input placeholder="#bugout-reports" />
             </Form.Item>
 
             <Form.Item
@@ -120,9 +120,9 @@ const SettingsPage: React.FC = () => {
                     title: 'Add a Slash Command',
                     description: (
                       <div>
-                        <Text type="secondary">Command:</Text> <Text code>/bug-chat</Text><br />
+                        <Text type="secondary">Command:</Text> <Text code>/bugout-chat</Text><br />
                         <Text type="secondary">Request URL:</Text> <Text code>https://your-domain.com/api/slack/command</Text><br />
-                        <Text type="secondary">Usage:</Text> <Text code>/bug-chat 42 Looking into this now</Text>
+                        <Text type="secondary">Usage:</Text> <Text code>/bugout-chat 42 Looking into this now</Text>
                       </div>
                     ),
                   },

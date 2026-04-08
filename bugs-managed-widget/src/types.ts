@@ -1,4 +1,4 @@
-export interface BugsManagedConfig {
+export interface BugOutManagedConfig {
   apiKey: string;
   apiUrl: string;
   userEmail?: string;

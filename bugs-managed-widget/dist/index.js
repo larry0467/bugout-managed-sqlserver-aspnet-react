@@ -24,11 +24,11 @@ const ue = [
     if (ne(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !u.current) {
       const e = document.createElement("style");
       e.textContent = `
-        @keyframes bm-orb-pulse {
+        @keyframes bom-orb-pulse {
           0%, 100% { transform: scale(1); opacity: 0.9; }
           50% { transform: scale(1.15); opacity: 1; }
         }
-        @keyframes bm-fade-in {
+        @keyframes bom-fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
@@ -97,7 +97,7 @@ const ue = [
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-BM-API-Key": V
+          "X-BOM-API-Key": V
         },
         body: JSON.stringify(e)
       });
@@ -147,7 +147,7 @@ const ue = [
           alignItems: "center",
           justifyContent: "center",
           boxShadow: `0 4px 20px ${l[0]}66`,
-          animation: "bm-orb-pulse 3s ease-in-out infinite"
+          animation: "bom-orb-pulse 3s ease-in-out infinite"
         },
         title: "Report a bug or request a feature",
         children: /* @__PURE__ */ i("svg", { width: y, height: y, viewBox: "0 0 24 24", fill: "none", stroke: "#fff", strokeWidth: "2", children: [
@@ -167,7 +167,7 @@ const ue = [
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          animation: "bm-fade-in 0.2s ease-out"
+          animation: "bom-fade-in 0.2s ease-out"
         },
         onClick: (e) => {
           e.target === e.currentTarget && c(!1);

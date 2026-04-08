@@ -21,7 +21,7 @@ public class TicketService
         _db = db;
         _projectService = projectService;
         _notificationService = notificationService;
-        _videoStoragePath = configuration["BugsManaged:VideoStoragePath"] ?? "/tmp/bugs-managed-videos";
+        _videoStoragePath = configuration["BugOutManaged:VideoStoragePath"] ?? "/tmp/bugout-managed-videos";
     }
 
     public async Task<Ticket> SubmitTicketAsync(string apiKey, Ticket ticket)

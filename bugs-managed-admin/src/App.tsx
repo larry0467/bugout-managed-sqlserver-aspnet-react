@@ -29,9 +29,9 @@ const App: React.FC = () => {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('bm_token');
-    const savedUser = localStorage.getItem('bm_user');
-    const savedOrg = localStorage.getItem('bm_org');
+    const token = localStorage.getItem('bom_token');
+    const savedUser = localStorage.getItem('bom_user');
+    const savedOrg = localStorage.getItem('bom_org');
     if (token && savedUser && savedOrg) {
       setUser(JSON.parse(savedUser));
       setOrg(JSON.parse(savedOrg));
@@ -40,18 +40,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = (token: string, user: AuthUser, org: Organization) => {
-    localStorage.setItem('bm_token', token);
-    localStorage.setItem('bm_user', JSON.stringify(user));
-    localStorage.setItem('bm_org', JSON.stringify(org));
+    localStorage.setItem('bom_token', token);
+    localStorage.setItem('bom_user', JSON.stringify(user));
+    localStorage.setItem('bom_org', JSON.stringify(org));
     setUser(user);
     setOrg(org);
     navigate('/');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('bm_token');
-    localStorage.removeItem('bm_user');
-    localStorage.removeItem('bm_org');
+    localStorage.removeItem('bom_token');
+    localStorage.removeItem('bom_user');
+    localStorage.removeItem('bom_org');
     setUser(null);
     setOrg(null);
     navigate('/login');
@@ -88,7 +88,7 @@ const App: React.FC = () => {
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
         }}>
-          Bugs Managed
+          Bug Out Managed
         </div>
         {org && (
           <div style={{ padding: '0 24px 12px', fontSize: 12, color: '#888' }}>

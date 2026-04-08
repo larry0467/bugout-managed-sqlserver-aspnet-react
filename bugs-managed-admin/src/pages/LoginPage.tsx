@@ -56,7 +56,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}>
-            Bugs Managed
+            Bug Out Managed
           </Title>
           <Text type="secondary">Dev Portal</Text>
         </div>

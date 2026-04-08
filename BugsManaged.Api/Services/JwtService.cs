@@ -13,8 +13,8 @@ public class JwtService
 
     public JwtService(IConfiguration configuration)
     {
-        _secret = configuration["BugsManaged:Jwt:Secret"] ?? "default-secret-change-me-in-production-32chars!";
-        _expirationMs = long.Parse(configuration["BugsManaged:Jwt:ExpirationMs"] ?? "86400000");
+        _secret = configuration["BugOutManaged:Jwt:Secret"] ?? "default-secret-change-me-in-production-32chars!";
+        _expirationMs = long.Parse(configuration["BugOutManaged:Jwt:ExpirationMs"] ?? "86400000");
     }
 
     public string GenerateToken(User user)
@@ -32,8 +32,8 @@ public class JwtService
         };
 
         var token = new JwtSecurityToken(
-            issuer: "BugsManaged",
-            audience: "BugsManaged",
+            issuer: "BugOutManaged",
+            audience: "BugOutManaged",
             claims: claims,
             expires: DateTime.UtcNow.AddMilliseconds(_expirationMs),
             signingCredentials: credentials
@@ -77,9 +77,9 @@ public class JwtService
             var principal = handler.ValidateToken(token, new TokenValidationParameters
             {
                 ValidateIssuer = true,
-                ValidIssuer = "BugsManaged",
+                ValidIssuer = "BugOutManaged",
                 ValidateAudience = true,
-                ValidAudience = "BugsManaged",
+                ValidAudience = "BugOutManaged",
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = key,

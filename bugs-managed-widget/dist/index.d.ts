@@ -1,6 +1,6 @@
 import { default as default_2 } from 'react';
 
-export declare interface BugsManagedConfig {
+export declare interface BugOutManagedConfig {
     apiKey: string;
     apiUrl: string;
     userEmail?: string;
@@ -11,6 +11,6 @@ export declare interface BugsManagedConfig {
     orbColors?: [string, string];
 }
 
-export declare const BugsManagedWidget: default_2.FC<BugsManagedConfig>;
+export declare const BugOutManagedWidget: default_2.FC<BugOutManagedConfig>;
 
 export { }

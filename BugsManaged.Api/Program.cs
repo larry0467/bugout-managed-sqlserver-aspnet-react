@@ -12,7 +12,7 @@ builder.Services.AddDbContext<BugsManagedDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // JWT Authentication
-var jwtSecret = builder.Configuration["BugsManaged:Jwt:Secret"] ?? "BugsManaged2026SecretKeyMustBeAtLeast256BitsLong!";
+var jwtSecret = builder.Configuration["BugOutManaged:Jwt:Secret"] ?? "BugOutManaged2026SecretKeyMustBeAtLeast256BitsLong!";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -28,7 +28,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // CORS
-var allowedOrigins = (builder.Configuration["BugsManaged:Cors:AllowedOrigins"] ?? "http://localhost:5173,http://localhost:3000")
+var allowedOrigins = (builder.Configuration["BugOutManaged:Cors:AllowedOrigins"] ?? "http://localhost:5173,http://localhost:3000")
     .Split(',', StringSplitOptions.RemoveEmptyEntries);
 
 builder.Services.AddCors(options =>

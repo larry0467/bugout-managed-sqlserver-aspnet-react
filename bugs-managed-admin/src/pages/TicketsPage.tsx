@@ -148,7 +148,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   };
 
   const handleEscalate = async (ticket: Ticket) => {
-    const currentUser = JSON.parse(localStorage.getItem('bm_user') || '{}');
+    const currentUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
     await ticketApi.escalate(ticket.id, currentUser.email || 'admin');
     message.success('Ticket escalated — team notified');
     loadTickets();

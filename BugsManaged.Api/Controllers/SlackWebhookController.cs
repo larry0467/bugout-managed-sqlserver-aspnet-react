@@ -80,7 +80,7 @@ public class SlackWebhookController : ControllerBase
     [HttpPost("command")]
     public async Task<IActionResult> HandleCommand([FromForm] SlackCommandRequest request)
     {
-        // Expected format: /bug-chat [ticket-id] [message]
+        // Expected format: /bugout-chat [ticket-id] [message]
         var text = request.Text?.Trim() ?? string.Empty;
         var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
 
@@ -89,7 +89,7 @@ public class SlackWebhookController : ControllerBase
             return Ok(new
             {
                 response_type = "ephemeral",
-                text = "Usage: /bug-chat [ticket-id] [message]\nExample: /bug-chat 123 This is my comment"
+                text = "Usage: /bugout-chat [ticket-id] [message]\nExample: /bugout-chat 123 This is my comment"
             });
         }
 

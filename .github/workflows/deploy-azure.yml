@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: bugs-managed-api
+  AZURE_WEBAPP_NAME: bugout-managed-api
   AZURE_WEBAPP_PACKAGE_PATH: ./BugsManaged.Api/bin/Release/net10.0/publish
   DOTNET_VERSION: '10.0.x'
 

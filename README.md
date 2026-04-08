@@ -1,4 +1,4 @@
-# Bugs Managed — SQL Server + ASP.NET Core + React
+# Bug Out Managed — SQL Server + ASP.NET Core + React
 
 Centralized bug reporting and feature request platform. Embeddable widget for any web app, with a unified dashboard for triaging, assigning, and resolving tickets across all your applications.
 
@@ -12,7 +12,7 @@ Centralized bug reporting and feature request platform. Embeddable widget for an
 | **Widget** | React component, zero dependencies, <5KB gzipped |
 | **Auth** | JWT (Bearer tokens), BCrypt password hashing |
 
-> Also available in [PostgreSQL + Spring Boot + React](https://github.com/larry0467/bugs-managed-postgres-spring-react)
+> Also available in [PostgreSQL + Spring Boot + React](https://github.com/larry0467/bugout-managed-postgres-spring-react)
 
 ## Features
 
@@ -38,8 +38,8 @@ Centralized bug reporting and feature request platform. Embeddable widget for an
 
 ### 1. Start SQL Server (Docker)
 ```bash
-docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=BugsManaged2026!" \
-  -p 1433:1433 --name bugs-sql \
+docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=BugOutManaged2026!" \
+  -p 1433:1433 --name bugout-sql \
   mcr.microsoft.com/mssql/server:2022-latest
 ```
 
@@ -66,10 +66,10 @@ Dashboard runs on http://localhost:5173.
 
 ### 5. Add Widget to Your App
 ```tsx
-import BugsManagedWidget from './components/BugsManagedWidget';
+import BugOutManagedWidget from './components/BugOutManagedWidget';
 
-<BugsManagedWidget
-  apiKey="bm_your_api_key_here"
+<BugOutManagedWidget
+  apiKey="bom_your_api_key_here"
   apiUrl="http://localhost:5000/api"
   userEmail={currentUser.email}
   tenantId={tenant.id}           // optional
@@ -120,15 +120,15 @@ After running `azure-setup.sh`, set up continuous deployment:
 1. Get the API publish profile:
    ```bash
    az webapp deployment list-publishing-profiles \
-     --name bugs-managed-api \
-     --resource-group bugs-managed-rg --xml
+     --name bugout-managed-api \
+     --resource-group bugout-managed-rg --xml
    ```
 
 2. Get the Static Web App token:
    ```bash
    az staticwebapp secrets list \
-     --name bugs-managed-admin \
-     --resource-group bugs-managed-rg
+     --name bugout-managed-admin \
+     --resource-group bugout-managed-rg
    ```
 
 3. Add both as GitHub repository secrets:
@@ -145,7 +145,7 @@ After running `azure-setup.sh`, set up continuous deployment:
 4. **Configure Slack** on the Settings page
 5. **Update widget `apiUrl`** in each app to point to the Azure API URL:
    ```
-   https://bugs-managed-api.azurewebsites.net/api
+   https://bugout-managed-api.azurewebsites.net/api
    ```
 6. **Update CORS** in Azure App Settings to include all your app domains
 
@@ -178,8 +178,8 @@ Messages posted in ticket chat are automatically sent to the project's Slack web
 
 ### Inbound (Slack → Dashboard)
 1. Create a Slack App at api.slack.com/apps
-2. Add slash command: `/bug-chat` → `https://your-api.com/api/slack/command`
-3. Usage: `/bug-chat 42 Looking into this now`
+2. Add slash command: `/bugout-chat` → `https://your-api.com/api/slack/command`
+3. Usage: `/bugout-chat 42 Looking into this now`
 
 Configure per-project on the Settings page in the dashboard.
 
@@ -187,7 +187,7 @@ Configure per-project on the Settings page in the dashboard.
 
 ## Widget API
 
-The widget sends a POST to `/api/tickets` with the `X-BM-API-Key` header. No JWT required — the API key authenticates the widget.
+The widget sends a POST to `/api/tickets` with the `X-BOM-API-Key` header. No JWT required — the API key authenticates the widget.
 
 ### Captured automatically:
 - Page URL and title

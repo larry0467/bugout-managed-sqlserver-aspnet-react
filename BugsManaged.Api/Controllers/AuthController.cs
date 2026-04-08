@@ -119,8 +119,8 @@ public class AuthController : ControllerBase
         };
 
         var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"] ?? "BugsManaged",
-            audience: _config["Jwt:Audience"] ?? "BugsManaged",
+            issuer: _config["Jwt:Issuer"] ?? "BugOutManaged",
+            audience: _config["Jwt:Audience"] ?? "BugOutManaged",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(24),
             signingCredentials: creds);

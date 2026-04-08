@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Bugs Managed - Azure Setup Script
+# Bug Out Managed - Azure Setup Script
 # Run this once to create all Azure resources
 # Prerequisites: az cli installed and logged in (az login)
 # =============================================================================
@@ -8,16 +8,16 @@
 set -e
 
 # --- Configuration (edit these) ---
-RESOURCE_GROUP="bugs-managed-rg"
+RESOURCE_GROUP="bugout-managed-rg"
 LOCATION="eastus"
-SQL_SERVER_NAME="bugs-managed-sql"
-SQL_DB_NAME="bugs_managed"
-SQL_ADMIN_USER="bugsadmin"
-SQL_ADMIN_PASSWORD="BugsManaged2026!"  # Change this!
-APP_SERVICE_PLAN="bugs-managed-plan"
-API_APP_NAME="bugs-managed-api"        # Must be globally unique
-ADMIN_APP_NAME="bugs-managed-admin"    # Must be globally unique
-JWT_SECRET="BugsManaged2026SecretKeyMustBeAtLeast256BitsLong!"  # Change this!
+SQL_SERVER_NAME="bugout-managed-sql"
+SQL_DB_NAME="bugout_managed"
+SQL_ADMIN_USER="bugoutadmin"
+SQL_ADMIN_PASSWORD="BugOutManaged2026!"  # Change this!
+APP_SERVICE_PLAN="bugout-managed-plan"
+API_APP_NAME="bugout-managed-api"        # Must be globally unique
+ADMIN_APP_NAME="bugout-managed-admin"    # Must be globally unique
+JWT_SECRET="BugOutManaged2026SecretKeyMustBeAtLeast256BitsLong!"  # Change this!
 
 echo "=== Creating Resource Group ==="
 az group create --name $RESOURCE_GROUP --location $LOCATION
@@ -67,10 +67,10 @@ az webapp config appsettings set \
   --name $API_APP_NAME \
   --settings \
     "ConnectionStrings__DefaultConnection=$CONNECTION_STRING" \
-    "BugsManaged__Jwt__Secret=$JWT_SECRET" \
-    "BugsManaged__Jwt__ExpirationMs=86400000" \
-    "BugsManaged__VideoStoragePath=/home/videos" \
-    "BugsManaged__Cors__AllowedOrigins=https://${ADMIN_APP_NAME}.azurewebsites.net,https://${ADMIN_APP_NAME}.azurestaticapps.net"
+    "BugOutManaged__Jwt__Secret=$JWT_SECRET" \
+    "BugOutManaged__Jwt__ExpirationMs=86400000" \
+    "BugOutManaged__VideoStoragePath=/home/videos" \
+    "BugOutManaged__Cors__AllowedOrigins=https://${ADMIN_APP_NAME}.azurewebsites.net,https://${ADMIN_APP_NAME}.azurestaticapps.net"
 
 echo "=== Creating Static Web App for Admin Dashboard ==="
 az staticwebapp create \

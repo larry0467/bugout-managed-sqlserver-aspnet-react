@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import type { BugsManagedConfig } from './types';
+import type { BugOutManagedConfig } from './types';
 
 const TICKET_TYPES = [
   { value: 'BUG', label: 'Bug Report' },
@@ -31,7 +31,7 @@ interface CapturedNetworkError {
   timestamp: string;
 }
 
-const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
+const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const {
     apiKey,
     apiUrl,
@@ -77,11 +77,11 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
     if (!styleRef.current) {
       const style = document.createElement('style');
       style.textContent = `
-        @keyframes bm-orb-pulse {
+        @keyframes bom-orb-pulse {
           0%, 100% { transform: scale(1); opacity: 0.9; }
           50% { transform: scale(1.15); opacity: 1; }
         }
-        @keyframes bm-fade-in {
+        @keyframes bom-fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
@@ -162,16 +162,16 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
     const origXHROpen = XMLHttpRequest.prototype.open;
     const origXHRSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...rest: any[]) {
-      (this as any)._bmMethod = method;
-      (this as any)._bmUrl = String(url);
+      (this as any)._bomMethod = method;
+      (this as any)._bomUrl = String(url);
       return origXHROpen.apply(this, [method, url, ...rest] as any);
     };
     XMLHttpRequest.prototype.send = function (...args: any[]) {
       this.addEventListener('loadend', () => {
-        if (this.status >= 400 && !(this as any)._bmUrl?.includes(apiUrl)) {
+        if (this.status >= 400 && !(this as any)._bomUrl?.includes(apiUrl)) {
           networkErrorsRef.current.push({
-            method: (this as any)._bmMethod || 'GET',
-            url: (this as any)._bmUrl || '',
+            method: (this as any)._bomMethod || 'GET',
+            url: (this as any)._bomUrl || '',
             status: this.status,
             statusText: this.statusText,
             timestamp: new Date().toISOString(),
@@ -322,7 +322,7 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-BM-API-Key': apiKey,
+          'X-BOM-API-Key': apiKey,
         },
         body: JSON.stringify(ticketData),
       });
@@ -384,7 +384,7 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
           alignItems: 'center',
           justifyContent: 'center',
           boxShadow: `0 4px 20px ${orbColors[0]}66`,
-          animation: 'bm-orb-pulse 3s ease-in-out infinite',
+          animation: 'bom-orb-pulse 3s ease-in-out infinite',
         }}
         title="Report a bug or request a feature"
       >
@@ -405,7 +405,7 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            animation: 'bm-fade-in 0.2s ease-out',
+            animation: 'bom-fade-in 0.2s ease-out',
           }}
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsOpen(false);
@@ -694,4 +694,4 @@ const BugsManagedWidget: React.FC<BugsManagedConfig> = (props) => {
   );
 };
 
-export default BugsManagedWidget;
+export default BugOutManagedWidget;

@@ -30,7 +30,7 @@ const TeamPage: React.FC = () => {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [form] = Form.useForm();
 
-  const currentUser = JSON.parse(localStorage.getItem('bm_user') || '{}');
+  const currentUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
 
   const load = () => {
     setLoading(true);

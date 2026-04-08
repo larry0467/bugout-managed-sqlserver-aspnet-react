@@ -1,16 +1,16 @@
-# Bugs Managed — Azure Deployment Guide
+# Bug Out Managed — Azure Deployment Guide
 
-Step-by-step instructions to deploy the Bugs Managed platform to Azure.
+Step-by-step instructions to deploy the Bug Out Managed platform to Azure.
 
 ---
 
 ## What You're Deploying
 
-- **Bugs Managed API** — ASP.NET Core backend (Azure App Service)
-- **Bugs Managed Dashboard** — React admin portal (Azure Static Web App)
+- **Bug Out Managed API** — ASP.NET Core backend (Azure App Service)
+- **Bug Out Managed Dashboard** — React admin portal (Azure Static Web App)
 - **Azure SQL Database** — SQL Server database (managed)
 
-Once deployed, all our apps (Financials Managed, HDD Managed, Facilities Managed, etc.) will send bug reports and feature requests to this central platform.
+Once deployed, all our apps (Financials Managed, HDD Managed, Facilities Managed, etc.) will send bug reports and feature requests to this central Bug Out Managed platform.
 
 ---
 
@@ -30,8 +30,8 @@ Before you start, make sure you have:
 ## Step 1: Clone the Repo
 
 ```bash
-git clone https://github.com/larry0467/bugs-managed-sqlserver-aspnet-react.git
-cd bugs-managed-sqlserver-aspnet-react
+git clone https://github.com/larry0467/bugout-managed-sqlserver-aspnet-react.git
+cd bugout-managed-sqlserver-aspnet-react
 ```
 
 ---
@@ -53,18 +53,18 @@ Run these commands one at a time. Replace the password and names if needed.
 ### 3a. Create a Resource Group
 
 ```bash
-az group create --name bugs-managed-rg --location eastus
+az group create --name bugout-managed-rg --location eastus
 ```
 
 ### 3b. Create Azure SQL Server
 
 ```bash
 az sql server create \
-  --name bugs-managed-sql \
-  --resource-group bugs-managed-rg \
+  --name bugout-managed-sql \
+  --resource-group bugout-managed-rg \
   --location eastus \
-  --admin-user bugsadmin \
-  --admin-password "BugsManaged2026!"
+  --admin-user bugoutadmin \
+  --admin-password "BugOutManaged2026!"
 ```
 
 > **IMPORTANT:** Save this password. You'll need it in Step 5.
@@ -73,9 +73,9 @@ az sql server create \
 
 ```bash
 az sql db create \
-  --resource-group bugs-managed-rg \
-  --server bugs-managed-sql \
-  --name bugs_managed \
+  --resource-group bugout-managed-rg \
+  --server bugout-managed-sql \
+  --name bugout_managed \
   --service-objective S0
 ```
 
@@ -83,8 +83,8 @@ az sql db create \
 
 ```bash
 az sql server firewall-rule create \
-  --resource-group bugs-managed-rg \
-  --server bugs-managed-sql \
+  --resource-group bugout-managed-rg \
+  --server bugout-managed-sql \
   --name AllowAzureServices \
   --start-ip-address 0.0.0.0 \
   --end-ip-address 0.0.0.0
@@ -94,8 +94,8 @@ az sql server firewall-rule create \
 
 ```bash
 az appservice plan create \
-  --name bugs-managed-plan \
-  --resource-group bugs-managed-rg \
+  --name bugout-managed-plan \
+  --resource-group bugout-managed-rg \
   --sku B1 \
   --is-linux
 ```
@@ -104,13 +104,13 @@ az appservice plan create \
 
 ```bash
 az webapp create \
-  --resource-group bugs-managed-rg \
-  --plan bugs-managed-plan \
-  --name bugs-managed-api \
+  --resource-group bugout-managed-rg \
+  --plan bugout-managed-plan \
+  --name bugout-managed-api \
   --runtime "DOTNETCORE:10.0"
 ```
 
-> **NOTE:** The name `bugs-managed-api` must be globally unique. If it's taken, use something like `bugs-managed-api-yourcompany`.
+> **NOTE:** The name `bugout-managed-api` must be globally unique. If it's taken, use something like `bugout-managed-api-yourcompany`.
 
 ---
 
@@ -118,8 +118,8 @@ az webapp create \
 
 ```bash
 az staticwebapp create \
-  --name bugs-managed-admin \
-  --resource-group bugs-managed-rg \
+  --name bugout-managed-admin \
+  --resource-group bugout-managed-rg \
   --location eastus
 ```
 
@@ -131,14 +131,14 @@ This sets the database connection, JWT secret, and CORS origins.
 
 ```bash
 az webapp config appsettings set \
-  --resource-group bugs-managed-rg \
-  --name bugs-managed-api \
+  --resource-group bugout-managed-rg \
+  --name bugout-managed-api \
   --settings \
-    "ConnectionStrings__DefaultConnection=Server=tcp:bugs-managed-sql.database.windows.net,1433;Database=bugs_managed;User ID=bugsadmin;Password=BugsManaged2026!;Encrypt=True;TrustServerCertificate=False;" \
-    "BugsManaged__Jwt__Secret=BugsManaged2026SecretKeyMustBeAtLeast256BitsLong!" \
-    "BugsManaged__Jwt__ExpirationMs=86400000" \
-    "BugsManaged__VideoStoragePath=/home/videos" \
-    "BugsManaged__Cors__AllowedOrigins=https://bugs-managed-admin.azurestaticapps.net,https://financials.protocall.co,https://hdd.protocall.co"
+    "ConnectionStrings__DefaultConnection=Server=tcp:bugout-managed-sql.database.windows.net,1433;Database=bugout_managed;User ID=bugoutadmin;Password=BugOutManaged2026!;Encrypt=True;TrustServerCertificate=False;" \
+    "BugOutManaged__Jwt__Secret=BugOutManaged2026SecretKeyMustBeAtLeast256BitsLong!" \
+    "BugOutManaged__Jwt__ExpirationMs=86400000" \
+    "BugOutManaged__VideoStoragePath=/home/videos" \
+    "BugOutManaged__Cors__AllowedOrigins=https://bugout-managed-admin.azurestaticapps.net,https://financials.protocall.co,https://hdd.protocall.co"
 ```
 
 > **IMPORTANT:** Update the CORS origins to include all your app domains. Comma-separated, no spaces.
@@ -157,8 +157,8 @@ zip -r ../deploy.zip .
 cd ..
 
 az webapp deployment source config-zip \
-  --resource-group bugs-managed-rg \
-  --name bugs-managed-api \
+  --resource-group bugout-managed-rg \
+  --name bugout-managed-api \
   --src deploy.zip
 ```
 
@@ -167,8 +167,8 @@ az webapp deployment source config-zip \
 1. Get the publish profile:
    ```bash
    az webapp deployment list-publishing-profiles \
-     --name bugs-managed-api \
-     --resource-group bugs-managed-rg \
+     --name bugout-managed-api \
+     --resource-group bugout-managed-rg \
      --xml > publish-profile.xml
    ```
 
@@ -199,8 +199,8 @@ npm run build
 
 ```bash
 az staticwebapp secrets list \
-  --name bugs-managed-admin \
-  --resource-group bugs-managed-rg \
+  --name bugout-managed-admin \
+  --resource-group bugout-managed-rg \
   --query "properties.apiKey" -o tsv
 ```
 
@@ -227,12 +227,12 @@ swa deploy ./dist \
 ## Step 8: Verify the Deployment
 
 1. **API health check:**
-   Open in browser: `https://bugs-managed-api.azurewebsites.net/api/auth/me`
+   Open in browser: `https://bugout-managed-api.azurewebsites.net/api/auth/me`
    You should see: `{"error":"Missing or invalid Authorization header"}`
    That means the API is running!
 
 2. **Dashboard:**
-   Open: `https://bugs-managed-admin.azurestaticapps.net`
+   Open: `https://bugout-managed-admin.azurestaticapps.net`
    You should see the login page.
 
 3. **Register your admin account:**
@@ -254,15 +254,15 @@ For each app (Financials Managed, HDD Managed, etc.):
 ### 9a. Copy the widget files into the app
 
 Copy these two files from the repo into the app's `src/components/` folder:
-- `bugs-managed-widget/src/BugsManagedWidget.tsx`
-- `bugs-managed-widget/src/types.ts` (rename to `BugsManagedTypes.ts`)
+- `bugs-managed-widget/src/BugsManagedWidget.tsx` (rename to `BugOutManagedWidget.tsx`)
+- `bugs-managed-widget/src/types.ts` (rename to `BugOutManagedTypes.ts`)
 
-Update the import in BugsManagedWidget.tsx:
+Update the import in BugOutManagedWidget.tsx:
 ```typescript
 // Change this:
-import type { BugsManagedConfig } from './types';
+import type { BugOutManagedConfig } from './types';
 // To this:
-import type { BugsManagedConfig } from './BugsManagedTypes';
+import type { BugOutManagedConfig } from './BugOutManagedTypes';
 ```
 
 ### 9b. Add the widget to the app
@@ -270,12 +270,12 @@ import type { BugsManagedConfig } from './BugsManagedTypes';
 In the app's main layout component (e.g., App.tsx):
 
 ```tsx
-import BugsManagedWidget from './components/BugsManagedWidget';
+import BugOutManagedWidget from './components/BugOutManagedWidget';
 
 // Inside the JSX, near the closing tags:
-<BugsManagedWidget
-  apiKey="bm_PASTE_API_KEY_FROM_STEP_8"
-  apiUrl="https://bugs-managed-api.azurewebsites.net/api"
+<BugOutManagedWidget
+  apiKey="bom_PASTE_API_KEY_FROM_STEP_8"
+  apiUrl="https://bugout-managed-api.azurewebsites.net/api"
   userEmail={currentUser.email}
   userName={currentUser.name}
   tenantName={currentTenant.name}
@@ -292,13 +292,13 @@ import BugsManagedWidget from './components/BugsManagedWidget';
 
 ### 9c. Deploy the app
 
-Deploy your app as usual. The widget will now send bug reports to the central Bugs Managed dashboard.
+Deploy your app as usual. The widget will now send bug reports to the central Bug Out Managed dashboard.
 
 ---
 
 ## Step 10: Add Team Members
 
-1. Log in to the Bugs Managed dashboard
+1. Log in to the Bug Out Managed dashboard
 2. Go to **Team** in the sidebar
 3. Click **Add Team Member**
 4. Enter their name, email, temporary password, and role:
@@ -314,17 +314,17 @@ Deploy your app as usual. The widget will now send bug reports to the central Bu
 1. Go to **Settings** in the dashboard
 2. Select the project (e.g., "Financials Managed")
 3. Paste your **Slack Incoming Webhook URL**
-4. Enter the **Slack channel** name (e.g., #bugs-financials)
+4. Enter the **Slack channel** name (e.g., #bugout-financials)
 5. Click **Save**
 
 Now all ticket chat messages will sync to Slack.
 
 For inbound messages from Slack:
 1. Create a Slack App at https://api.slack.com/apps
-2. Add slash command: `/bug-chat` → `https://bugs-managed-api.azurewebsites.net/api/slack/command`
+2. Add slash command: `/bugout-chat` → `https://bugout-managed-api.azurewebsites.net/api/slack/command`
 3. Install the app to your workspace
 
-Usage: `/bug-chat 42 Looking into this now` — posts a note to ticket #42.
+Usage: `/bugout-chat 42 Looking into this now` — posts a note to ticket #42.
 
 ---
 
@@ -332,9 +332,9 @@ Usage: `/bug-chat 42 Looking into this now` — posts a note to ticket #42.
 
 | Resource | URL |
 |----------|-----|
-| API | `https://bugs-managed-api.azurewebsites.net` |
-| Dashboard | `https://bugs-managed-admin.azurestaticapps.net` |
-| Widget API URL (for apps) | `https://bugs-managed-api.azurewebsites.net/api` |
+| API | `https://bugout-managed-api.azurewebsites.net` |
+| Dashboard | `https://bugout-managed-admin.azurestaticapps.net` |
+| Widget API URL (for apps) | `https://bugout-managed-api.azurewebsites.net/api` |
 
 ---
 

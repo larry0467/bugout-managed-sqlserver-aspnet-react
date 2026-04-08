@@ -19,7 +19,7 @@ public class Project
     public string Slug { get; set; } = string.Empty;
 
     [Required, MaxLength(255)]
-    public string ApiKey { get; set; } = $"bm_{Guid.NewGuid():N}";
+    public string ApiKey { get; set; } = $"bom_{Guid.NewGuid():N}";
 
     [MaxLength(500)]
     public string? WebhookUrl { get; set; }
