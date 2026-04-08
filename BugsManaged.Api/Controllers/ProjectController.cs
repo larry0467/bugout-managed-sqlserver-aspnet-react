@@ -1,0 +1,103 @@
+using System.Security.Claims;
+using BugsManaged.Api.Data;
+using BugsManaged.Api.Entities;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace BugsManaged.Api.Controllers;
+
+[ApiController]
+[Route("api/projects")]
+[Authorize]
+public class ProjectController : ControllerBase
+{
+    private readonly BugsManagedDbContext _db;
+
+    public ProjectController(BugsManagedDbContext db)
+    {
+        _db = db;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateProjectRequest request)
+    {
+        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
+
+        var slug = request.Name.ToLower().Replace(" ", "-");
+        var project = new Project
+        {
+            OrganizationId = orgId,
+            Name = request.Name,
+            Slug = slug
+        };
+
+        _db.Projects.Add(project);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = project.Id }, project);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var role = User.FindFirstValue(ClaimTypes.Role);
+        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
+
+        List<Project> projects;
+        if (role == "PLATFORM_ADMIN")
+        {
+            projects = await _db.Projects.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        }
+        else
+        {
+            projects = await _db.Projects
+                .Where(p => p.OrganizationId == orgId)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+        }
+
+        return Ok(projects);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(long id)
+    {
+        var project = await _db.Projects.FindAsync(id);
+        if (project == null) return NotFound(new { message = "Project not found" });
+
+        return Ok(project);
+    }
+
+    [HttpPut("{id}/webhooks")]
+    public async Task<IActionResult> UpdateWebhooks(long id, [FromBody] UpdateWebhooksRequest request)
+    {
+        var project = await _db.Projects.FindAsync(id);
+        if (project == null) return NotFound(new { message = "Project not found" });
+
+        if (request.WebhookUrl != null) project.WebhookUrl = request.WebhookUrl;
+        if (request.SlackWebhookUrl != null) project.SlackWebhookUrl = request.SlackWebhookUrl;
+        if (request.NotificationEmail != null) project.NotificationEmail = request.NotificationEmail;
+
+        await _db.SaveChangesAsync();
+        return Ok(project);
+    }
+
+    [HttpPut("{id}/slack")]
+    public async Task<IActionResult> UpdateSlack(long id, [FromBody] UpdateSlackRequest request)
+    {
+        var project = await _db.Projects.FindAsync(id);
+        if (project == null) return NotFound(new { message = "Project not found" });
+
+        if (request.SlackWebhookUrl != null) project.SlackWebhookUrl = request.SlackWebhookUrl;
+        if (request.SlackChannel != null) project.SlackChannel = request.SlackChannel;
+        if (request.SlackBotToken != null) project.SlackBotToken = request.SlackBotToken;
+
+        await _db.SaveChangesAsync();
+        return Ok(project);
+    }
+
+    public record CreateProjectRequest(string Name);
+    public record UpdateWebhooksRequest(string? WebhookUrl, string? SlackWebhookUrl, string? NotificationEmail);
+    public record UpdateSlackRequest(string? SlackWebhookUrl, string? SlackChannel, string? SlackBotToken);
+}

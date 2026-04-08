@@ -1,0 +1,29 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace BugsManaged.Api.Entities;
+
+[Table("Users")]
+public class User
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+
+    public long OrganizationId { get; set; }
+
+    [Required, MaxLength(255)]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    public string Password { get; set; } = string.Empty;
+
+    [Required, MaxLength(255)]
+    public string FullName { get; set; } = string.Empty;
+
+    [Required, MaxLength(50)]
+    public string Role { get; set; } = "PROJECT_ADMIN"; // PLATFORM_ADMIN, PROJECT_ADMIN, VIEWER
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}

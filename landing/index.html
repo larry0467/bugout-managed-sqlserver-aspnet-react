@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bugs Managed - Bug reports your users actually want to send</title>
+  <meta name="description" content="Embeddable bug reporting widget with screen recording, voice transcription, and auto-captured context. Install in minutes.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --border: #222;
+      --text: #e8e8e8;
+      --muted: #888;
+      --green: #4caf50;
+      --gold: #ff9800;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* Nav */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .logo {
+      font-size: 22px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .nav-links { display: flex; gap: 32px; align-items: center; }
+    .nav-links a { color: var(--muted); font-size: 14px; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 100px 20px 80px;
+      max-width: 800px;
+      margin: 0 auto;
+      position: relative;
+    }
+    .hero h1 {
+      font-size: clamp(36px, 5vw, 60px);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 24px;
+    }
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 20px;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 40px;
+    }
+    .cta-btn {
+      display: inline-block;
+      padding: 16px 40px;
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      color: #000;
+      font-weight: 700;
+      font-size: 16px;
+      border-radius: 50px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .cta-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(76, 175, 80, 0.3);
+    }
+
+    /* Orb Demo */
+    .orb-demo {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      margin: 40px auto 0;
+      animation: pulse 3s ease-in-out infinite;
+      box-shadow: 0 4px 30px rgba(76, 175, 80, 0.4);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+
+    /* Sections */
+    section { padding: 80px 20px; max-width: 1200px; margin: 0 auto; }
+    .section-title {
+      text-align: center;
+      font-size: 36px;
+      font-weight: 800;
+      margin-bottom: 16px;
+    }
+    .section-subtitle {
+      text-align: center;
+      color: var(--muted);
+      font-size: 18px;
+      margin-bottom: 60px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .feature-card:hover {
+      border-color: var(--green);
+      transform: translateY(-4px);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 24px;
+    }
+    .feature-card h3 { font-size: 18px; margin-bottom: 8px; }
+    .feature-card p { color: var(--muted); font-size: 14px; }
+
+    /* How it works */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px;
+      text-align: center;
+    }
+    .step-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      color: #000;
+      font-weight: 800;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+    }
+    .step h3 { margin-bottom: 8px; }
+    .step p { color: var(--muted); font-size: 14px; }
+
+    /* Pricing */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .pricing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 32px;
+      text-align: center;
+      transition: border-color 0.3s;
+    }
+    .pricing-card.featured {
+      border-color: var(--green);
+      position: relative;
+    }
+    .pricing-card.featured::before {
+      content: 'Most Popular';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      color: #000;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 16px;
+      border-radius: 20px;
+    }
+    .pricing-card h3 { font-size: 22px; margin-bottom: 8px; }
+    .pricing-price {
+      font-size: 48px;
+      font-weight: 800;
+      margin: 16px 0;
+    }
+    .pricing-price span { font-size: 16px; color: var(--muted); font-weight: 400; }
+    .pricing-features {
+      list-style: none;
+      margin: 24px 0;
+      text-align: left;
+    }
+    .pricing-features li {
+      padding: 8px 0;
+      color: var(--muted);
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .pricing-features li::before {
+      content: '\2713';
+      color: var(--green);
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .pricing-btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      text-align: center;
+      transition: opacity 0.2s;
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: transparent;
+    }
+    .pricing-btn.primary {
+      background: linear-gradient(135deg, var(--green), var(--gold));
+      color: #000;
+      border: none;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 768px) {
+      .steps { grid-template-columns: 1fr; gap: 24px; }
+      nav { padding: 16px 20px; }
+      .nav-links { gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="logo">Bugs Managed</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#" class="cta-btn" style="padding: 10px 24px; font-size: 14px;">Get Started</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Bug reports your users <span>actually want to send</span></h1>
+    <p>A floating widget that captures screen recordings, voice transcription, and browser context. Install in your React app with one line of code.</p>
+    <a href="#pricing" class="cta-btn">Get Started Free</a>
+    <div class="orb-demo"></div>
+  </div>
+
+  <!-- Features -->
+  <section id="features">
+    <h2 class="section-title">Everything you need</h2>
+    <p class="section-subtitle">Collect rich, actionable bug reports without frustrating your users.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#127909;</div>
+        <h3>Screen Recording</h3>
+        <p>Users record their screen directly from your app. No extensions needed, powered by browser APIs.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#127908;</div>
+        <h3>Voice Transcription</h3>
+        <p>Speech recognition captures what users say while recording, so you get context alongside the video.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128736;</div>
+        <h3>Auto-Captured Context</h3>
+        <p>Page URL, browser info, screen dimensions, console errors, and network state -- captured automatically.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128241;</div>
+        <h3>Mobile Support</h3>
+        <p>On mobile devices, users can upload a video from their camera roll with a smart fallback UI.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128268;</div>
+        <h3>Notifications</h3>
+        <p>Get notified instantly via email, Slack, or custom webhooks when critical bugs are reported.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9881;</div>
+        <h3>Easy Integration</h3>
+        <p>One NPM package, one React component. Add to your app in under 5 minutes with zero config.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works">
+    <h2 class="section-title">How it works</h2>
+    <p class="section-subtitle">Three steps to better bug reports.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Install the Widget</h3>
+        <p>npm install @bugsmanaged/widget and drop the component into your React app with your API key.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Users Report Issues</h3>
+        <p>A floating orb appears in your app. Users click it, record their screen, describe the issue, and submit.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>You Fix Faster</h3>
+        <p>View recordings, transcripts, and full context in the admin dashboard. Triage, assign, and resolve.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing">
+    <h2 class="section-title">Simple pricing</h2>
+    <p class="section-subtitle">Start free. Scale as you grow.</p>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <h3>Free</h3>
+        <div class="pricing-price">$0<span>/mo</span></div>
+        <ul class="pricing-features">
+          <li>1 project</li>
+          <li>50 tickets/month</li>
+          <li>Screen recording</li>
+          <li>Voice transcription</li>
+          <li>Email notifications</li>
+          <li>7-day video retention</li>
+        </ul>
+        <a href="#" class="pricing-btn">Get Started</a>
+      </div>
+      <div class="pricing-card featured">
+        <h3>Pro</h3>
+        <div class="pricing-price">$29<span>/mo</span></div>
+        <ul class="pricing-features">
+          <li>Unlimited projects</li>
+          <li>500 tickets/month</li>
+          <li>Screen recording</li>
+          <li>Voice transcription</li>
+          <li>Email + Slack + Webhooks</li>
+          <li>30-day video retention</li>
+          <li>Custom branding</li>
+          <li>Priority support</li>
+        </ul>
+        <a href="#" class="pricing-btn primary">Get Started</a>
+      </div>
+      <div class="pricing-card">
+        <h3>Enterprise</h3>
+        <div class="pricing-price">Custom</div>
+        <ul class="pricing-features">
+          <li>Unlimited everything</li>
+          <li>Self-hosted option</li>
+          <li>SSO / SAML</li>
+          <li>Custom integrations</li>
+          <li>SLA guarantee</li>
+          <li>Dedicated support</li>
+          <li>On-premise deployment</li>
+          <li>Custom retention policy</li>
+        </ul>
+        <a href="#" class="pricing-btn">Contact Sales</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section style="text-align: center; padding: 80px 20px 120px;">
+    <h2 class="section-title">Ready to fix bugs faster?</h2>
+    <p class="section-subtitle">Get started in under 5 minutes. No credit card required.</p>
+    <a href="#" class="cta-btn">Start for Free</a>
+  </section>
+
+  <footer>
+    <p>&copy; 2026 Bugs Managed. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
