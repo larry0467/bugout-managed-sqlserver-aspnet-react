@@ -24,16 +24,14 @@ public class JwtService
 
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+            new Claim(ClaimTypes.Email, user.Email),
             new Claim("userId", user.Id.ToString()),
-            new Claim("orgId", user.OrganizationId.ToString()),
-            new Claim("role", user.Role),
+            new Claim("organizationId", user.OrganizationId.ToString()),
+            new Claim(ClaimTypes.Role, user.Role),
             new Claim("fullName", user.FullName)
         };
 
         var token = new JwtSecurityToken(
-            issuer: "BugOutManaged",
-            audience: "BugOutManaged",
             claims: claims,
             expires: DateTime.UtcNow.AddMilliseconds(_expirationMs),
             signingCredentials: credentials
@@ -76,10 +74,8 @@ public class JwtService
 
             var principal = handler.ValidateToken(token, new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidIssuer = "BugOutManaged",
-                ValidateAudience = true,
-                ValidAudience = "BugOutManaged",
+                ValidateIssuer = false,
+                ValidateAudience = false,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = key,

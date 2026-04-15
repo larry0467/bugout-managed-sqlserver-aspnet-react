@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,11 +14,28 @@ public class TicketController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly TicketClassifierService _classifier;
 
-    public TicketController(BugsManagedDbContext db, IWebHostEnvironment env)
+    public TicketController(BugsManagedDbContext db, IWebHostEnvironment env, TicketClassifierService classifier)
     {
         _db = db;
         _env = env;
+        _classifier = classifier;
+    }
+
+    // Loads a ticket and verifies it belongs to the caller's organization.
+    // Returns null if missing or cross-tenant. Callers should 404 in either case
+    // so we don't leak the existence of other tenants' tickets.
+    private async Task<Ticket?> GetTicketForCurrentOrgAsync(long id)
+    {
+        var orgIdClaim = User.FindFirstValue("organizationId");
+        if (orgIdClaim == null) return null;
+        var orgId = long.Parse(orgIdClaim);
+
+        return await (from t in _db.Tickets
+                      join p in _db.Projects on t.ProjectId equals p.Id
+                      where t.Id == id && p.OrganizationId == orgId
+                      select t).FirstOrDefaultAsync();
     }
 
     [HttpPost]
@@ -37,6 +55,20 @@ public class TicketController : ControllerBase
         ticket.CreatedAt = DateTime.UtcNow;
         ticket.UpdatedAt = DateTime.UtcNow;
 
+        // Auto-classify frontend/backend/fullstack. On low confidence or API
+        // failure the category stays null and the ticket routes to manual triage.
+        if (string.IsNullOrEmpty(ticket.DeveloperCategory))
+        {
+            var result = await _classifier.ClassifyAsync(
+                ticket.Title,
+                ticket.Description,
+                ticket.ConsoleErrors,
+                ticket.CurrentPageUrl);
+
+            if (result.Category != null)
+                ticket.DeveloperCategory = result.Category;
+        }
+
         _db.Tickets.Add(ticket);
         await _db.SaveChangesAsync();
 
@@ -47,13 +79,32 @@ public class TicketController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> UploadVideo(long id, IFormFile file)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var apiKey = Request.Headers["X-BOM-API-Key"].FirstOrDefault();
+        if (string.IsNullOrEmpty(apiKey))
+            return Unauthorized(new { message = "Missing X-BOM-API-Key header" });
+
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.ApiKey == apiKey);
+        if (project == null)
+            return Unauthorized(new { message = "Invalid API key" });
+
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id && t.ProjectId == project.Id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
+
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        const long MaxVideoBytes = 50L * 1024 * 1024;
+        if (file.Length > MaxVideoBytes)
+            return BadRequest(new { message = "Video exceeds 50 MB limit" });
+
+        var allowedExtensions = new[] { ".webm", ".mp4", ".mov" };
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!allowedExtensions.Contains(extension))
+            return BadRequest(new { message = "Unsupported video format" });
 
         var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "videos");
         Directory.CreateDirectory(uploadsDir);
 
-        var extension = Path.GetExtension(file.FileName);
         var fileName = $"ticket_{id}_{Guid.NewGuid()}{extension}";
         var filePath = Path.Combine(uploadsDir, fileName);
 
@@ -98,7 +149,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetById(long id)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         return Ok(ticket);
@@ -108,7 +159,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetVideo(long id)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         if (string.IsNullOrEmpty(ticket.VideoUrl) || !System.IO.File.Exists(ticket.VideoUrl))
@@ -132,7 +183,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateStatus(long id, [FromBody] UpdateStatusRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.Status = request.Status;
@@ -150,7 +201,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateCategory(long id, [FromBody] UpdateCategoryRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.DeveloperCategory = request.DeveloperCategory;
@@ -162,7 +213,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Assign(long id, [FromBody] AssignRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.AssignedTo = request.AssignedTo;
@@ -177,7 +228,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Resolve(long id, [FromBody] ResolveRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.Resolution = request.Resolution;
@@ -191,7 +242,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Escalate(long id, [FromBody] EscalateRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(id);
+        var ticket = await GetTicketForCurrentOrgAsync(id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.EscalatedBy = request.EscalatedBy;

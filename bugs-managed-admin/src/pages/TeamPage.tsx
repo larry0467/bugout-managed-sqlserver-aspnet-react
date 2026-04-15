@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Typography, message, Space, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, CrownOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, CrownOutlined, UserOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
 import { teamApi, type TeamMember } from '../api';
 
 const { Title } = Typography;
@@ -8,20 +8,24 @@ const { Title } = Typography;
 const roleColors: Record<string, string> = {
   PLATFORM_ADMIN: 'gold',
   PROJECT_ADMIN: 'blue',
+  DEVELOPER: 'purple',
   VIEWER: 'default',
 };
 
 const roleIcons: Record<string, React.ReactNode> = {
   PLATFORM_ADMIN: <CrownOutlined />,
   PROJECT_ADMIN: <UserOutlined />,
+  DEVELOPER: <CodeOutlined />,
   VIEWER: <EyeOutlined />,
 };
 
 const roleLabels: Record<string, string> = {
   PLATFORM_ADMIN: 'Platform Admin',
   PROJECT_ADMIN: 'Project Admin',
+  DEVELOPER: 'Developer',
   VIEWER: 'Viewer',
 };
+
 
 const TeamPage: React.FC = () => {
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -55,13 +59,23 @@ const TeamPage: React.FC = () => {
     }
   };
 
-  const handleRoleChange = async (userId: number, role: string) => {
+  const handleRoleChange = async (userId: number, role: string, specialty?: string) => {
     try {
-      await teamApi.updateRole(userId, role);
+      await teamApi.updateRole(userId, role, specialty);
       message.success('Role updated');
       load();
     } catch (err: any) {
       message.error(err.response?.data?.error || 'Failed to update role');
+    }
+  };
+
+  const handleSpecialtyChange = async (member: TeamMember, specialty: string) => {
+    try {
+      await teamApi.updateRole(member.id, 'DEVELOPER', specialty);
+      message.success('Specialty updated');
+      load();
+    } catch (err: any) {
+      message.error(err.response?.data?.error || 'Failed to update specialty');
     }
   };
 
@@ -92,7 +106,7 @@ const TeamPage: React.FC = () => {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      width: 200,
+      width: 180,
       render: (role: string, record: TeamMember) => {
         if (record.email === currentUser.email) {
           return <Tag icon={roleIcons[role]} color={roleColors[role]}>{roleLabels[role]}</Tag>;
@@ -101,12 +115,36 @@ const TeamPage: React.FC = () => {
           <Select
             value={role}
             size="small"
-            style={{ width: 170 }}
-            onChange={(val) => handleRoleChange(record.id, val)}
+            style={{ width: 160 }}
+            onChange={(val) => handleRoleChange(record.id, val, record.specialty)}
             options={[
               { label: 'Platform Admin', value: 'PLATFORM_ADMIN' },
               { label: 'Project Admin', value: 'PROJECT_ADMIN' },
+              { label: 'Developer', value: 'DEVELOPER' },
               { label: 'Viewer', value: 'VIEWER' },
+            ]}
+          />
+        );
+      },
+    },
+    {
+      title: 'Specialty',
+      dataIndex: 'specialty',
+      key: 'specialty',
+      width: 160,
+      render: (specialty: string | undefined, record: TeamMember) => {
+        if (record.role !== 'DEVELOPER') return <span style={{ color: '#bbb' }}>—</span>;
+        return (
+          <Select
+            value={specialty}
+            size="small"
+            placeholder="Select"
+            style={{ width: 140 }}
+            onChange={(val) => handleSpecialtyChange(record, val)}
+            options={[
+              { label: 'Frontend', value: 'FRONTEND' },
+              { label: 'Backend', value: 'BACKEND' },
+              { label: 'Full-stack', value: 'FULLSTACK' },
             ]}
           />
         );
@@ -182,8 +220,30 @@ const TeamPage: React.FC = () => {
             <Select options={[
               { label: 'Platform Admin — Full access, can manage team & all projects', value: 'PLATFORM_ADMIN' },
               { label: 'Project Admin — Can manage tickets & projects in the org', value: 'PROJECT_ADMIN' },
+              { label: 'Developer — Receives assigned tickets based on specialty', value: 'DEVELOPER' },
               { label: 'Viewer — Read-only access to tickets & dashboards', value: 'VIEWER' },
             ]} />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) => prev.role !== curr.role}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('role') === 'DEVELOPER' ? (
+                <Form.Item
+                  name="specialty"
+                  label="Specialty"
+                  rules={[{ required: true, message: 'Specialty is required for developers' }]}
+                  extra="Determines which tickets show this developer in the assignment dropdown."
+                >
+                  <Select options={[
+                    { label: 'Frontend', value: 'FRONTEND' },
+                    { label: 'Backend', value: 'BACKEND' },
+                    { label: 'Full-stack (eligible for any ticket)', value: 'FULLSTACK' },
+                  ]} />
+                </Form.Item>
+              ) : null
+            }
           </Form.Item>
         </Form>
       </Modal>

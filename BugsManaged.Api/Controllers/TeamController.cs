@@ -33,11 +33,33 @@ public class TeamController : ControllerBase
                 u.Email,
                 u.FullName,
                 u.Role,
+                u.Specialty,
                 u.CreatedAt
             })
             .ToListAsync();
 
         return Ok(members);
+    }
+
+    // Returns developers eligible to be assigned a ticket of the given category.
+    // FULLSTACK devs always qualify; specialty devs only match their own category.
+    // An empty category returns all developers (used for FULLSTACK tickets or manual triage).
+    [HttpGet("developers")]
+    public async Task<IActionResult> GetDevelopers([FromQuery] string? category)
+    {
+        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
+
+        var query = _db.Users.Where(u => u.OrganizationId == orgId && u.Role == "DEVELOPER");
+
+        if (!string.IsNullOrEmpty(category) && category != "FULLSTACK")
+            query = query.Where(u => u.Specialty == category || u.Specialty == "FULLSTACK");
+
+        var devs = await query
+            .OrderBy(u => u.FullName)
+            .Select(u => new { u.Id, u.Email, u.FullName, u.Specialty })
+            .ToListAsync();
+
+        return Ok(devs);
     }
 
     [HttpPost("invite")]
@@ -52,13 +74,15 @@ public class TeamController : ControllerBase
 
         var orgId = long.Parse(User.FindFirstValue("organizationId")!);
 
+        var assignedRole = request.Role ?? "VIEWER";
         var user = new User
         {
             OrganizationId = orgId,
             Email = request.Email,
             Password = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FullName = request.FullName,
-            Role = request.Role ?? "VIEWER"
+            Role = assignedRole,
+            Specialty = assignedRole == "DEVELOPER" ? request.Specialty : null
         };
 
         _db.Users.Add(user);
@@ -70,6 +94,7 @@ public class TeamController : ControllerBase
             user.Email,
             user.FullName,
             user.Role,
+            user.Specialty,
             user.CreatedAt
         });
     }
@@ -86,6 +111,11 @@ public class TeamController : ControllerBase
         if (user == null) return NotFound(new { message = "User not found" });
 
         user.Role = request.Role;
+        if (request.Role == "DEVELOPER")
+            user.Specialty = request.Specialty ?? user.Specialty;
+        else
+            user.Specialty = null;
+
         await _db.SaveChangesAsync();
 
         return Ok(new
@@ -94,6 +124,7 @@ public class TeamController : ControllerBase
             user.Email,
             user.FullName,
             user.Role,
+            user.Specialty,
             user.CreatedAt
         });
     }
@@ -119,6 +150,6 @@ public class TeamController : ControllerBase
         return NoContent();
     }
 
-    public record InviteRequest(string Email, string FullName, string Password, string? Role);
-    public record UpdateRoleRequest(string Role);
+    public record InviteRequest(string Email, string FullName, string Password, string? Role, string? Specialty);
+    public record UpdateRoleRequest(string Role, string? Specialty);
 }

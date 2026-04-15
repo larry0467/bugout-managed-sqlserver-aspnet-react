@@ -374,28 +374,48 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   columns.push(
     { title: 'Submitted By', dataIndex: 'submittedBy', key: 'submittedBy', width: 140, ellipsis: true },
     {
-      title: 'Assigned To',
+      title: 'Assigned Developer',
       dataIndex: 'assignedTo',
       key: 'assignedTo',
-      width: 180,
-      render: (v: string, record: Ticket) => (
-        <Select
-          value={v || undefined}
-          size="small"
-          style={{ width: 160 }}
-          placeholder="Unassigned"
-          allowClear
-          onChange={(val) => handleAssign(record.id, val || '')}
-          options={teamMembers.map((m) => ({
-            label: m.fullName,
-            value: m.email,
-          }))}
-          showSearch
-          filterOption={(input, option) =>
-            (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
-          }
-        />
-      ),
+      width: 200,
+      render: (v: string, record: Ticket) => {
+        // Filter developers by the ticket's AI-classified category.
+        // FULLSTACK devs qualify for everything; specialty devs only match their own category.
+        // If the ticket is uncategorized, show every developer so a human can triage.
+        const cat = record.developerCategory;
+        const eligible = teamMembers.filter((m) => {
+          if (m.role !== 'DEVELOPER') return false;
+          if (!cat || cat === 'FULLSTACK') return true;
+          if (m.specialty === 'FULLSTACK') return true;
+          return m.specialty === cat;
+        });
+
+        const placeholder = !cat
+          ? 'Triage needed'
+          : eligible.length === 0
+            ? `No ${cat.toLowerCase()} devs`
+            : 'Unassigned';
+
+        return (
+          <Select
+            value={v || undefined}
+            size="small"
+            style={{ width: 180 }}
+            placeholder={placeholder}
+            allowClear
+            disabled={eligible.length === 0}
+            onChange={(val) => handleAssign(record.id, val || '')}
+            options={eligible.map((m) => ({
+              label: `${m.fullName}${m.specialty === 'FULLSTACK' ? ' (FS)' : ''}`,
+              value: m.email,
+            }))}
+            showSearch
+            filterOption={(input, option) =>
+              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+            }
+          />
+        );
+      },
     },
     {
       title: 'Created',

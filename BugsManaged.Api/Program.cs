@@ -50,6 +50,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TicketService>();
 builder.Services.AddHttpClient<NotificationService>();
 builder.Services.AddHttpClient<TicketNoteService>();
+builder.Services.AddHttpClient<TicketClassifierService>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

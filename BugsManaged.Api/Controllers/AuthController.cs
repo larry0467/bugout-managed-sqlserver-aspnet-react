@@ -1,12 +1,10 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 
 namespace BugsManaged.Api.Controllers;
 
@@ -15,12 +13,12 @@ namespace BugsManaged.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
-    private readonly IConfiguration _config;
+    private readonly JwtService _jwt;
 
-    public AuthController(BugsManagedDbContext db, IConfiguration config)
+    public AuthController(BugsManagedDbContext db, JwtService jwt)
     {
         _db = db;
-        _config = config;
+        _jwt = jwt;
     }
 
     [HttpPost("register")]
@@ -51,7 +49,7 @@ public class AuthController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
-        var token = GenerateJwtToken(user);
+        var token = _jwt.GenerateToken(user);
 
         return Ok(new
         {
@@ -70,7 +68,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid email or password" });
 
         var organization = await _db.Organizations.FindAsync(user.OrganizationId);
-        var token = GenerateJwtToken(user);
+        var token = _jwt.GenerateToken(user);
 
         return Ok(new
         {
@@ -101,31 +99,6 @@ public class AuthController : ControllerBase
                 ? new { organization.Id, organization.Name, organization.Slug, organization.Plan }
                 : null
         });
-    }
-
-    private string GenerateJwtToken(User user)
-    {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            _config["Jwt:Key"] ?? "default-secret-key-change-in-production-32chars!"));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim("organizationId", user.OrganizationId.ToString()),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim("userId", user.Id.ToString()),
-            new Claim("fullName", user.FullName)
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"] ?? "BugOutManaged",
-            audience: _config["Jwt:Audience"] ?? "BugOutManaged",
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(24),
-            signingCredentials: creds);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static object MapUser(User user) => new

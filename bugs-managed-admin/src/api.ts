@@ -36,11 +36,14 @@ export interface Organization {
   plan: 'FREE' | 'PRO' | 'ENTERPRISE';
 }
 
+export type UserRole = 'PLATFORM_ADMIN' | 'PROJECT_ADMIN' | 'DEVELOPER' | 'VIEWER';
+export type DeveloperSpecialty = 'FRONTEND' | 'BACKEND' | 'FULLSTACK';
+
 export interface AuthUser {
   id: number;
   email: string;
   fullName: string;
-  role: 'PLATFORM_ADMIN' | 'PROJECT_ADMIN' | 'VIEWER';
+  role: UserRole;
   organizationId: number;
 }
 
@@ -174,18 +177,31 @@ export interface TeamMember {
   id: number;
   email: string;
   fullName: string;
-  role: 'PLATFORM_ADMIN' | 'PROJECT_ADMIN' | 'VIEWER';
+  role: UserRole;
+  specialty?: DeveloperSpecialty;
   createdAt: string;
+}
+
+export interface DeveloperOption {
+  id: number;
+  email: string;
+  fullName: string;
+  specialty?: DeveloperSpecialty;
 }
 
 export const teamApi = {
   list: () => api.get<TeamMember[]>('/team').then(r => r.data),
-  invite: (data: { email: string; fullName: string; password: string; role: string }) =>
+  invite: (data: { email: string; fullName: string; password: string; role: string; specialty?: string }) =>
     api.post<TeamMember>('/team/invite', data).then(r => r.data),
-  updateRole: (userId: number, role: string) =>
-    api.put<TeamMember>(`/team/${userId}/role`, { role }).then(r => r.data),
+  updateRole: (userId: number, role: string, specialty?: string) =>
+    api.put<TeamMember>(`/team/${userId}/role`, { role, specialty }).then(r => r.data),
   remove: (userId: number) =>
     api.delete(`/team/${userId}`).then(r => r.data),
+  developers: (category?: string) => {
+    const params: any = {};
+    if (category) params.category = category;
+    return api.get<DeveloperOption[]>('/team/developers', { params }).then(r => r.data);
+  },
 };
 
 // Ticket assign

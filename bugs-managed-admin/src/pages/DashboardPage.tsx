@@ -43,9 +43,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
     if (selectedProject === 'all') {
       ticketApi.stats().then(setStats);
       ticketApi.list().then(setTickets);
-    } else if (selectedProject && selectedProject !== 'all') {
-      ticketApi.stats(selectedProject as number).then(setStats);
-      ticketApi.list(selectedProject as number).then(setTickets);
+    } else if (typeof selectedProject === 'number') {
+      ticketApi.stats(selectedProject).then(setStats);
+      ticketApi.list(selectedProject).then(setTickets);
     }
   }, [selectedProject]);
 
