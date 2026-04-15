@@ -57,11 +57,12 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Auto-migrate database
+// Apply any pending EF migrations on startup. Replaces the old
+// EnsureCreated() path, which didn't handle schema evolution.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BugsManagedDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 }
 
 if (app.Environment.IsDevelopment())
