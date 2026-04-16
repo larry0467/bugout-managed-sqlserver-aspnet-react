@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,21 +14,24 @@ namespace BugsManaged.Api.Controllers;
 public class ProjectController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
+    private readonly IOrgContext _org;
 
-    public ProjectController(BugsManagedDbContext db)
+    public ProjectController(BugsManagedDbContext db, IOrgContext org)
     {
         _db = db;
+        _org = org;
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateProjectRequest request)
     {
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
+        if (_org.CurrentOrganizationId == null)
+            return Unauthorized();
 
         var slug = request.Name.ToLower().Replace(" ", "-");
         var project = new Project
         {
-            OrganizationId = orgId,
+            OrganizationId = _org.CurrentOrganizationId.Value,
             Name = request.Name,
             Slug = slug
         };
@@ -42,20 +46,16 @@ public class ProjectController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var role = User.FindFirstValue(ClaimTypes.Role);
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
 
-        List<Project> projects;
-        if (role == "PLATFORM_ADMIN")
-        {
-            projects = await _db.Projects.OrderByDescending(p => p.CreatedAt).ToListAsync();
-        }
-        else
-        {
-            projects = await _db.Projects
-                .Where(p => p.OrganizationId == orgId)
-                .OrderByDescending(p => p.CreatedAt)
-                .ToListAsync();
-        }
+        // PLATFORM_ADMIN sees every project across every org — bypass the
+        // filter. Everyone else gets the default filtered view.
+        var query = role == "PLATFORM_ADMIN"
+            ? _db.Projects.IgnoreQueryFilters().AsQueryable()
+            : _db.Projects.AsQueryable();
+
+        var projects = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
 
         return Ok(projects);
     }
@@ -63,7 +63,7 @@ public class ProjectController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(long id)
     {
-        var project = await _db.Projects.FindAsync(id);
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == id);
         if (project == null) return NotFound(new { message = "Project not found" });
 
         return Ok(project);
@@ -72,7 +72,7 @@ public class ProjectController : ControllerBase
     [HttpPut("{id}/webhooks")]
     public async Task<IActionResult> UpdateWebhooks(long id, [FromBody] UpdateWebhooksRequest request)
     {
-        var project = await _db.Projects.FindAsync(id);
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == id);
         if (project == null) return NotFound(new { message = "Project not found" });
 
         if (request.WebhookUrl != null) project.WebhookUrl = request.WebhookUrl;
@@ -86,7 +86,7 @@ public class ProjectController : ControllerBase
     [HttpPut("{id}/slack")]
     public async Task<IActionResult> UpdateSlack(long id, [FromBody] UpdateSlackRequest request)
     {
-        var project = await _db.Projects.FindAsync(id);
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == id);
         if (project == null) return NotFound(new { message = "Project not found" });
 
         if (request.SlackWebhookUrl != null) project.SlackWebhookUrl = request.SlackWebhookUrl;

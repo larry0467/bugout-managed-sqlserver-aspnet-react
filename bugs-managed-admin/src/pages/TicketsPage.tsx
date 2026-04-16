@@ -240,16 +240,15 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     { title: 'Title', dataIndex: 'title', key: 'title', ellipsis: true },
   ];
 
-  // Application column when viewing all
-  if (selectedProject === 'all') {
-    columns.push({
-      title: 'Application',
-      dataIndex: 'projectId',
-      key: 'application',
-      width: 160,
-      render: (v: number) => <Tag icon={<AppstoreOutlined />} color="blue">{projectMap[v] || `Project ${v}`}</Tag>,
-    });
-  }
+  // Host app chip — always visible, not just on the "all" view. Devs
+  // should see which Managed app a ticket came from at a glance.
+  columns.push({
+    title: 'Host App',
+    dataIndex: 'projectId',
+    key: 'application',
+    width: 180,
+    render: (v: number) => <Tag icon={<AppstoreOutlined />} color="blue">{projectMap[v] || `Project ${v}`}</Tag>,
+  });
 
   columns.push(
     {

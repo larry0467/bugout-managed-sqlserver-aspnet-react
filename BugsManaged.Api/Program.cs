@@ -1,5 +1,6 @@
 using System.Text;
 using BugsManaged.Api.Data;
+using BugsManaged.Api.Middleware;
 using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -43,11 +44,14 @@ builder.Services.AddCors(options =>
 });
 
 // Services
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IOrgContext, OrgContext>();
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<OrganizationService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TicketService>();
+builder.Services.AddScoped<DevSeeder>();
 builder.Services.AddHttpClient<NotificationService>();
 builder.Services.AddHttpClient<TicketNoteService>();
 builder.Services.AddHttpClient<TicketClassifierService>();
@@ -63,6 +67,16 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BugsManagedDbContext>();
     db.Database.Migrate();
+
+    // Idempotent dev seeding: a Managed Platform org + one Project per
+    // portfolio app, using the dev API keys the Comms Managed team
+    // standardized on so developers get the same localStorage experience
+    // across both products.
+    if (app.Environment.IsDevelopment())
+    {
+        var seeder = scope.ServiceProvider.GetRequiredService<DevSeeder>();
+        await seeder.SeedAsync();
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -73,6 +87,11 @@ if (app.Environment.IsDevelopment())
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Must run after UseAuthentication so the JWT is parsed and
+// ctx.User.FindFirstValue("organizationId") works for admin calls.
+app.UseMiddleware<OrgResolutionMiddleware>();
+
 app.MapControllers();
 
 app.Run();

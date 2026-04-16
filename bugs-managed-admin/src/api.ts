@@ -111,15 +111,39 @@ export interface TicketNote {
   createdAt: string;
 }
 
+export interface ProjectStatsRow {
+  projectId: number;
+  name: string;
+  total: number;
+  open: number;
+  inProgress: number;
+  resolved: number;
+  critical: number;
+}
+
+export interface TurnaroundStats {
+  avgHours: number | null;
+  medianHours: number | null;
+  byProject: Array<{
+    projectId: number;
+    resolvedCount: number;
+    avgHours: number;
+    medianHours: number;
+  }>;
+}
+
 export interface Stats {
-  OPEN: number;
-  IN_PROGRESS: number;
-  IN_REVIEW: number;
-  READY_FOR_TESTING: number;
-  VERIFIED: number;
-  RESOLVED: number;
-  CLOSED: number;
-  TOTAL: number;
+  total: number;
+  open: number;
+  inProgress: number;
+  resolved: number;
+  critical: number;
+  escalated: number;
+  byStatus: Array<{ status: string; count: number }>;
+  byPriority: Array<{ priority: string; count: number }>;
+  byCategory: Array<{ category: string; count: number }>;
+  byProject: ProjectStatsRow[];
+  turnaround: TurnaroundStats;
 }
 
 // Auth API

@@ -25,7 +25,10 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        if (await _db.Users.AnyAsync(u => u.Email == request.Email))
+        // Bypass the global query filter — at registration time there is
+        // no org context yet, and the filter would hide every user and
+        // make the uniqueness check a no-op.
+        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == request.Email))
             return Conflict(new { message = "Email already registered" });
 
         var slug = request.OrganizationName.ToLower().Replace(" ", "-");
@@ -63,11 +66,16 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+        // Login runs before any org context exists, so everything here
+        // bypasses the global filter. The JWT we return carries the
+        // organizationId that subsequent requests will resolve from.
+        var user = await _db.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == request.Email);
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.Password))
             return Unauthorized(new { message = "Invalid email or password" });
 
-        var organization = await _db.Organizations.FindAsync(user.OrganizationId);
+        var organization = await _db.Organizations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(o => o.Id == user.OrganizationId);
         var token = _jwt.GenerateToken(user);
 
         return Ok(new

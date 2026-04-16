@@ -10,6 +10,12 @@ public class Ticket
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long Id { get; set; }
 
+    // Denormalized from Project.OrganizationId so every tenant-scoped query
+    // (including the EF global query filter) can run against a single column
+    // without joining. Must match Project.OrganizationId; enforced at the
+    // service layer on create.
+    public long OrganizationId { get; set; }
+
     public long ProjectId { get; set; }
 
     [MaxLength(255)]

@@ -1,11 +1,17 @@
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace BugsManaged.Api.Data;
 
 public class BugsManagedDbContext : DbContext
 {
-    public BugsManagedDbContext(DbContextOptions<BugsManagedDbContext> options) : base(options) { }
+    private readonly IOrgContext _orgContext;
+
+    public BugsManagedDbContext(DbContextOptions<BugsManagedDbContext> options, IOrgContext orgContext) : base(options)
+    {
+        _orgContext = orgContext;
+    }
 
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<User> Users => Set<User>();
@@ -27,14 +33,43 @@ public class BugsManagedDbContext : DbContext
         modelBuilder.Entity<Project>()
             .HasIndex(p => p.ApiKey).IsUnique();
 
+        modelBuilder.Entity<Project>()
+            .HasIndex(p => p.OrganizationId);
+
         modelBuilder.Entity<Ticket>()
             .HasIndex(t => t.ProjectId);
 
         modelBuilder.Entity<Ticket>()
             .HasIndex(t => new { t.ProjectId, t.Status });
 
+        modelBuilder.Entity<Ticket>()
+            .HasIndex(t => t.OrganizationId);
+
         modelBuilder.Entity<TicketNote>()
             .HasIndex(n => n.TicketId);
+
+        modelBuilder.Entity<TicketNote>()
+            .HasIndex(n => n.OrganizationId);
+
+        // Global query filters — every org-scoped query auto-filters by the
+        // current org resolved by OrgResolutionMiddleware. Use
+        // .IgnoreQueryFilters() when you genuinely need to read across orgs
+        // (middleware API key lookup, seeder, admin reports across tenants).
+        //
+        // When CurrentOrganizationId is null (no JWT, no API key), the filter
+        // compares OrganizationId to null, which matches nothing. That's the
+        // correct default: no context -> no data.
+        modelBuilder.Entity<User>()
+            .HasQueryFilter(u => _orgContext.CurrentOrganizationId != null && u.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<Project>()
+            .HasQueryFilter(p => _orgContext.CurrentOrganizationId != null && p.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<Ticket>()
+            .HasQueryFilter(t => _orgContext.CurrentOrganizationId != null && t.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketNote>()
+            .HasQueryFilter(n => _orgContext.CurrentOrganizationId != null && n.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()

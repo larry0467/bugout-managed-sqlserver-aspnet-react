@@ -10,7 +10,7 @@ public class Project
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long Id { get; set; }
 
-    public long? OrganizationId { get; set; }
+    public long OrganizationId { get; set; }
 
     [Required, MaxLength(255)]
     public string Name { get; set; } = string.Empty;

@@ -10,6 +10,8 @@ public class TicketNote
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public long Id { get; set; }
 
+    public long OrganizationId { get; set; }
+
     public long TicketId { get; set; }
 
     [Required, MaxLength(255)]

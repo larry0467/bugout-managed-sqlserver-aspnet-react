@@ -47,7 +47,7 @@ public class SlackWebhookController : ControllerBase
                     var match = TicketIdPattern.Match(text);
                     if (match.Success && long.TryParse(match.Groups[1].Value, out var ticketId))
                     {
-                        var ticket = await _db.Tickets.FindAsync(ticketId);
+                        var ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == ticketId);
                         if (ticket != null)
                         {
                             // Strip the ticket reference from the message to get the note content
@@ -57,6 +57,7 @@ public class SlackWebhookController : ControllerBase
                                 var note = new TicketNote
                                 {
                                     TicketId = ticketId,
+                                    OrganizationId = ticket.OrganizationId,
                                     AuthorEmail = $"{slackUser}@slack",
                                     AuthorName = slackUser,
                                     Content = content,
@@ -94,7 +95,7 @@ public class SlackWebhookController : ControllerBase
         }
 
         var message = parts[1];
-        var ticket = await _db.Tickets.FindAsync(ticketId);
+        var ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == ticketId);
         if (ticket == null)
         {
             return Ok(new
@@ -107,6 +108,7 @@ public class SlackWebhookController : ControllerBase
         var note = new TicketNote
         {
             TicketId = ticketId,
+            OrganizationId = ticket.OrganizationId,
             AuthorEmail = $"{request.UserId}@slack",
             AuthorName = request.UserName ?? request.UserId ?? "slack-user",
             Content = message,

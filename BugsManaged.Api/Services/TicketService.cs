@@ -33,6 +33,7 @@ public class TicketService
         }
 
         ticket.ProjectId = project.Id;
+        ticket.OrganizationId = project.OrganizationId;
         _db.Tickets.Add(ticket);
         await _db.SaveChangesAsync();
 
@@ -212,20 +213,17 @@ public class TicketService
             }
 
             // Notify all admins in the organization
-            if (project.OrganizationId.HasValue)
-            {
-                var admins = await _db.Users
-                    .Where(u => u.OrganizationId == project.OrganizationId.Value
-                        && (u.Role == "PROJECT_ADMIN" || u.Role == "PLATFORM_ADMIN"))
-                    .ToListAsync();
+            var admins = await _db.Users.IgnoreQueryFilters()
+                .Where(u => u.OrganizationId == project.OrganizationId
+                    && (u.Role == "PROJECT_ADMIN" || u.Role == "PLATFORM_ADMIN"))
+                .ToListAsync();
 
-                foreach (var admin in admins)
-                {
-                    await _notificationService.SendEmailAsync(
-                        admin.Email,
-                        $"[ESCALATED] Ticket #{ticket.Id}: {ticket.Title}",
-                        $"Ticket #{ticket.Id} has been escalated by {escalatedBy}.\n\nTitle: {ticket.Title}\nDescription: {ticket.Description}");
-                }
+            foreach (var admin in admins)
+            {
+                await _notificationService.SendEmailAsync(
+                    admin.Email,
+                    $"[ESCALATED] Ticket #{ticket.Id}: {ticket.Title}",
+                    $"Ticket #{ticket.Id} has been escalated by {escalatedBy}.\n\nTitle: {ticket.Title}\nDescription: {ticket.Description}");
             }
 
             // Slack notification

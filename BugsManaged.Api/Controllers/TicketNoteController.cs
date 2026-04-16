@@ -33,7 +33,9 @@ public class TicketNoteController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> AddNote(long ticketId, [FromBody] AddNoteRequest request)
     {
-        var ticket = await _db.Tickets.FindAsync(ticketId);
+        // Query filter scopes the ticket lookup by org; cross-tenant
+        // ticket IDs 404 without leaking existence.
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == ticketId);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "unknown";
@@ -41,6 +43,7 @@ public class TicketNoteController : ControllerBase
         var note = new TicketNote
         {
             TicketId = ticketId,
+            OrganizationId = ticket.OrganizationId,
             AuthorEmail = userEmail,
             AuthorName = request.AuthorName ?? User.FindFirstValue("fullName"),
             Content = request.Content,

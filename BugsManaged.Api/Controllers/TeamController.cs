@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,19 +14,20 @@ namespace BugsManaged.Api.Controllers;
 public class TeamController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
+    private readonly IOrgContext _org;
 
-    public TeamController(BugsManagedDbContext db)
+    public TeamController(BugsManagedDbContext db, IOrgContext org)
     {
         _db = db;
+        _org = org;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetTeamMembers()
     {
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-
+        // Global query filter already scopes to the current org — no
+        // manual .Where needed.
         var members = await _db.Users
-            .Where(u => u.OrganizationId == orgId)
             .OrderBy(u => u.FullName)
             .Select(u => new
             {
@@ -47,9 +49,7 @@ public class TeamController : ControllerBase
     [HttpGet("developers")]
     public async Task<IActionResult> GetDevelopers([FromQuery] string? category)
     {
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-
-        var query = _db.Users.Where(u => u.OrganizationId == orgId && u.Role == "DEVELOPER");
+        var query = _db.Users.Where(u => u.Role == "DEVELOPER");
 
         if (!string.IsNullOrEmpty(category) && category != "FULLSTACK")
             query = query.Where(u => u.Specialty == category || u.Specialty == "FULLSTACK");
@@ -69,15 +69,17 @@ public class TeamController : ControllerBase
         if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
             return Forbid();
 
-        if (await _db.Users.AnyAsync(u => u.Email == request.Email))
-            return Conflict(new { message = "Email already registered" });
+        if (_org.CurrentOrganizationId == null)
+            return Unauthorized();
 
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
+        // Email uniqueness is global, not org-scoped, so bypass the filter.
+        if (await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == request.Email))
+            return Conflict(new { message = "Email already registered" });
 
         var assignedRole = request.Role ?? "VIEWER";
         var user = new User
         {
-            OrganizationId = orgId,
+            OrganizationId = _org.CurrentOrganizationId.Value,
             Email = request.Email,
             Password = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FullName = request.FullName,
@@ -106,8 +108,7 @@ public class TeamController : ControllerBase
         if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
             return Forbid();
 
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.OrganizationId == orgId);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null) return NotFound(new { message = "User not found" });
 
         user.Role = request.Role;
@@ -136,12 +137,11 @@ public class TeamController : ControllerBase
         if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
             return Forbid();
 
-        var currentUserId = long.Parse(User.FindFirstValue("userId")!);
-        if (currentUserId == userId)
+        var currentUserIdClaim = User.FindFirstValue("userId");
+        if (long.TryParse(currentUserIdClaim, out var currentUserId) && currentUserId == userId)
             return BadRequest(new { message = "Cannot remove yourself from the team" });
 
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.OrganizationId == orgId);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null) return NotFound(new { message = "User not found" });
 
         _db.Users.Remove(user);

@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
 using BugsManaged.Api.Services;
@@ -15,48 +14,32 @@ public class TicketController : ControllerBase
     private readonly BugsManagedDbContext _db;
     private readonly IWebHostEnvironment _env;
     private readonly TicketClassifierService _classifier;
+    private readonly IOrgContext _org;
 
-    public TicketController(BugsManagedDbContext db, IWebHostEnvironment env, TicketClassifierService classifier)
+    public TicketController(BugsManagedDbContext db, IWebHostEnvironment env, TicketClassifierService classifier, IOrgContext org)
     {
         _db = db;
         _env = env;
         _classifier = classifier;
+        _org = org;
     }
 
-    // Loads a ticket and verifies it belongs to the caller's organization.
-    // Returns null if missing or cross-tenant. Callers should 404 in either case
-    // so we don't leak the existence of other tenants' tickets.
-    private async Task<Ticket?> GetTicketForCurrentOrgAsync(long id)
-    {
-        var orgIdClaim = User.FindFirstValue("organizationId");
-        if (orgIdClaim == null) return null;
-        var orgId = long.Parse(orgIdClaim);
-
-        return await (from t in _db.Tickets
-                      join p in _db.Projects on t.ProjectId equals p.Id
-                      where t.Id == id && p.OrganizationId == orgId
-                      select t).FirstOrDefaultAsync();
-    }
-
+    // Widget path. Middleware has already resolved X-BOM-API-Key into
+    // IOrgContext.CurrentProjectId + CurrentOrganizationId, so we just
+    // read them instead of doing the lookup again.
     [HttpPost]
     [AllowAnonymous]
     public async Task<IActionResult> Create([FromBody] Ticket ticket)
     {
-        var apiKey = Request.Headers["X-BOM-API-Key"].FirstOrDefault();
-        if (string.IsNullOrEmpty(apiKey))
-            return Unauthorized(new { message = "Missing X-BOM-API-Key header" });
+        if (_org.CurrentProjectId == null || _org.CurrentOrganizationId == null)
+            return Unauthorized(new { message = "Missing or invalid X-BOM-API-Key header" });
 
-        var project = await _db.Projects.FirstOrDefaultAsync(p => p.ApiKey == apiKey);
-        if (project == null)
-            return Unauthorized(new { message = "Invalid API key" });
-
-        ticket.ProjectId = project.Id;
+        ticket.ProjectId = _org.CurrentProjectId.Value;
+        ticket.OrganizationId = _org.CurrentOrganizationId.Value;
         ticket.Status = "OPEN";
         ticket.CreatedAt = DateTime.UtcNow;
         ticket.UpdatedAt = DateTime.UtcNow;
 
-        // Auto-classify frontend/backend/fullstack. On low confidence or API
-        // failure the category stays null and the ticket routes to manual triage.
         if (string.IsNullOrEmpty(ticket.DeveloperCategory))
         {
             var result = await _classifier.ClassifyAsync(
@@ -79,15 +62,12 @@ public class TicketController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> UploadVideo(long id, IFormFile file)
     {
-        var apiKey = Request.Headers["X-BOM-API-Key"].FirstOrDefault();
-        if (string.IsNullOrEmpty(apiKey))
-            return Unauthorized(new { message = "Missing X-BOM-API-Key header" });
+        if (_org.CurrentProjectId == null)
+            return Unauthorized(new { message = "Missing or invalid X-BOM-API-Key header" });
 
-        var project = await _db.Projects.FirstOrDefaultAsync(p => p.ApiKey == apiKey);
-        if (project == null)
-            return Unauthorized(new { message = "Invalid API key" });
-
-        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id && t.ProjectId == project.Id);
+        // Query filters scope by OrganizationId; we additionally require the
+        // ticket to belong to the specific project whose API key was used.
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id && t.ProjectId == _org.CurrentProjectId.Value);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         if (file == null || file.Length == 0)
@@ -122,36 +102,22 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetAll([FromQuery] long? projectId)
     {
+        var query = _db.Tickets.AsQueryable();
         if (projectId.HasValue)
-        {
-            var tickets = await _db.Tickets
-                .Where(t => t.ProjectId == projectId.Value)
-                .OrderByDescending(t => t.CreatedAt)
-                .ToListAsync();
-            return Ok(tickets);
-        }
+            query = query.Where(t => t.ProjectId == projectId.Value);
 
-        var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-        var projectIds = await _db.Projects
-            .Where(p => p.OrganizationId == orgId)
-            .Select(p => p.Id)
-            .ToListAsync();
-
-        var orgTickets = await _db.Tickets
-            .Where(t => projectIds.Contains(t.ProjectId))
+        var tickets = await query
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
-
-        return Ok(orgTickets);
+        return Ok(tickets);
     }
 
     [HttpGet("{id}")]
     [Authorize]
     public async Task<IActionResult> GetById(long id)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
-
         return Ok(ticket);
     }
 
@@ -159,7 +125,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetVideo(long id)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         if (string.IsNullOrEmpty(ticket.VideoUrl) || !System.IO.File.Exists(ticket.VideoUrl))
@@ -183,7 +149,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateStatus(long id, [FromBody] UpdateStatusRequest request)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.Status = request.Status;
@@ -201,7 +167,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateCategory(long id, [FromBody] UpdateCategoryRequest request)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.DeveloperCategory = request.DeveloperCategory;
@@ -213,7 +179,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Assign(long id, [FromBody] AssignRequest request)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.AssignedTo = request.AssignedTo;
@@ -228,7 +194,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Resolve(long id, [FromBody] ResolveRequest request)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.Resolution = request.Resolution;
@@ -242,7 +208,7 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Escalate(long id, [FromBody] EscalateRequest request)
     {
-        var ticket = await GetTicketForCurrentOrgAsync(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
         ticket.EscalatedBy = request.EscalatedBy;
@@ -255,21 +221,9 @@ public class TicketController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetStats([FromQuery] long? projectId)
     {
-        IQueryable<Ticket> query;
-
+        var query = _db.Tickets.AsQueryable();
         if (projectId.HasValue)
-        {
-            query = _db.Tickets.Where(t => t.ProjectId == projectId.Value);
-        }
-        else
-        {
-            var orgId = long.Parse(User.FindFirstValue("organizationId")!);
-            var projectIds = await _db.Projects
-                .Where(p => p.OrganizationId == orgId)
-                .Select(p => p.Id)
-                .ToListAsync();
-            query = _db.Tickets.Where(t => projectIds.Contains(t.ProjectId));
-        }
+            query = query.Where(t => t.ProjectId == projectId.Value);
 
         var total = await query.CountAsync();
         var open = await query.CountAsync(t => t.Status == "OPEN");
@@ -294,6 +248,62 @@ public class TicketController : ControllerBase
             .Select(g => new { Category = g.Key, Count = g.Count() })
             .ToListAsync();
 
+        // Host-app breakdown: "which apps have the most issues" — the
+        // central question the Comms Managed per-tenant view was built to
+        // answer. Joined against Projects so the response includes names
+        // the UI can render without a second round trip.
+        var byProject = await (from t in query
+                               join p in _db.Projects on t.ProjectId equals p.Id
+                               group t by new { p.Id, p.Name } into g
+                               select new
+                               {
+                                   ProjectId = g.Key.Id,
+                                   Name = g.Key.Name,
+                                   Total = g.Count(),
+                                   Open = g.Count(x => x.Status == "OPEN"),
+                                   InProgress = g.Count(x => x.Status == "IN_PROGRESS"),
+                                   Resolved = g.Count(x => x.Status == "RESOLVED" || x.Status == "CLOSED"),
+                                   Critical = g.Count(x => x.Priority == "CRITICAL"),
+                               })
+                               .OrderByDescending(x => x.Total)
+                               .ToListAsync();
+
+        // Turnaround time = ResolvedAt - CreatedAt, in hours. Pulled client
+        // side for simplicity (SQL Server's DATEDIFF is tricky when you want
+        // both global and per-project rollups from the same dataset, and at
+        // current scale the extra round-trip cost is noise).
+        var resolvedTickets = await query
+            .Where(t => t.ResolvedAt != null)
+            .Select(t => new { t.ProjectId, t.CreatedAt, t.ResolvedAt })
+            .ToListAsync();
+
+        double? globalAvg = null;
+        double? globalMedian = null;
+        if (resolvedTickets.Count > 0)
+        {
+            var hours = resolvedTickets
+                .Select(t => (t.ResolvedAt!.Value - t.CreatedAt).TotalHours)
+                .OrderBy(h => h)
+                .ToList();
+            globalAvg = Math.Round(hours.Average(), 1);
+            globalMedian = Math.Round(hours[hours.Count / 2], 1);
+        }
+
+        var turnaroundByProject = resolvedTickets
+            .GroupBy(t => t.ProjectId)
+            .Select(g =>
+            {
+                var hours = g.Select(t => (t.ResolvedAt!.Value - t.CreatedAt).TotalHours).OrderBy(h => h).ToList();
+                return new
+                {
+                    ProjectId = g.Key,
+                    ResolvedCount = hours.Count,
+                    AvgHours = Math.Round(hours.Average(), 1),
+                    MedianHours = Math.Round(hours[hours.Count / 2], 1),
+                };
+            })
+            .ToList();
+
         return Ok(new
         {
             total,
@@ -304,7 +314,14 @@ public class TicketController : ControllerBase
             escalated,
             byStatus,
             byPriority,
-            byCategory
+            byCategory,
+            byProject,
+            turnaround = new
+            {
+                avgHours = globalAvg,
+                medianHours = globalMedian,
+                byProject = turnaroundByProject,
+            },
         });
     }
 

@@ -22,9 +22,13 @@ public class TicketNoteService
     public async Task<TicketNote> AddNoteAsync(long ticketId, string authorEmail, string? authorName,
         string content, string noteType, string source = "DASHBOARD")
     {
+        var ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == ticketId)
+            ?? throw new InvalidOperationException($"Ticket {ticketId} not found");
+
         var note = new TicketNote
         {
             TicketId = ticketId,
+            OrganizationId = ticket.OrganizationId,
             AuthorEmail = authorEmail,
             AuthorName = authorName,
             Content = content,
@@ -46,9 +50,13 @@ public class TicketNoteService
 
     public async Task<TicketNote> AddSlackNoteAsync(long ticketId, string slackUser, string content, string? threadTs)
     {
+        var ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == ticketId)
+            ?? throw new InvalidOperationException($"Ticket {ticketId} not found");
+
         var note = new TicketNote
         {
             TicketId = ticketId,
+            OrganizationId = ticket.OrganizationId,
             AuthorEmail = slackUser,
             AuthorName = slackUser,
             Content = content,

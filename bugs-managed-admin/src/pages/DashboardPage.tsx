@@ -8,6 +8,7 @@ import {
   EyeOutlined,
   TeamOutlined,
   AppstoreOutlined,
+  FieldTimeOutlined,
 } from '@ant-design/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { projectApi, ticketApi, type Project, type Ticket, type Stats } from '../api';
@@ -30,7 +31,6 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
   useEffect(() => {
     projectApi.list().then((data) => {
       setProjects(data);
-      // Default to "All Applications" for platform admins with multiple projects
       if (isPlatformAdmin && data.length > 1) {
         setSelectedProject('all');
       } else if (data.length > 0) {
@@ -50,37 +50,32 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
   }, [selectedProject]);
 
   const statCards = stats ? [
-    { title: 'Open', value: stats.OPEN, icon: <ExclamationCircleOutlined />, color: '#ff9800' },
-    { title: 'In Progress', value: stats.IN_PROGRESS, icon: <ClockCircleOutlined />, color: '#2196f3' },
-    { title: 'In Review', value: stats.IN_REVIEW, icon: <EyeOutlined />, color: '#9c27b0' },
-    { title: 'Ready for Testing', value: stats.READY_FOR_TESTING, icon: <BugOutlined />, color: '#00bcd4' },
-    { title: 'Resolved', value: stats.RESOLVED, icon: <CheckCircleOutlined />, color: '#4caf50' },
-    { title: 'Total', value: stats.TOTAL, icon: <TeamOutlined />, color: '#607d8b' },
+    { title: 'Open', value: stats.open, icon: <ExclamationCircleOutlined />, color: '#ff9800' },
+    { title: 'In Progress', value: stats.inProgress, icon: <ClockCircleOutlined />, color: '#2196f3' },
+    { title: 'Resolved', value: stats.resolved, icon: <CheckCircleOutlined />, color: '#4caf50' },
+    { title: 'Critical', value: stats.critical, icon: <BugOutlined />, color: '#f44336' },
+    { title: 'Escalated', value: stats.escalated, icon: <EyeOutlined />, color: '#9c27b0' },
+    { title: 'Total', value: stats.total, icon: <TeamOutlined />, color: '#607d8b' },
   ] : [];
 
   const columns: any[] = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: 'Title', dataIndex: 'title', key: 'title', ellipsis: true },
-  ];
-
-  // Show Application column when viewing all projects
-  if (selectedProject === 'all') {
-    columns.push({
-      title: 'Application',
+    // Host app chip — always visible so the dev team can see at a glance
+    // which Managed app a ticket came from. This is the per-app tenancy
+    // view the user asked for.
+    {
+      title: 'Host App',
       dataIndex: 'projectId',
       key: 'application',
-      width: 160,
+      width: 180,
       render: (v: number) => <Tag icon={<AppstoreOutlined />} color="blue">{projectMap[v] || `Project ${v}`}</Tag>,
-    });
-  }
-
-  columns.push(
+    },
     { title: 'Type', dataIndex: 'ticketType', key: 'ticketType', width: 130 },
     { title: 'Priority', dataIndex: 'priority', key: 'priority', width: 100 },
     { title: 'Status', dataIndex: 'status', key: 'status', width: 140 },
-  );
+  ];
 
-  // Show tenant column if any ticket has tenant data
   const hasTenantData = tickets.some(t => t.tenantName || t.tenantId);
   if (hasTenantData) {
     columns.push({
@@ -118,6 +113,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
     return Object.entries(days).map(([date, count]) => ({ date: date.slice(5), count }));
   })();
 
+  // Per-app volume + turnaround tables joined from the stats endpoint.
+  const byProjectRows = stats?.byProject ?? [];
+  const turnaroundByProjectMap = new Map(
+    (stats?.turnaround?.byProject ?? []).map(x => [x.projectId, x])
+  );
+
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
 
   const projectOptions: any[] = [];
@@ -125,6 +126,38 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
     projectOptions.push({ label: 'All Applications', value: 'all' });
   }
   projects.forEach((p) => projectOptions.push({ label: p.name, value: p.id }));
+
+  const projectColumns = [
+    {
+      title: 'Host App',
+      dataIndex: 'name',
+      key: 'name',
+      render: (v: string) => <Tag icon={<AppstoreOutlined />} color="blue">{v}</Tag>,
+    },
+    { title: 'Total', dataIndex: 'total', key: 'total', width: 80, align: 'right' as const },
+    { title: 'Open', dataIndex: 'open', key: 'open', width: 80, align: 'right' as const },
+    { title: 'In Progress', dataIndex: 'inProgress', key: 'inProgress', width: 110, align: 'right' as const },
+    { title: 'Resolved', dataIndex: 'resolved', key: 'resolved', width: 100, align: 'right' as const },
+    {
+      title: 'Critical',
+      dataIndex: 'critical',
+      key: 'critical',
+      width: 100,
+      align: 'right' as const,
+      render: (v: number) => v > 0 ? <Tag color="red">{v}</Tag> : v,
+    },
+    {
+      title: 'Avg Turnaround',
+      key: 'avgHours',
+      width: 150,
+      align: 'right' as const,
+      render: (_: any, r: any) => {
+        const t = turnaroundByProjectMap.get(r.projectId);
+        if (!t) return <span style={{ color: '#888' }}>—</span>;
+        return <span>{t.avgHours.toFixed(1)}h <span style={{ color: '#888' }}>({t.resolvedCount})</span></span>;
+      },
+    },
+  ];
 
   return (
     <div>
@@ -151,6 +184,33 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
         ))}
       </Row>
 
+      {stats?.turnaround && (stats.turnaround.avgHours !== null || stats.turnaround.medianHours !== null) && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderLeft: '3px solid #00bcd4' }}>
+              <Statistic
+                title="Avg Turnaround"
+                value={stats.turnaround.avgHours ?? 0}
+                precision={1}
+                suffix="h"
+                prefix={<FieldTimeOutlined />}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderLeft: '3px solid #00bcd4' }}>
+              <Statistic
+                title="Median Turnaround"
+                value={stats.turnaround.medianHours ?? 0}
+                precision={1}
+                suffix="h"
+                prefix={<FieldTimeOutlined />}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
       <Card title="Ticket Volume (Last 30 Days)" style={{ marginBottom: 24 }}>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={chartData}>
@@ -162,6 +222,18 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ isPlatformAdmin }) => {
           </BarChart>
         </ResponsiveContainer>
       </Card>
+
+      {byProjectRows.length > 0 && (
+        <Card title="Issues by Host App" style={{ marginBottom: 24 }}>
+          <Table
+            dataSource={byProjectRows}
+            columns={projectColumns}
+            rowKey="projectId"
+            size="small"
+            pagination={false}
+          />
+        </Card>
+      )}
 
       <Card title="Recent Tickets">
         <Table
