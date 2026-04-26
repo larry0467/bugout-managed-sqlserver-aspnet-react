@@ -1,0 +1,287 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "BugsManaged.Api/**"
+      - "bugs-managed-admin/**"
+      - "infra/**"
+      - ".github/workflows/deploy.yml"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [demo, beta]
+      image_tag:
+        description: "Image tag to promote (defaults to latest commit on master)"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  ACR_NAME: acrmpshared
+  APP_NAME: ${{ vars.APP_NAME }}
+  TF_STATE_RG: rg-mp-tfstate
+  TF_STATE_STORAGE: stmptfstatemkyf1j
+  TF_STATE_CONTAINER: tfstate
+
+jobs:
+  # =========================================================================
+  # Build (only on push to master and tag pushes)
+  # =========================================================================
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Azure login (dev UAMI for ACR push)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build and test API
+        working-directory: BugsManaged.Api
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.tag.outputs.value }} \
+                       -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:dev-latest \
+                       -f BugsManaged.Api/Dockerfile BugsManaged.Api/
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.tag.outputs.value }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:dev-latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web
+        working-directory: bugs-managed-admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: bugs-managed-admin/dist
+          retention-days: 7
+
+  # =========================================================================
+  # Deploy to dev — auto on push to master
+  # =========================================================================
+  deploy-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: bugs-managed-admin/dist
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform apply (dev)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-dev.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/dev.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ needs.build.outputs.image_tag }}"
+
+      - name: Get SWA deploy token
+        id: swa
+        working-directory: infra
+        run: |
+          token=$(terraform output -raw static_web_app_api_key)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: bugs-managed-admin/dist
+          skip_app_build: true
+
+      - name: Run EF migrations
+        working-directory: BugsManaged.Api
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+        run: |
+          dotnet tool install --global dotnet-ef
+          export PATH="$PATH:/root/.dotnet/tools:$HOME/.dotnet/tools"
+          # Connection string is built from KV secret using the runner's AAD token
+          dotnet ef database update --connection "$(az keyvault secret show --vault-name kv-${{ env.APP_NAME }}-dev --name sql-connection-string --query value -o tsv)"
+        continue-on-error: true # First-deploy DBs may not have migrations yet
+
+  # =========================================================================
+  # Deploy to demo — manual workflow_dispatch
+  # =========================================================================
+  deploy-demo:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'demo'
+    runs-on: ubuntu-latest
+    environment: demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEMO }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform apply (demo)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMAGE_TAG" ]]; then
+            IMAGE_TAG=$(git rev-parse origin/master)
+          fi
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-demo.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/demo.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:$IMAGE_TAG"
+
+  # =========================================================================
+  # Deploy to beta — manual workflow_dispatch
+  # =========================================================================
+  deploy-beta:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'beta'
+    runs-on: ubuntu-latest
+    environment: beta
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_BETA }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform apply (beta)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMAGE_TAG" ]]; then
+            IMAGE_TAG=$(git rev-parse origin/master)
+          fi
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-beta.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/beta.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:$IMAGE_TAG"
+
+  # =========================================================================
+  # Deploy to prod — git tag + GitHub Environment approval gate
+  # =========================================================================
+  deploy-prod:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform apply (prod)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-prod.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/prod.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ needs.build.outputs.image_tag }}"

@@ -1,0 +1,79 @@
+name: PR Validate
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "BugsManaged.Api/**"
+      - "bugs-managed-admin/**"
+      - "infra/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build and test API
+        working-directory: BugsManaged.Api
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          dotnet test --no-build --configuration Release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web
+        working-directory: bugs-managed-admin
+        run: |
+          npm ci
+          npm run build
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform plan (dev)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=rg-mp-tfstate" \
+            -backend-config="storage_account_name=stmptfstatemkyf1j" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=app-${{ vars.APP_NAME }}-dev.tfstate"
+          terraform plan -no-color \
+            -var-file=envs/dev.tfvars \
+            -var="app_name=${{ vars.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -out=tfplan 2>&1 | tee plan.txt
+          {
+            echo "## Terraform plan (dev)"
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
