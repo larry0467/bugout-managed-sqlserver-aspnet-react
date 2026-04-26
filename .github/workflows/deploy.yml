@@ -3,12 +3,6 @@ name: Deploy
 on:
   push:
     branches: [master]
-    paths:
-      - "BugsManaged.Api/**"
-      - "bugs-managed-admin/**"
-      - "infra/**"
-      - ".github/workflows/deploy.yml"
-  push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
