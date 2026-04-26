@@ -37,3 +37,9 @@ BugsManaged.Api/uploads/
 # Generated PDFs
 *.pdf
 !docs/**/*.pdf
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
