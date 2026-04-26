@@ -40,7 +40,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     theme = 'dark',
     position = 'bottom-right',
     orbSize = 24,
-    orbColors = ['#4caf50', '#ff9800'],
+    // Bug Out's identity is amber/orange ("we caught a bug" — warm, distinct
+    // from Jarvis blue/red so users can tell the orbs apart at a glance).
+    // Hosts can override; if they do, we treat [0]=core, [1]=ring.
+    orbColors = ['#fbbf24', '#fb923c'],
     // Tenant context
     tenantId,
     tenantName,
@@ -48,6 +51,11 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     appVersion,
     environment,
   } = props;
+
+  // Stable random suffix for SVG gradient IDs — must be unique per mount.
+  const orbIdRef = useRef<string>(
+    `bom-orb-${Math.random().toString(36).slice(2, 9)}`
+  );
 
   const [isOpen, setIsOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -73,17 +81,118 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   useEffect(() => {
     setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
 
-    // Inject keyframes style
+    // Inject keyframes + jarvis-style orb styles. Scoped under .bom-orb so we
+    // don't collide with the host's .jarvis-orb classes.
     if (!styleRef.current) {
       const style = document.createElement('style');
       style.textContent = `
-        @keyframes bom-orb-pulse {
-          0%, 100% { transform: scale(1); opacity: 0.9; }
-          50% { transform: scale(1.15); opacity: 1; }
-        }
         @keyframes bom-fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes bom-orb-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes bom-orb-core {
+          0%, 100% { transform: scale(1);    opacity: 0.92; }
+          50%      { transform: scale(1.06); opacity: 1;    }
+        }
+        @keyframes bom-orb-halo {
+          0%, 100% { opacity: 0.85; }
+          50%      { opacity: 1;    }
+        }
+        @keyframes bom-orb-scan {
+          0%   { transform: translateY(-60%); opacity: 0;   }
+          20%  { opacity: 0.9; }
+          80%  { opacity: 0.9; }
+          100% { transform: translateY(60%);  opacity: 0;   }
+        }
+        .bom-orb-wrap {
+          position: fixed;
+          z-index: 999999;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          border: 0;
+          padding: 0;
+          cursor: pointer;
+          outline: none;
+        }
+        .bom-orb-wrap:focus-visible {
+          box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.55);
+          border-radius: 50%;
+        }
+        .bom-orb {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          filter:
+            drop-shadow(0 0 2px var(--bom-halo))
+            drop-shadow(0 0 12px var(--bom-halo))
+            drop-shadow(0 0 28px var(--bom-halo));
+          transition: filter 220ms ease-out;
+        }
+        .bom-orb-wrap:hover .bom-orb {
+          filter:
+            drop-shadow(0 0 3px var(--bom-halo))
+            drop-shadow(0 0 18px var(--bom-halo))
+            drop-shadow(0 0 36px var(--bom-halo));
+        }
+        .bom-orb__svg { display: block; width: 100%; height: 100%; }
+        .bom-orb__halo {
+          animation: bom-orb-halo var(--bom-pulse, 4s) ease-in-out infinite;
+          transform-origin: 50% 50%;
+        }
+        .bom-orb__core {
+          transform-origin: 50% 50%;
+          animation: bom-orb-core var(--bom-pulse, 4s) ease-in-out infinite;
+        }
+        .bom-orb__spin-cw {
+          transform-origin: 50% 50%;
+          animation: bom-orb-spin var(--bom-spin, 18s) linear infinite;
+        }
+        .bom-orb__spin-ccw {
+          transform-origin: 50% 50%;
+          animation: bom-orb-spin var(--bom-spin, 18s) linear infinite reverse;
+        }
+        .bom-orb__spin-cw-fast {
+          transform-origin: 50% 50%;
+          animation: bom-orb-spin calc(var(--bom-spin, 18s) / 3) linear infinite;
+        }
+        .bom-orb-wrap:hover .bom-orb__spin-cw,
+        .bom-orb-wrap:hover .bom-orb__spin-ccw {
+          animation-duration: calc(var(--bom-spin, 18s) / 2);
+        }
+        .bom-orb-wrap:hover .bom-orb__core,
+        .bom-orb-wrap:hover .bom-orb__halo {
+          animation-duration: calc(var(--bom-pulse, 4s) / 1.6);
+        }
+        .bom-orb__scan {
+          position: absolute;
+          inset: 8% 18%;
+          border-radius: 50%;
+          pointer-events: none;
+          background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(255, 247, 220, 0) 40%,
+            rgba(255, 247, 220, 0.22) 50%,
+            rgba(255, 247, 220, 0) 60%,
+            transparent 100%
+          );
+          mix-blend-mode: screen;
+          animation: bom-orb-scan calc(var(--bom-pulse, 4s) * 1.4) ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .bom-orb__spin-cw,
+          .bom-orb__spin-ccw,
+          .bom-orb__spin-cw-fast,
+          .bom-orb__core,
+          .bom-orb__halo,
+          .bom-orb__scan { animation: none !important; }
         }
       `;
       document.head.appendChild(style);
@@ -365,34 +474,168 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
   return (
     <>
-      {/* Floating Orb */}
-      <div
-        onClick={() => {
-          if (!isOpen) resetForm();
-          setIsOpen(!isOpen);
-        }}
-        style={{
-          position: 'fixed',
-          ...posStyle,
-          width: orbSize * 2,
-          height: orbSize * 2,
-          borderRadius: '50%',
-          background: `linear-gradient(135deg, ${orbColors[0]}, ${orbColors[1]})`,
-          cursor: 'pointer',
-          zIndex: 999999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: `0 4px 20px ${orbColors[0]}66`,
-          animation: 'bom-orb-pulse 3s ease-in-out infinite',
-        }}
-        title="Report a bug or request a feature"
-      >
-        <svg width={orbSize} height={orbSize} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 8v4M12 16h.01" />
-        </svg>
-      </div>
+      {/* Floating Orb — Jarvis-style animated SVG, amber tone */}
+      {(() => {
+        const px = orbSize * 2;
+        const core = orbColors[0];
+        const ring = orbColors[1];
+        // Halo derived from core color so swapping orbColors stays consistent.
+        const halo = `${core}8c`; // ~55% alpha
+        const id = orbIdRef.current;
+        return (
+          <button
+            type="button"
+            role="button"
+            aria-label="Report a bug"
+            title="Report a bug or request a feature"
+            onClick={() => {
+              if (!isOpen) resetForm();
+              setIsOpen(!isOpen);
+            }}
+            className="bom-orb-wrap"
+            style={
+              {
+                ...posStyle,
+                width: px,
+                height: px,
+                ['--bom-core' as any]: core,
+                ['--bom-ring' as any]: ring,
+                ['--bom-halo' as any]: halo,
+                ['--bom-spin' as any]: '18s',
+                ['--bom-pulse' as any]: '4s',
+              } as React.CSSProperties
+            }
+          >
+            <span className="bom-orb">
+              <svg
+                viewBox="0 0 100 100"
+                width={px}
+                height={px}
+                aria-hidden="true"
+                className="bom-orb__svg"
+              >
+                <defs>
+                  <radialGradient id={`${id}-core`} cx="50%" cy="50%" r="50%">
+                    <stop offset="0%"   stopColor={core} stopOpacity="1" />
+                    <stop offset="55%"  stopColor={core} stopOpacity="0.55" />
+                    <stop offset="100%" stopColor="#1a0f00" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id={`${id}-iris`} cx="50%" cy="50%" r="50%">
+                    <stop offset="0%"   stopColor="#fff7dc" stopOpacity="0.95" />
+                    <stop offset="40%"  stopColor={core}    stopOpacity="0.7" />
+                    <stop offset="100%" stopColor={core}    stopOpacity="0" />
+                  </radialGradient>
+                </defs>
+
+                {/* Outer halo — radial bloom */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="48"
+                  fill={`url(#${id}-core)`}
+                  className="bom-orb__halo"
+                />
+
+                {/* Outer ring with tick marks (rotates clockwise) */}
+                <g className="bom-orb__spin-cw">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="44"
+                    fill="none"
+                    stroke={ring}
+                    strokeOpacity="0.55"
+                    strokeWidth="0.5"
+                  />
+                  {Array.from({ length: 36 }).map((_, i) => {
+                    const a = (i * 10 * Math.PI) / 180;
+                    const x1 = 50 + Math.cos(a) * 41;
+                    const y1 = 50 + Math.sin(a) * 41;
+                    const x2 = 50 + Math.cos(a) * (i % 3 === 0 ? 44 : 43);
+                    const y2 = 50 + Math.sin(a) * (i % 3 === 0 ? 44 : 43);
+                    return (
+                      <line
+                        key={i}
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={ring}
+                        strokeOpacity={i % 3 === 0 ? 0.8 : 0.35}
+                        strokeWidth="0.8"
+                      />
+                    );
+                  })}
+                </g>
+
+                {/* Mid ring — counter-rotating arc segments */}
+                <g className="bom-orb__spin-ccw">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="36"
+                    fill="none"
+                    stroke={ring}
+                    strokeOpacity="0.18"
+                    strokeWidth="0.5"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="36"
+                    fill="none"
+                    stroke={ring}
+                    strokeOpacity="0.85"
+                    strokeWidth="1.4"
+                    strokeDasharray="42 30 18 36 24 32"
+                    strokeLinecap="round"
+                  />
+                </g>
+
+                {/* Inner ring — dashed sweep */}
+                <g className="bom-orb__spin-cw-fast">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="28"
+                    fill="none"
+                    stroke={core}
+                    strokeOpacity="0.7"
+                    strokeWidth="0.9"
+                    strokeDasharray="2 4"
+                  />
+                </g>
+
+                {/* Core iris (pulses) */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="20"
+                  fill={`url(#${id}-iris)`}
+                  className="bom-orb__core"
+                />
+
+                {/* Bug glyph dead-center — tiny "i" mark identifies this as the
+                    bug button (the visual cue users learn). Drawn on top of
+                    the iris so it stays legible at all sizes. */}
+                <g stroke="#1a0f00" strokeOpacity="0.55" strokeLinecap="round">
+                  <line x1="50" y1="42" x2="50" y2="42" strokeWidth="3.4" />
+                  <line x1="50" y1="48" x2="50" y2="58" strokeWidth="2.4" />
+                </g>
+
+                {/* Crosshair lines */}
+                <line x1="50" y1="6"  x2="50" y2="14" stroke={ring} strokeOpacity="0.7" strokeWidth="0.6" />
+                <line x1="50" y1="86" x2="50" y2="94" stroke={ring} strokeOpacity="0.7" strokeWidth="0.6" />
+                <line x1="6"  y1="50" x2="14" y2="50" stroke={ring} strokeOpacity="0.7" strokeWidth="0.6" />
+                <line x1="86" y1="50" x2="94" y2="50" stroke={ring} strokeOpacity="0.7" strokeWidth="0.6" />
+              </svg>
+
+              {/* Vertical scan sweep */}
+              <span className="bom-orb__scan" />
+            </span>
+          </button>
+        );
+      })()}
 
       {/* Modal */}
       {isOpen && (
