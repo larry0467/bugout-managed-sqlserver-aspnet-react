@@ -10,7 +10,7 @@ on:
         description: "Target environment"
         required: true
         type: choice
-        options: [demo, beta]
+        options: [demo, beta, prod]
       image_tag:
         description: "Image tag to promote (defaults to latest commit on master)"
         required: false
@@ -240,6 +240,47 @@ jobs:
             -backend-config="key=app-${{ env.APP_NAME }}-beta.tfstate"
           terraform apply -auto-approve \
             -var-file=envs/beta.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:$IMAGE_TAG"
+
+  # =========================================================================
+  # Deploy to prod — manual workflow_dispatch (cockpit-native promotion).
+  # Same `prod` GitHub Environment as the tag-push path below; the required-
+  # reviewers gate configured on that Environment fires either way.
+  # =========================================================================
+  deploy-prod-dispatch:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Terraform apply (prod)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMAGE_TAG" ]]; then
+            IMAGE_TAG=$(git rev-parse origin/master)
+          fi
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-prod.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/prod.tfvars \
             -var="app_name=${{ env.APP_NAME }}" \
             -var="github_repo=${{ github.repository }}" \
             -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:$IMAGE_TAG"
