@@ -71,6 +71,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [isMobile, setIsMobile] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
+  // Mini-controller floating position. Defaults to top-right; user can
+  // drag it anywhere. Persisted only for the lifetime of one recording.
+  const [miniPos, setMiniPos] = useState<{ top: number; left: number }>(() => ({
+    top: 24,
+    left: typeof window !== 'undefined' ? Math.max(24, window.innerWidth - 280) : 24,
+  }));
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<any>(null);
@@ -89,6 +97,11 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
         @keyframes bom-fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes bom-pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(229,57,53,0.6); }
+          70%  { box-shadow: 0 0 0 8px rgba(229,57,53,0); }
+          100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); }
         }
         @keyframes bom-orb-spin {
           from { transform: rotate(0deg); }
@@ -288,7 +301,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
           if (networkErrorsRef.current.length > 30) networkErrorsRef.current.shift();
         }
       });
-      return origXHRSend.apply(this, args);
+      // XHR.send signature varies by overload; the rest spread is fine at
+      // runtime but tsc's strict overload-resolution doesn't accept it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (origXHRSend as any).apply(this, args);
     };
 
     return () => {
@@ -339,6 +355,11 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
+      // Get the big modal out of the user's way so they can actually
+      // demonstrate the bug. The mini controller (rendered below the
+      // modal block) keeps a Stop button visible. Modal reopens
+      // automatically when stopRecording fires.
+      setIsOpen(false);
 
       // Speech recognition
       const SpeechRecognition =
@@ -378,6 +399,9 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       recognitionRef.current = null;
     }
     setIsRecording(false);
+    // Bring the modal back so the user can review the captured recording
+    // and finish filling out the form before submitting.
+    setIsOpen(true);
   }, []);
 
   const resetForm = () => {
@@ -930,6 +954,101 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Mini recording controller — renders independently of the modal so
+          the user can navigate the page and reproduce the bug while the
+          screen is being captured. Drag from the grip to reposition. */}
+      {isRecording && (
+        <div
+          style={{
+            position: 'fixed',
+            top: miniPos.top,
+            left: miniPos.left,
+            zIndex: 1000001,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 12px',
+            background: bg,
+            color: fg,
+            borderRadius: 999,
+            border: `1px solid ${borderColor}`,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: 13,
+            userSelect: 'none',
+          }}
+        >
+          {/* Drag grip — mousedown starts a drag; the document-level
+              listeners (added on mousedown, removed on mouseup) keep
+              the controller pinned to the cursor even when it leaves
+              the small grip area. */}
+          <div
+            onMouseDown={(e) => {
+              dragOffsetRef.current = {
+                x: e.clientX - miniPos.left,
+                y: e.clientY - miniPos.top,
+              };
+              const onMove = (ev: MouseEvent) => {
+                if (!dragOffsetRef.current) return;
+                setMiniPos({
+                  left: Math.max(0, Math.min(window.innerWidth - 240, ev.clientX - dragOffsetRef.current.x)),
+                  top: Math.max(0, Math.min(window.innerHeight - 50, ev.clientY - dragOffsetRef.current.y)),
+                });
+              };
+              const onUp = () => {
+                dragOffsetRef.current = null;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+              };
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onUp);
+            }}
+            style={{
+              cursor: 'grab',
+              padding: '2px 4px',
+              opacity: 0.6,
+              fontSize: 16,
+              lineHeight: 1,
+            }}
+            title="Drag to move"
+          >
+            &#x2630;
+          </div>
+
+          {/* Live indicator */}
+          <span
+            style={{
+              display: 'inline-block',
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: '#e53935',
+              boxShadow: '0 0 0 0 rgba(229,57,53,0.6)',
+              animation: 'bom-pulse 1.4s ease-out infinite',
+            }}
+          />
+          <span style={{ fontWeight: 600 }}>Recording</span>
+
+          {/* Stop button — terminates the MediaRecorder and reopens the
+              big modal with the captured blob ready for review. */}
+          <div
+            onClick={stopRecording}
+            style={{
+              cursor: 'pointer',
+              background: '#e53935',
+              color: '#fff',
+              borderRadius: 999,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: 0.3,
+            }}
+          >
+            STOP
           </div>
         </div>
       )}
