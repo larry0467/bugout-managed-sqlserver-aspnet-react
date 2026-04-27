@@ -72,3 +72,16 @@ variable "platform_state_container" {
   type    = string
   default = "tfstate"
 }
+
+variable "anthropic_enabled" {
+  description = "Wire the Anthropic API key into the Container App so the Claude developer agent can run. Off by default; set true in prod (and any env that needs the agent)."
+  type        = bool
+  default     = false
+}
+
+variable "anthropic_api_key" {
+  description = "Placeholder for terraform; the live secret in KV is owned outside terraform (ignore_changes=[value]). Rotate via az keyvault secret set + az containerapp revision restart."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

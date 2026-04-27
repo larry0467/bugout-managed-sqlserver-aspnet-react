@@ -34,4 +34,6 @@ module "app" {
   static_web_app_sku         = var.static_web_app_sku
   extra_secrets              = var.extra_secrets
   extra_cors_origins         = var.extra_cors_origins
+  anthropic_enabled          = var.anthropic_enabled
+  anthropic_api_key          = var.anthropic_api_key
 }
