@@ -22,7 +22,7 @@ public class User
     public string FullName { get; set; } = string.Empty;
 
     [Required, MaxLength(50)]
-    public string Role { get; set; } = "PROJECT_ADMIN"; // PLATFORM_ADMIN, PROJECT_ADMIN, DEVELOPER, VIEWER
+    public string Role { get; set; } = "SUPER_ADMIN"; // PLATFORM_OWNER, SUPER_ADMIN, DEVELOPER, VIEWER
 
     // Only meaningful when Role == "DEVELOPER". Drives the filtered assignment dropdown.
     [MaxLength(20)]

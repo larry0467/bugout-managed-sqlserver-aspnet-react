@@ -66,7 +66,7 @@ public class TeamController : ControllerBase
     public async Task<IActionResult> InviteMember([FromBody] InviteRequest request)
     {
         var role = User.FindFirstValue(ClaimTypes.Role);
-        if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
+        if (role != "PLATFORM_OWNER" && role != "SUPER_ADMIN")
             return Forbid();
 
         if (_org.CurrentOrganizationId == null)
@@ -105,7 +105,7 @@ public class TeamController : ControllerBase
     public async Task<IActionResult> UpdateRole(long userId, [FromBody] UpdateRoleRequest request)
     {
         var role = User.FindFirstValue(ClaimTypes.Role);
-        if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
+        if (role != "PLATFORM_OWNER" && role != "SUPER_ADMIN")
             return Forbid();
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
@@ -134,7 +134,7 @@ public class TeamController : ControllerBase
     public async Task<IActionResult> RemoveMember(long userId)
     {
         var role = User.FindFirstValue(ClaimTypes.Role);
-        if (role != "PLATFORM_ADMIN" && role != "PROJECT_ADMIN")
+        if (role != "PLATFORM_OWNER" && role != "SUPER_ADMIN")
             return Forbid();
 
         var currentUserIdClaim = User.FindFirstValue("userId");

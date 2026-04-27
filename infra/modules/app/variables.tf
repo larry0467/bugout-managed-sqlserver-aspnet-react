@@ -105,6 +105,37 @@ variable "extra_secrets" {
   default     = {}
 }
 
+variable "anthropic_enabled" {
+  description = "Whether to provision the Anthropic API key secret in KV and inject Anthropic__* env vars into the Container App."
+  type        = bool
+  default     = false
+}
+
+variable "anthropic_api_key" {
+  description = "Anthropic API key written into KV when anthropic_enabled = true. Lifecycle ignores changes after creation."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "anthropic_default_model" {
+  description = "Default Anthropic model id injected as Anthropic__DefaultModel env var."
+  type        = string
+  default     = "claude-haiku-4-5"
+}
+
+variable "anthropic_escalation_models" {
+  description = "Comma-separated escalation model ids injected as Anthropic__EscalationModels env var."
+  type        = string
+  default     = "claude-sonnet-4-6,claude-opus-4-7"
+}
+
+variable "tfstate_storage_account_id" {
+  description = "Resource ID of the storage account holding TF state. UAMI gets Storage Blob Data Contributor so GH Actions can read/write state via OIDC."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Common tags applied to all per-app resources."
   type        = map(string)

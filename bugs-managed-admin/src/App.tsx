@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   UserOutlined,
   TeamOutlined,
+  TrophyOutlined,
 } from '@ant-design/icons';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -16,6 +17,8 @@ import TicketsPage from './pages/TicketsPage';
 import SettingsPage from './pages/SettingsPage';
 import TeamPage from './pages/TeamPage';
 import LoginPage from './pages/LoginPage';
+import PerformancePage from './pages/PerformancePage';
+import SandboxBanner from './components/SandboxBanner';
 import type { AuthUser, Organization } from './api';
 
 const { Sider, Content, Header } = Layout;
@@ -61,24 +64,32 @@ const App: React.FC = () => {
 
   if (!user) {
     return (
-      <Routes>
-        <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
-      </Routes>
+      <>
+        {/* Banner mounts pre-login too — capabilities is anonymous so a
+            prospect landing on /login still sees "you're in sandbox". */}
+        <SandboxBanner user={null} />
+        <Routes>
+          <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
+        </Routes>
+      </>
     );
   }
 
-  const isPlatformAdmin = user.role === 'PLATFORM_ADMIN';
+  const isPlatformAdmin = user.role === 'PLATFORM_OWNER';
 
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">Dashboard</Link> },
     { key: '/projects', icon: <ProjectOutlined />, label: <Link to="/projects">Applications</Link> },
     { key: '/tickets', icon: <BugOutlined />, label: <Link to="/tickets">Tickets</Link> },
+    { key: '/performance', icon: <TrophyOutlined />, label: <Link to="/performance">Performance</Link> },
     { key: '/team', icon: <TeamOutlined />, label: <Link to="/team">Team</Link> },
     { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', flexDirection: 'column' }}>
+      <SandboxBanner user={user} />
+      <Layout>
       <Sider width={220} style={{ background: '#0a0a0a' }}>
         <div style={{
           padding: '20px 24px',
@@ -116,11 +127,13 @@ const App: React.FC = () => {
             <Route path="/" element={<DashboardPage isPlatformAdmin={isPlatformAdmin} />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/tickets" element={<TicketsPage isPlatformAdmin={isPlatformAdmin} />} />
+            <Route path="/performance" element={<PerformancePage isPlatformAdmin={isPlatformAdmin} />} />
             <Route path="/team" element={<TeamPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
           </Routes>
         </Content>
+      </Layout>
       </Layout>
     </Layout>
   );

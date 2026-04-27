@@ -47,7 +47,7 @@ public class AuthController : ControllerBase
             Email = request.Email,
             Password = BCrypt.Net.BCrypt.HashPassword(request.Password),
             FullName = request.FullName,
-            Role = "PROJECT_ADMIN"
+            Role = "SUPER_ADMIN"
         };
         _db.Users.Add(user);
         await _db.SaveChangesAsync();

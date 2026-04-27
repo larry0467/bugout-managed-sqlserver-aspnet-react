@@ -71,13 +71,15 @@ resource "azurerm_mssql_database" "app" {
   name        = var.app_name
   server_id   = var.sql_server_id
   collation   = "SQL_Latin1_General_CP1_CI_AS"
-  sku_name    = var.environment == "prod" ? "S1" : "GP_S_Gen5_1"
-  # beta is "internal prod" for MP/Protocall/PIR — bigger storage so audit trails fit
-  max_size_gb = contains(["prod", "beta"], var.environment) ? 50 : 5
+  # prod, beta, and sandbox all get S1 always-warm. Beta is "internal prod" for
+  # MP/Protocall/PIR; sandbox is a customer-facing prod clone with seeded data.
+  # Only dev runs serverless GP_S so it scales to zero between feature pushes.
+  sku_name    = contains(["prod", "beta", "sandbox"], var.environment) ? "S1" : "GP_S_Gen5_1"
+  max_size_gb = contains(["prod", "beta", "sandbox"], var.environment) ? 50 : 5
 
-  # Serverless auto-pause for dev/demo only — beta and prod stay always-warm
-  auto_pause_delay_in_minutes = contains(["prod", "beta"], var.environment) ? -1 : 60
-  min_capacity                = contains(["prod", "beta"], var.environment) ? null : 0.5
+  # Serverless auto-pause is dev-only — beta, prod, and sandbox stay always-warm
+  auto_pause_delay_in_minutes = contains(["prod", "beta", "sandbox"], var.environment) ? -1 : 60
+  min_capacity                = contains(["prod", "beta", "sandbox"], var.environment) ? null : 0.5
 
   tags = local.tags
 }
@@ -131,6 +133,20 @@ resource "azurerm_key_vault_secret" "extra" {
   depends_on = [azurerm_role_assignment.kv_deployer_officer]
 }
 
+resource "azurerm_key_vault_secret" "anthropic_api_key" {
+  count        = var.anthropic_enabled ? 1 : 0
+  name         = "anthropic-api-key"
+  key_vault_id = azurerm_key_vault.app.id
+  value        = var.anthropic_api_key
+
+  lifecycle {
+    # Rotate via 'az keyvault secret set' — TF must not stomp the live value.
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_deployer_officer]
+}
+
 # -----------------------------------------------------------------------------
 # Application Insights — workspace-based, points at platform LAW
 # -----------------------------------------------------------------------------
@@ -159,6 +175,14 @@ resource "azurerm_role_assignment" "acr_uami_push" {
   count                = var.environment == "dev" ? 1 : 0
   scope                = var.acr_id
   role_definition_name = "AcrPush"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+
+# UAMI needs to read/write the TF state blob via OIDC during GitHub Actions runs
+resource "azurerm_role_assignment" "tfstate_uami_blob" {
+  count                = var.tfstate_storage_account_id != "" ? 1 : 0
+  scope                = var.tfstate_storage_account_id
+  role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_user_assigned_identity.app.principal_id
 }
 
@@ -208,8 +232,11 @@ resource "azurerm_container_app" "app" {
       memory = var.container_app_memory
 
       env {
-        name  = "ASPNETCORE_ENVIRONMENT"
-        value = var.environment == "prod" ? "Production" : title(var.environment)
+        name = "ASPNETCORE_ENVIRONMENT"
+        # Map to canonical .NET environment names so framework auth, swagger,
+        # detailed-errors, etc. flip correctly. `title("dev")` would produce "Dev"
+        # which doesn't match `IsDevelopment()` checks in app code.
+        value = var.environment == "prod" ? "Production" : "Development"
       }
       env {
         name  = "ASPNETCORE_URLS"
@@ -227,6 +254,14 @@ resource "azurerm_container_app" "app" {
         name        = "ConnectionStrings__Default"
         secret_name = "sql-connection-string"
       }
+
+      dynamic "env" {
+        for_each = var.anthropic_enabled ? [1] : []
+        content {
+          name        = "Anthropic__ApiKey"
+          secret_name = "anthropic-api-key"
+        }
+      }
     }
 
     http_scale_rule {
@@ -239,6 +274,15 @@ resource "azurerm_container_app" "app" {
     name                = "sql-connection-string"
     key_vault_secret_id = azurerm_key_vault_secret.sql_connection_string.versionless_id
     identity            = azurerm_user_assigned_identity.app.id
+  }
+
+  dynamic "secret" {
+    for_each = var.anthropic_enabled ? [1] : []
+    content {
+      name                = "anthropic-api-key"
+      key_vault_secret_id = azurerm_key_vault_secret.anthropic_api_key[0].versionless_id
+      identity            = azurerm_user_assigned_identity.app.id
+    }
   }
 
   depends_on = [

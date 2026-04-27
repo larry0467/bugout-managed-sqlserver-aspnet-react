@@ -10,7 +10,7 @@ on:
         description: "Target environment"
         required: true
         type: choice
-        options: [demo, beta]
+        options: [beta, sandbox]
       image_tag:
         description: "Image tag to promote (defaults to latest commit on master)"
         required: false
@@ -162,29 +162,40 @@ jobs:
         run: |
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:/root/.dotnet/tools:$HOME/.dotnet/tools"
-          # Connection string is built from KV secret using the runner's AAD token
-          dotnet ef database update --connection "$(az keyvault secret show --vault-name kv-${{ env.APP_NAME }}-dev --name sql-connection-string --query value -o tsv)"
-        continue-on-error: true # First-deploy DBs may not have migrations yet
+          # Restore project so dotnet-ef can load the Api assembly
+          dotnet restore
+          # KV name has a per-app random suffix (kv-{app}-{env}-{4-char}). Look it up
+          # dynamically — hardcoding kv-{app}-dev breaks because the suffix isn't known.
+          KV_NAME=$(az keyvault list -g rg-${{ env.APP_NAME }}-dev --query "[?starts_with(name, 'kv-${{ env.APP_NAME }}-dev-')].name | [0]" -o tsv)
+          if [[ -z "$KV_NAME" ]]; then echo "::error::No KV found in rg-${{ env.APP_NAME }}-dev matching kv-${{ env.APP_NAME }}-dev-*"; exit 1; fi
+          dotnet ef database update --connection "$(az keyvault secret show --vault-name $KV_NAME --name sql-connection-string --query value -o tsv)"
+        # NOT continue-on-error: a failed migration leaves the deployed Container App
+        # crashing on first read against new columns. Block the deploy instead.
 
   # =========================================================================
-  # Deploy to demo — manual workflow_dispatch
+  # Deploy to sandbox — workflow_dispatch (manual). Sandbox runs the same
+  # image as prod against a separate DB seeded with synthetic data; the
+  # Hangfire midnight-CT reset job and admin reset endpoint auto-activate
+  # via the Sandbox:Enabled flag (set in appsettings.Sandbox.json + the
+  # Container App's ASPNETCORE_ENVIRONMENT=Sandbox env var). NOT a CI-ladder
+  # promotion target.
   # =========================================================================
-  deploy-demo:
-    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'demo'
+  deploy-sandbox:
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'sandbox'
     runs-on: ubuntu-latest
-    environment: demo
+    environment: sandbox
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID_DEMO }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID_SANDBOX }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.14.9"
 
-      - name: Terraform apply (demo)
+      - name: Terraform apply (sandbox)
         working-directory: infra
         env:
           ARM_USE_AZUREAD: "true"
@@ -198,9 +209,9 @@ jobs:
             -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
             -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
             -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
-            -backend-config="key=app-${{ env.APP_NAME }}-demo.tfstate"
+            -backend-config="key=app-${{ env.APP_NAME }}-sandbox.tfstate"
           terraform apply -auto-approve \
-            -var-file=envs/demo.tfvars \
+            -var-file=envs/sandbox.tfvars \
             -var="app_name=${{ env.APP_NAME }}" \
             -var="github_repo=${{ github.repository }}" \
             -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:$IMAGE_TAG"

@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string] $AppName,
-  [Parameter(Mandatory)] [ValidateSet('dev','demo','beta','prod')] [string] $Environment,
+  [Parameter(Mandatory)] [ValidateSet('dev','beta','prod','sandbox')] [string] $Environment,
   [Parameter(Mandatory)] [string] $GitHubRepo,
   [string] $DefaultBranch = 'main',
   [string] $TfStateResourceGroup = 'rg-mp-tfstate',

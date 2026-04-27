@@ -32,7 +32,7 @@ public class AuthService
             Password = BCrypt.Net.BCrypt.HashPassword(password),
             FullName = fullName,
             OrganizationId = org.Id,
-            Role = "PROJECT_ADMIN"
+            Role = "SUPER_ADMIN"
         };
 
         _db.Users.Add(user);

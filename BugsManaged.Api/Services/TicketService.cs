@@ -215,7 +215,7 @@ public class TicketService
             // Notify all admins in the organization
             var admins = await _db.Users.IgnoreQueryFilters()
                 .Where(u => u.OrganizationId == project.OrganizationId
-                    && (u.Role == "PROJECT_ADMIN" || u.Role == "PLATFORM_ADMIN"))
+                    && (u.Role == "SUPER_ADMIN" || u.Role == "PLATFORM_OWNER"))
                 .ToListAsync();
 
             foreach (var admin in admins)

@@ -90,6 +90,48 @@ public class Ticket
     public DateTime? EscalatedAt { get; set; }
     public DateTime? ResolvedAt { get; set; }
 
+    // Tiered escalation chain. New tickets default to SUPER_ADMIN_REVIEW
+    // (auto-routed to subscriber's super admin). The super admin can escalate
+    // to the platform owner, who in turn assigns to either a HUMAN developer
+    // or to CLAUDE (the AI sidecar). The dev (human or Claude) submits work
+    // back for owner approval, which closes the loop with COMPLETED — or
+    // bounces back to ASSIGNED_HUMAN via request-changes.
+    [Required, MaxLength(50)]
+    public string EscalationStage { get; set; } = "SUPER_ADMIN_REVIEW";
+    // NONE, SUPER_ADMIN_REVIEW, PLATFORM_OWNER_REVIEW, ASSIGNED_HUMAN,
+    // ASSIGNED_CLAUDE, OWNER_APPROVAL_PENDING, COMPLETED
+
+    [MaxLength(20)]
+    public string? AssigneeType { get; set; } // HUMAN, CLAUDE
+
+    public DateTime? EscalatedToOwnerAt { get; set; }
+
+    [MaxLength(255)]
+    public string? EscalatedToOwnerBy { get; set; }
+
+    public DateTime? AssignedAt { get; set; }
+
+    [MaxLength(255)]
+    public string? AssignedBy { get; set; }
+
+    // Owner-approval loop. Set when a developer (human or Claude) submits
+    // their work for owner review. Cleared on request-changes so the dev's
+    // SLA clock restarts cleanly.
+    public DateTime? SubmittedForApprovalAt { get; set; }
+
+    [MaxLength(255)]
+    public string? SubmittedForApprovalBy { get; set; }
+
+    public DateTime? ApprovedAt { get; set; }
+
+    [MaxLength(255)]
+    public string? ApprovedBy { get; set; }
+
+    // Number of times the owner bounced this ticket back to the dev with
+    // request-changes. Used by the performance dashboard to compute a
+    // developer's revision rate.
+    public int RevisionCount { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

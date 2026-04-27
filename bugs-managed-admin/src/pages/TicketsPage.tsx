@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Collapse, List, Divider } from 'antd';
+import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Tabs, Divider } from 'antd';
 import {
   PlayCircleOutlined,
-  ArrowUpOutlined,
   CheckCircleOutlined,
   WarningOutlined,
   ApiOutlined,
@@ -14,8 +13,11 @@ import {
   CloudOutlined,
   SendOutlined,
   DeleteOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, type Project, type Ticket, type TicketNote, type TeamMember } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage } from '../api';
+import EscalationPanel from '../components/EscalationPanel';
+import ClaudeActivityTab from '../components/ClaudeActivityTab';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -53,6 +55,20 @@ const statuses = ['OPEN', 'IN_PROGRESS', 'IN_REVIEW', 'READY_FOR_TESTING', 'VERI
 const types = ['BUG', 'FEATURE_REQUEST', 'QUESTION'];
 const environments = ['PRODUCTION', 'STAGING', 'DEVELOPMENT'];
 
+const escalationStages: { value: EscalationStage; label: string; color: string }[] = [
+  { value: 'NONE', label: 'Not escalated', color: 'default' },
+  { value: 'SUPER_ADMIN_REVIEW', label: 'Super-admin review', color: 'gold' },
+  { value: 'PLATFORM_OWNER_REVIEW', label: 'Platform-owner review', color: 'volcano' },
+  { value: 'ASSIGNED_HUMAN', label: 'Assigned (Human)', color: 'green' },
+  { value: 'ASSIGNED_CLAUDE', label: 'Assigned (Claude)', color: 'geekblue' },
+  { value: 'OWNER_APPROVAL_PENDING', label: 'Owner approval', color: 'purple' },
+  { value: 'COMPLETED', label: 'Completed', color: 'success' },
+];
+
+const escalationStageMap = Object.fromEntries(
+  escalationStages.map((s) => [s.value, s])
+) as Record<EscalationStage, { value: EscalationStage; label: string; color: string }>;
+
 const developerCategories = [
   { value: 'UI', label: 'UI', color: '#e91e63' },
   { value: 'UX', label: 'UX', color: '#9c27b0' },
@@ -83,9 +99,13 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
+  const [stageFilter, setStageFilter] = useState<EscalationStage | undefined>();
   const [videoModal, setVideoModal] = useState<number | null>(null);
   const [resolveModal, setResolveModal] = useState<Ticket | null>(null);
   const [resolution, setResolution] = useState('');
+  const [activeTabByTicket, setActiveTabByTicket] = useState<Record<number, string>>({});
+
+  const currentUser: AuthUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
 
   // Team members for assignment dropdown
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -147,11 +167,13 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     loadTickets();
   };
 
-  const handleEscalate = async (ticket: Ticket) => {
-    const currentUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
-    await ticketApi.escalate(ticket.id, currentUser.email || 'admin');
-    message.success('Ticket escalated — team notified');
-    loadTickets();
+  const refreshTicket = async (ticketId: number) => {
+    try {
+      const updated = await ticketApi.get(ticketId);
+      setTickets((prev) => prev.map((t) => (t.id === ticketId ? updated : t)));
+    } catch {
+      loadTickets();
+    }
   };
 
   // Notes handlers
@@ -279,6 +301,32 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           options={statuses.map((s) => ({ label: s.replace(/_/g, ' '), value: s }))}
         />
       ),
+    },
+    {
+      title: 'Escalation',
+      dataIndex: 'escalationStage',
+      key: 'escalationStage',
+      width: 180,
+      filters: escalationStages.map((s) => ({ text: s.label, value: s.value })),
+      onFilter: (value: any, record: Ticket) => (record.escalationStage || 'NONE') === value,
+      sorter: (a: Ticket, b: Ticket) => {
+        const order: Record<string, number> = {
+          NONE: 0,
+          SUPER_ADMIN_REVIEW: 1,
+          PLATFORM_OWNER_REVIEW: 2,
+          ASSIGNED_HUMAN: 3,
+          ASSIGNED_CLAUDE: 3,
+          OWNER_APPROVAL_PENDING: 4,
+          COMPLETED: 5,
+        };
+        return (order[a.escalationStage || 'NONE'] ?? 0) - (order[b.escalationStage || 'NONE'] ?? 0);
+      },
+      render: (v: EscalationStage | undefined) => {
+        const stage = (v || 'NONE') as EscalationStage;
+        const meta = escalationStageMap[stage];
+        const icon = stage === 'ASSIGNED_CLAUDE' ? <RobotOutlined /> : undefined;
+        return <Tag color={meta.color} icon={icon}>{meta.label}</Tag>;
+      },
     },
   );
 
@@ -426,7 +474,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 200,
+      width: 160,
       render: (_: any, record: Ticket) => (
         <Space size="small">
           {record.videoUrl && (
@@ -437,11 +485,6 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           <Button size="small" icon={<CheckCircleOutlined />} onClick={() => setResolveModal(record)}>
             Resolve
           </Button>
-          {record.visibility !== 'PLATFORM' && (
-            <Button size="small" danger icon={<ArrowUpOutlined />} onClick={() => handleEscalate(record)}>
-              Escalate
-            </Button>
-          )}
         </Space>
       ),
     },
@@ -481,18 +524,31 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             allowClear
             options={types.map((t) => ({ label: t.replace('_', ' '), value: t }))}
           />
+          <Select
+            value={stageFilter}
+            onChange={(v) => setStageFilter(v as EscalationStage | undefined)}
+            style={{ width: 200 }}
+            placeholder="All Escalation Stages"
+            allowClear
+            options={escalationStages.map((s) => ({ label: s.label, value: s.value }))}
+          />
         </Space>
       </div>
 
       <Table
-        dataSource={tickets}
+        dataSource={
+          stageFilter
+            ? tickets.filter((t) => (t.escalationStage || 'NONE') === stageFilter)
+            : tickets
+        }
         columns={columns}
         rowKey="id"
         loading={loading}
         size="small"
         expandable={{
-          expandedRowRender: (record) => (
-            <Card size="small" style={{ background: '#141414' }}>
+          expandedRowRender: (record) => {
+            const detailsContent = (
+              <div>
               {/* Description */}
               {record.description && (
                 <div style={{ marginBottom: 12 }}>
@@ -555,9 +611,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                   </div>
                 )}
               </Space>
+              </div>
+            );
 
-              {/* Chat / Notes Thread */}
-              <Divider style={{ margin: '16px 0 12px' }} />
+            const chatContent = (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <Text strong><CommentOutlined /> Chat <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>synced with Slack</Text></Text>
@@ -656,8 +713,38 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                   </>
                 )}
               </div>
-            </Card>
-          ),
+            );
+
+            const activeTab = activeTabByTicket[record.id] || 'details';
+
+            return (
+              <Card size="small" style={{ background: '#141414' }}>
+                <EscalationPanel
+                  ticket={record}
+                  currentUser={currentUser}
+                  onChanged={() => refreshTicket(record.id)}
+                  onAssignedToClaude={() =>
+                    setActiveTabByTicket((prev) => ({ ...prev, [record.id]: 'claude' }))
+                  }
+                />
+                <Divider style={{ margin: '8px 0 12px' }} />
+                <Tabs
+                  activeKey={activeTab}
+                  onChange={(key) => setActiveTabByTicket((prev) => ({ ...prev, [record.id]: key }))}
+                  size="small"
+                  items={[
+                    { key: 'details', label: 'Details', children: detailsContent },
+                    { key: 'chat', label: 'Chat', children: chatContent },
+                    {
+                      key: 'claude',
+                      label: (<span><RobotOutlined /> Claude Activity</span>),
+                      children: <ClaudeActivityTab ticketId={record.id} active={activeTab === 'claude'} />,
+                    },
+                  ]}
+                />
+              </Card>
+            );
+          },
           onExpand: (expanded, record) => {
             if (expanded && !notesMap[record.id]) {
               loadNotes(record.id);

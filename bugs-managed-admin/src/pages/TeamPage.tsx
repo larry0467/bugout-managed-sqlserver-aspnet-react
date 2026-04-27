@@ -6,22 +6,22 @@ import { teamApi, type TeamMember } from '../api';
 const { Title } = Typography;
 
 const roleColors: Record<string, string> = {
-  PLATFORM_ADMIN: 'gold',
-  PROJECT_ADMIN: 'blue',
+  PLATFORM_OWNER: 'gold',
+  SUPER_ADMIN: 'blue',
   DEVELOPER: 'purple',
   VIEWER: 'default',
 };
 
 const roleIcons: Record<string, React.ReactNode> = {
-  PLATFORM_ADMIN: <CrownOutlined />,
-  PROJECT_ADMIN: <UserOutlined />,
+  PLATFORM_OWNER: <CrownOutlined />,
+  SUPER_ADMIN: <UserOutlined />,
   DEVELOPER: <CodeOutlined />,
   VIEWER: <EyeOutlined />,
 };
 
 const roleLabels: Record<string, string> = {
-  PLATFORM_ADMIN: 'Platform Admin',
-  PROJECT_ADMIN: 'Project Admin',
+  PLATFORM_OWNER: 'Platform Owner',
+  SUPER_ADMIN: 'Super Admin',
   DEVELOPER: 'Developer',
   VIEWER: 'Viewer',
 };
@@ -118,8 +118,8 @@ const TeamPage: React.FC = () => {
             style={{ width: 160 }}
             onChange={(val) => handleRoleChange(record.id, val, record.specialty)}
             options={[
-              { label: 'Platform Admin', value: 'PLATFORM_ADMIN' },
-              { label: 'Project Admin', value: 'PROJECT_ADMIN' },
+              { label: 'Platform Owner', value: 'PLATFORM_OWNER' },
+              { label: 'Super Admin', value: 'SUPER_ADMIN' },
               { label: 'Developer', value: 'DEVELOPER' },
               { label: 'Viewer', value: 'VIEWER' },
             ]}
@@ -205,7 +205,7 @@ const TeamPage: React.FC = () => {
         okText="Add Member"
         confirmLoading={inviteLoading}
       >
-        <Form form={form} layout="vertical" initialValues={{ role: 'PROJECT_ADMIN' }}>
+        <Form form={form} layout="vertical" initialValues={{ role: 'SUPER_ADMIN' }}>
           <Form.Item name="fullName" label="Full Name" rules={[{ required: true, message: 'Name is required' }]}>
             <Input placeholder="John Smith" />
           </Form.Item>
@@ -218,8 +218,8 @@ const TeamPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="role" label="Role">
             <Select options={[
-              { label: 'Platform Admin — Full access, can manage team & all projects', value: 'PLATFORM_ADMIN' },
-              { label: 'Project Admin — Can manage tickets & projects in the org', value: 'PROJECT_ADMIN' },
+              { label: 'Platform Owner — Full access, can manage team & all projects', value: 'PLATFORM_OWNER' },
+              { label: 'Super Admin — Can manage tickets & projects in the org', value: 'SUPER_ADMIN' },
               { label: 'Developer — Receives assigned tickets based on specialty', value: 'DEVELOPER' },
               { label: 'Viewer — Read-only access to tickets & dashboards', value: 'VIEWER' },
             ]} />

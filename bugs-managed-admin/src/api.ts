@@ -36,8 +36,38 @@ export interface Organization {
   plan: 'FREE' | 'PRO' | 'ENTERPRISE';
 }
 
-export type UserRole = 'PLATFORM_ADMIN' | 'PROJECT_ADMIN' | 'DEVELOPER' | 'VIEWER';
+export type UserRole = 'PLATFORM_OWNER' | 'SUPER_ADMIN' | 'DEVELOPER' | 'VIEWER';
 export type DeveloperSpecialty = 'FRONTEND' | 'BACKEND' | 'FULLSTACK';
+
+export type EscalationStage =
+  | 'NONE'
+  | 'SUPER_ADMIN_REVIEW'
+  | 'PLATFORM_OWNER_REVIEW'
+  | 'ASSIGNED_HUMAN'
+  | 'ASSIGNED_CLAUDE'
+  | 'OWNER_APPROVAL_PENDING'
+  | 'COMPLETED';
+
+export type AssigneeType = 'HUMAN' | 'CLAUDE' | null;
+
+export type ClaudeRunStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CAPPED';
+export type ClaudeModel = 'sonnet' | 'opus';
+
+export interface ClaudeRun {
+  id: number;
+  status: ClaudeRunStatus;
+  model: ClaudeModel | string;
+  tokensIn?: number;
+  tokensOut?: number;
+  costUsd?: number;
+  durationMs?: number;
+  analysisMarkdown?: string;
+  prUrl?: string;
+  branchName?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AuthUser {
   id: number;
@@ -89,6 +119,19 @@ export interface Ticket {
   escalatedBy?: string;
   escalatedAt?: string;
   resolvedAt?: string;
+  // Gated escalation chain
+  escalationStage?: EscalationStage;
+  assigneeType?: AssigneeType;
+  escalatedToOwnerAt?: string;
+  escalatedToOwnerBy?: string;
+  assignedAt?: string;
+  assignedBy?: string;
+  // Owner approval loop
+  submittedForApprovalAt?: string | null;
+  submittedForApprovalBy?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  revisionCount?: number;
   createdAt: string;
   updatedAt: string;
   // Multi-tenant fields
@@ -185,14 +228,112 @@ export const ticketApi = {
     api.put<Ticket>(`/tickets/${id}/status`, { status, assignedTo }).then(r => r.data),
   resolve: (id: number, resolution: string) =>
     api.put<Ticket>(`/tickets/${id}/resolve`, { resolution }).then(r => r.data),
-  escalate: (id: number, escalatedBy: string) =>
-    api.put<Ticket>(`/tickets/${id}/escalate`, { escalatedBy }).then(r => r.data),
+  escalateToPlatformOwner: (id: number) =>
+    api.post<Ticket>(`/tickets/${id}/escalate-to-platform-owner`).then(r => r.data),
+  assignToHuman: (id: number, developerId: number, developerEmail: string) =>
+    api.post<Ticket>(`/tickets/${id}/assign-to-human`, { developerId, developerEmail }).then(r => r.data),
+  assignToClaude: (id: number, model: ClaudeModel = 'sonnet') =>
+    api.post<{ id: number }>(`/tickets/${id}/assign-to-claude`, { model }).then(r => r.data),
+  claudeRuns: (id: number) =>
+    api.get<ClaudeRun[]>(`/tickets/${id}/claude-runs`).then(r => r.data),
   stats: (projectId?: number) => {
     const params: any = {};
     if (projectId) params.projectId = projectId;
     return api.get<Stats>(`/tickets/stats`, { params }).then(r => r.data);
   },
+  // Owner approval loop
+  submitForApproval: (id: number) =>
+    api.post<Ticket>(`/tickets/${id}/submit-for-approval`).then(r => r.data),
+  approve: (id: number) =>
+    api.post<Ticket>(`/tickets/${id}/approve`).then(r => r.data),
+  requestChanges: (id: number, reason: string) =>
+    api.post<Ticket>(`/tickets/${id}/request-changes`, { reason }).then(r => r.data),
   videoUrl: (id: number) => `/api/tickets/${id}/video`,
+};
+
+// Performance Dashboard
+
+export interface StageAverages {
+  triageQueueMedianMinutes: number;
+  triageQueueP90Minutes: number;
+  ownerEscalationMedianMinutes: number;
+  ownerEscalationP90Minutes: number;
+  devWorkMedianMinutes: number;
+  devWorkP90Minutes: number;
+  ownerApprovalMedianMinutes: number;
+  ownerApprovalP90Minutes: number;
+  totalMedianMinutes: number;
+  totalP90Minutes: number;
+}
+
+export type BottleneckStage = 'triageQueue' | 'ownerEscalation' | 'devWork' | 'ownerApproval';
+
+export interface OwnerSpeedMetric {
+  score: number;
+  withinSlaCount: number;
+  totalCount: number;
+  medianMinutes: number;
+}
+
+export interface OwnerScore {
+  platformOwnerEmail: string;
+  ticketsHandled: number;
+  escalationSpeed: OwnerSpeedMetric;
+  approvalSpeed: OwnerSpeedMetric;
+  compositeScore: number;
+}
+
+export interface DeveloperPerformance {
+  email: string;
+  displayName?: string;
+  specialty: DeveloperSpecialty | null;
+  ticketsResolved: number;
+  medianDevWorkMinutes: number;
+  p90DevWorkMinutes: number;
+  score: number;
+  withinSlaCount: number;
+  totalCount: number;
+  revisionRate: number;
+}
+
+export interface CategorySummary {
+  category: string;
+  ticketsResolved: number;
+  medianDevWorkMinutes: number;
+  score: number;
+}
+
+export interface ClaudePerformance {
+  ticketsResolved: number;
+  totalRuns: number;
+  successfulRuns: number;
+  cappedRuns: number;
+  failedRuns: number;
+  medianAgentRuntimeSeconds: number;
+  medianEffectiveTurnaroundMinutes: number;
+  medianCostUsd: number;
+  totalCostUsd: number;
+}
+
+export interface PerformanceDashboard {
+  window: { from: string; to: string; ticketsConsidered: number };
+  stageAverages: StageAverages;
+  bottleneckStage: BottleneckStage;
+  ownerScore: OwnerScore;
+  developers: DeveloperPerformance[];
+  categorySummary: CategorySummary[];
+  claude: ClaudePerformance;
+}
+
+export const dashboardApi = {
+  performance: (params: { projectId?: number; from?: string; to?: string; priority?: string }) => {
+    const q: any = {};
+    if (params.projectId) q.projectId = params.projectId;
+    if (params.from) q.from = params.from;
+    if (params.to) q.to = params.to;
+    if (params.priority) q.priority = params.priority;
+    return api.get<PerformanceDashboard>('/dashboard/performance', { params: q }).then(r => r.data);
+  },
 };
 
 // Team API
@@ -246,6 +387,35 @@ export const noteApi = {
     api.post<TicketNote>(`/tickets/${ticketId}/notes`, { content, noteType, authorName }).then(r => r.data),
   delete: (ticketId: number, noteId: number) =>
     api.delete(`/tickets/${ticketId}/notes/${noteId}`).then(r => r.data),
+};
+
+// Sandbox + capabilities
+
+export interface SystemCapabilities {
+  sandboxMode: boolean;
+  anthropicEnabled: boolean;
+}
+
+export interface SandboxStatus {
+  enabled: boolean;
+  lastResetAt: string | null;
+  lastResetBy: string | null;
+  nextScheduledResetAt: string;
+}
+
+export interface SandboxResetResult {
+  resetAt: string;
+  bugsInserted: number;
+  usersInserted: number;
+}
+
+export const systemApi = {
+  capabilities: () => api.get<SystemCapabilities>('/system/capabilities').then(r => r.data),
+};
+
+export const sandboxApi = {
+  status: () => api.get<SandboxStatus>('/admin/sandbox/status').then(r => r.data),
+  reset: () => api.post<SandboxResetResult>('/admin/sandbox/reset').then(r => r.data),
 };
 
 export default api;

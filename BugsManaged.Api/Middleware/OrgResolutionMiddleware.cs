@@ -32,6 +32,7 @@ public class OrgResolutionMiddleware
         "/api/auth/register",
         "/api/auth/login",
         "/api/slack", // Slack webhook is anonymous; tenant resolved from bot token inside the handler
+        "/api/system/capabilities", // anonymous platform-meta endpoint, drives the SANDBOX banner before login
         "/openapi",
     };
 

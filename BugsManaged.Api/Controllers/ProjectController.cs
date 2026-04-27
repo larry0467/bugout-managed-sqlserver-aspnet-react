@@ -47,9 +47,9 @@ public class ProjectController : ControllerBase
     {
         var role = User.FindFirstValue(ClaimTypes.Role);
 
-        // PLATFORM_ADMIN sees every project across every org — bypass the
+        // PLATFORM_OWNER sees every project across every org — bypass the
         // filter. Everyone else gets the default filtered view.
-        var query = role == "PLATFORM_ADMIN"
+        var query = role == "PLATFORM_OWNER"
             ? _db.Projects.IgnoreQueryFilters().AsQueryable()
             : _db.Projects.AsQueryable();
 

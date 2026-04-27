@@ -18,6 +18,9 @@ public class BugsManagedDbContext : DbContext
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketNote> TicketNotes => Set<TicketNote>();
+    public DbSet<ClaudeRun> ClaudeRuns => Set<ClaudeRun>();
+    public DbSet<TicketStageHistory> TicketStageHistory => Set<TicketStageHistory>();
+    public DbSet<SandboxResetLog> SandboxResetLogs => Set<SandboxResetLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +54,27 @@ public class BugsManagedDbContext : DbContext
         modelBuilder.Entity<TicketNote>()
             .HasIndex(n => n.OrganizationId);
 
+        modelBuilder.Entity<ClaudeRun>()
+            .HasIndex(r => r.TicketId);
+
+        modelBuilder.Entity<ClaudeRun>()
+            .HasIndex(r => r.Status);
+
+        modelBuilder.Entity<ClaudeRun>()
+            .HasIndex(r => r.OrganizationId);
+
+        modelBuilder.Entity<TicketStageHistory>()
+            .HasIndex(h => h.TicketId);
+
+        modelBuilder.Entity<TicketStageHistory>()
+            .HasIndex(h => h.OrganizationId);
+
+        // SandboxResetLog is platform-meta (not tenant data) — no global
+        // query filter, no OrganizationId. Index by OccurredAtUtc so the
+        // /api/admin/sandbox/status "last reset" lookup is a single seek.
+        modelBuilder.Entity<SandboxResetLog>()
+            .HasIndex(l => l.OccurredAtUtc);
+
         // Global query filters — every org-scoped query auto-filters by the
         // current org resolved by OrgResolutionMiddleware. Use
         // .IgnoreQueryFilters() when you genuinely need to read across orgs
@@ -70,6 +94,12 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketNote>()
             .HasQueryFilter(n => _orgContext.CurrentOrganizationId != null && n.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<ClaudeRun>()
+            .HasQueryFilter(r => _orgContext.CurrentOrganizationId != null && r.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketStageHistory>()
+            .HasQueryFilter(h => _orgContext.CurrentOrganizationId != null && h.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()
@@ -95,6 +125,7 @@ public class BugsManagedDbContext : DbContext
             else if (entry.Entity is User user) user.UpdatedAt = DateTime.UtcNow;
             else if (entry.Entity is Project proj) proj.UpdatedAt = DateTime.UtcNow;
             else if (entry.Entity is Ticket ticket) ticket.UpdatedAt = DateTime.UtcNow;
+            else if (entry.Entity is ClaudeRun run) run.UpdatedAt = DateTime.UtcNow;
         }
     }
 }

@@ -6,7 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 doc = SimpleDocTemplate(
-    "Bugs_Managed_Azure_Deployment_Guide.pdf",
+    "BugOut_Managed_Azure_Deployment_Guide.pdf",
     pagesize=letter,
     topMargin=0.75*inch,
     bottomMargin=0.75*inch,
@@ -42,18 +42,18 @@ story = []
 
 # Title page
 story.append(Spacer(1, 1.5*inch))
-story.append(Paragraph("Bugs Managed", styles['DocTitle']))
+story.append(Paragraph("Bug Out Managed", styles['DocTitle']))
 story.append(Paragraph("Azure Deployment Guide", styles['Subtitle']))
 story.append(Spacer(1, 0.3*inch))
 story.append(HRFlowable(width="60%", thickness=2, color=HexColor('#4caf50')))
 story.append(Spacer(1, 0.3*inch))
-story.append(Paragraph("Step-by-step instructions to deploy the Bugs Managed platform to Azure.", styles['Body']))
+story.append(Paragraph("Step-by-step instructions to deploy the Bug Out Managed platform to Azure.", styles['Body']))
 story.append(Spacer(1, 0.5*inch))
 
 # What you're deploying
 story.append(Paragraph("What You're Deploying", styles['H1']))
-story.append(Paragraph("<bullet>&bull;</bullet><b>Bugs Managed API</b> - ASP.NET Core backend (Azure App Service)", styles['BulletItem']))
-story.append(Paragraph("<bullet>&bull;</bullet><b>Bugs Managed Dashboard</b> - React admin portal (Azure Static Web App)", styles['BulletItem']))
+story.append(Paragraph("<bullet>&bull;</bullet><b>Bug Out Managed API</b> - ASP.NET Core backend (Azure App Service)", styles['BulletItem']))
+story.append(Paragraph("<bullet>&bull;</bullet><b>Bug Out Managed Dashboard</b> - React admin portal (Azure Static Web App)", styles['BulletItem']))
 story.append(Paragraph("<bullet>&bull;</bullet><b>Azure SQL Database</b> - SQL Server database (managed)", styles['BulletItem']))
 story.append(Spacer(1, 6))
 story.append(Paragraph("Once deployed, all our apps (Financials Managed, HDD Managed, Facilities Managed, etc.) will send bug reports and feature requests to this central platform.", styles['Body']))
@@ -70,7 +70,7 @@ story.append(Paragraph("<bullet>6.</bullet>Access to the GitHub repo", styles['B
 
 # Step 1
 story.append(Paragraph("Step 1: Clone the Repo", styles['H1']))
-story.append(Paragraph("git clone https://github.com/larry0467/bugs-managed-sqlserver-aspnet-react.git<br/>cd bugs-managed-sqlserver-aspnet-react", styles['CodeBlock']))
+story.append(Paragraph("git clone https://github.com/larry0467/bugout-managed-sqlserver-aspnet-react.git<br/>cd bugout-managed-sqlserver-aspnet-react", styles['CodeBlock']))
 
 # Step 2
 story.append(Paragraph("Step 2: Log in to Azure", styles['H1']))
@@ -82,44 +82,44 @@ story.append(Paragraph("Step 3: Create Azure Resources", styles['H1']))
 story.append(Paragraph("Run these commands one at a time. Replace the password and names if needed.", styles['Body']))
 
 story.append(Paragraph("3a. Create a Resource Group", styles['H2']))
-story.append(Paragraph("az group create --name bugs-managed-rg --location eastus", styles['CodeBlock']))
+story.append(Paragraph("az group create --name bugout-managed-rg --location eastus", styles['CodeBlock']))
 
 story.append(Paragraph("3b. Create Azure SQL Server", styles['H2']))
-story.append(Paragraph("az sql server create \\<br/>  --name bugs-managed-sql \\<br/>  --resource-group bugs-managed-rg \\<br/>  --location eastus \\<br/>  --admin-user bugsadmin \\<br/>  --admin-password \"BugsManaged2026!\"", styles['CodeBlock']))
+story.append(Paragraph("az sql server create \\<br/>  --name bugout-managed-sql \\<br/>  --resource-group bugout-managed-rg \\<br/>  --location eastus \\<br/>  --admin-user bugoutadmin \\<br/>  --admin-password \"BugOutManaged2026!\"", styles['CodeBlock']))
 story.append(Paragraph("IMPORTANT: Save this password. You will need it in Step 5.", styles['Important']))
 
 story.append(Paragraph("3c. Create the Database", styles['H2']))
-story.append(Paragraph("az sql db create \\<br/>  --resource-group bugs-managed-rg \\<br/>  --server bugs-managed-sql \\<br/>  --name bugs_managed \\<br/>  --service-objective S0", styles['CodeBlock']))
+story.append(Paragraph("az sql db create \\<br/>  --resource-group bugout-managed-rg \\<br/>  --server bugout-managed-sql \\<br/>  --name bugout_managed \\<br/>  --service-objective S0", styles['CodeBlock']))
 
 story.append(Paragraph("3d. Allow Azure Services to Access the Database", styles['H2']))
-story.append(Paragraph("az sql server firewall-rule create \\<br/>  --resource-group bugs-managed-rg \\<br/>  --server bugs-managed-sql \\<br/>  --name AllowAzureServices \\<br/>  --start-ip-address 0.0.0.0 \\<br/>  --end-ip-address 0.0.0.0", styles['CodeBlock']))
+story.append(Paragraph("az sql server firewall-rule create \\<br/>  --resource-group bugout-managed-rg \\<br/>  --server bugout-managed-sql \\<br/>  --name AllowAzureServices \\<br/>  --start-ip-address 0.0.0.0 \\<br/>  --end-ip-address 0.0.0.0", styles['CodeBlock']))
 
 story.append(Paragraph("3e. Create App Service Plan", styles['H2']))
-story.append(Paragraph("az appservice plan create \\<br/>  --name bugs-managed-plan \\<br/>  --resource-group bugs-managed-rg \\<br/>  --sku B1 \\<br/>  --is-linux", styles['CodeBlock']))
+story.append(Paragraph("az appservice plan create \\<br/>  --name bugout-managed-plan \\<br/>  --resource-group bugout-managed-rg \\<br/>  --sku B1 \\<br/>  --is-linux", styles['CodeBlock']))
 
 story.append(Paragraph("3f. Create the API App Service", styles['H2']))
-story.append(Paragraph("az webapp create \\<br/>  --resource-group bugs-managed-rg \\<br/>  --plan bugs-managed-plan \\<br/>  --name bugs-managed-api \\<br/>  --runtime \"DOTNETCORE:10.0\"", styles['CodeBlock']))
-story.append(Paragraph("NOTE: The name bugs-managed-api must be globally unique. If taken, use something like bugs-managed-api-yourcompany.", styles['Note']))
+story.append(Paragraph("az webapp create \\<br/>  --resource-group bugout-managed-rg \\<br/>  --plan bugout-managed-plan \\<br/>  --name bugout-managed-api \\<br/>  --runtime \"DOTNETCORE:10.0\"", styles['CodeBlock']))
+story.append(Paragraph("NOTE: The name bugout-managed-api must be globally unique. If taken, use something like bugout-managed-api-yourcompany.", styles['Note']))
 
 # Step 4
 story.append(Paragraph("Step 4: Create the Static Web App for the Dashboard", styles['H1']))
-story.append(Paragraph("az staticwebapp create \\<br/>  --name bugs-managed-admin \\<br/>  --resource-group bugs-managed-rg \\<br/>  --location eastus", styles['CodeBlock']))
+story.append(Paragraph("az staticwebapp create \\<br/>  --name bugout-managed-admin \\<br/>  --resource-group bugout-managed-rg \\<br/>  --location eastus", styles['CodeBlock']))
 
 # Step 5
 story.append(Paragraph("Step 5: Configure the API", styles['H1']))
 story.append(Paragraph("This sets the database connection, JWT secret, and CORS origins.", styles['Body']))
 story.append(Paragraph(
     "az webapp config appsettings set \\<br/>"
-    "  --resource-group bugs-managed-rg \\<br/>"
-    "  --name bugs-managed-api \\<br/>"
+    "  --resource-group bugout-managed-rg \\<br/>"
+    "  --name bugout-managed-api \\<br/>"
     "  --settings \\<br/>"
-    "  \"ConnectionStrings__DefaultConnection=Server=tcp:bugs-managed-sql.database.windows.net,1433;"
-    "Database=bugs_managed;User ID=bugsadmin;Password=BugsManaged2026!;"
+    "  \"ConnectionStrings__DefaultConnection=Server=tcp:bugout-managed-sql.database.windows.net,1433;"
+    "Database=bugout_managed;User ID=bugoutadmin;Password=BugOutManaged2026!;"
     "Encrypt=True;TrustServerCertificate=False;\" \\<br/>"
-    "  \"BugsManaged__Jwt__Secret=BugsManaged2026SecretKeyMustBeAtLeast256BitsLong!\" \\<br/>"
-    "  \"BugsManaged__Jwt__ExpirationMs=86400000\" \\<br/>"
-    "  \"BugsManaged__VideoStoragePath=/home/videos\" \\<br/>"
-    "  \"BugsManaged__Cors__AllowedOrigins=https://bugs-managed-admin.azurestaticapps.net,"
+    "  \"BugOutManaged__Jwt__Secret=BugOutManaged2026SecretKeyMustBeAtLeast256BitsLong!\" \\<br/>"
+    "  \"BugOutManaged__Jwt__ExpirationMs=86400000\" \\<br/>"
+    "  \"BugOutManaged__VideoStoragePath=/home/videos\" \\<br/>"
+    "  \"BugOutManaged__Cors__AllowedOrigins=https://bugout-managed-admin.azurestaticapps.net,"
     "https://financials.protocall.co,https://hdd.protocall.co\"",
     styles['CodeBlock']))
 story.append(Paragraph("IMPORTANT: Update the CORS origins to include all your app domains. Comma-separated, no spaces.", styles['Important']))
@@ -128,19 +128,19 @@ story.append(Paragraph("IMPORTANT: Update the CORS origins to include all your a
 story.append(Paragraph("Step 6: Deploy the API", styles['H1']))
 story.append(Paragraph("Option A: Deploy from command line (quickest)", styles['H2']))
 story.append(Paragraph(
-    "cd BugsManaged.Api<br/>"
+    "cd BugOutManaged.Api<br/>"
     "dotnet publish -c Release -o ./publish<br/>"
     "cd publish<br/>"
     "zip -r ../deploy.zip .<br/>"
     "cd ..<br/><br/>"
     "az webapp deployment source config-zip \\<br/>"
-    "  --resource-group bugs-managed-rg \\<br/>"
-    "  --name bugs-managed-api \\<br/>"
+    "  --resource-group bugout-managed-rg \\<br/>"
+    "  --name bugout-managed-api \\<br/>"
     "  --src deploy.zip", styles['CodeBlock']))
 
 story.append(Paragraph("Option B: Set up GitHub Actions (auto-deploy on every push)", styles['H2']))
 story.append(Paragraph("<bullet>1.</bullet>Get the publish profile:", styles['BulletItem']))
-story.append(Paragraph("az webapp deployment list-publishing-profiles \\<br/>  --name bugs-managed-api \\<br/>  --resource-group bugs-managed-rg \\<br/>  --xml &gt; publish-profile.xml", styles['CodeBlock']))
+story.append(Paragraph("az webapp deployment list-publishing-profiles \\<br/>  --name bugout-managed-api \\<br/>  --resource-group bugout-managed-rg \\<br/>  --xml &gt; publish-profile.xml", styles['CodeBlock']))
 story.append(Paragraph("<bullet>2.</bullet>Go to the GitHub repo &gt; Settings &gt; Secrets and variables &gt; Actions", styles['BulletItem']))
 story.append(Paragraph("<bullet>3.</bullet>Create a new secret: Name: <b>AZURE_WEBAPP_PUBLISH_PROFILE</b>, Value: paste the entire contents of publish-profile.xml", styles['BulletItem']))
 story.append(Paragraph("<bullet>4.</bullet>Delete the local file: <b>rm publish-profile.xml</b>", styles['BulletItem']))
@@ -148,10 +148,10 @@ story.append(Paragraph("<bullet>4.</bullet>Delete the local file: <b>rm publish-
 # Step 7
 story.append(Paragraph("Step 7: Deploy the Admin Dashboard", styles['H1']))
 story.append(Paragraph("7a. Build the dashboard", styles['H2']))
-story.append(Paragraph("cd bugs-managed-admin<br/>npm install<br/>npm run build", styles['CodeBlock']))
+story.append(Paragraph("cd bugout-managed-admin<br/>npm install<br/>npm run build", styles['CodeBlock']))
 
 story.append(Paragraph("7b. Get the Static Web App deployment token", styles['H2']))
-story.append(Paragraph("az staticwebapp secrets list \\<br/>  --name bugs-managed-admin \\<br/>  --resource-group bugs-managed-rg \\<br/>  --query \"properties.apiKey\" -o tsv", styles['CodeBlock']))
+story.append(Paragraph("az staticwebapp secrets list \\<br/>  --name bugout-managed-admin \\<br/>  --resource-group bugout-managed-rg \\<br/>  --query \"properties.apiKey\" -o tsv", styles['CodeBlock']))
 
 story.append(Paragraph("7c. Install the SWA CLI and deploy", styles['H2']))
 story.append(Paragraph("npm install -g @azure/static-web-apps-cli<br/><br/>swa deploy ./dist \\<br/>  --deployment-token &lt;paste-token-from-step-7b&gt; \\<br/>  --env production", styles['CodeBlock']))
@@ -163,8 +163,8 @@ story.append(Paragraph("<bullet>3.</bullet>Now every push to master auto-deploys
 
 # Step 8
 story.append(Paragraph("Step 8: Verify the Deployment", styles['H1']))
-story.append(Paragraph("<bullet>1.</bullet><b>API health check:</b> Open https://bugs-managed-api.azurewebsites.net/api/auth/me in a browser. You should see: {\"error\":\"Missing or invalid Authorization header\"} - That means the API is running!", styles['BulletItem']))
-story.append(Paragraph("<bullet>2.</bullet><b>Dashboard:</b> Open https://bugs-managed-admin.azurestaticapps.net - You should see the login page.", styles['BulletItem']))
+story.append(Paragraph("<bullet>1.</bullet><b>API health check:</b> Open https://bugout-managed-api.azurewebsites.net/api/auth/me in a browser. You should see: {\"error\":\"Missing or invalid Authorization header\"} - That means the API is running!", styles['BulletItem']))
+story.append(Paragraph("<bullet>2.</bullet><b>Dashboard:</b> Open https://bugout-managed-admin.azurestaticapps.net - You should see the login page.", styles['BulletItem']))
 story.append(Paragraph("<bullet>3.</bullet><b>Register your admin account:</b> Click Register, enter your name, email, password, organization name.", styles['BulletItem']))
 story.append(Paragraph("<bullet>4.</bullet><b>Create projects for each app:</b> Go to Applications &gt; New Project. Create: Financials Managed, HDD Managed, Facilities Managed, etc. Copy each API key.", styles['BulletItem']))
 
@@ -174,20 +174,20 @@ story.append(Paragraph("For each app (Financials Managed, HDD Managed, etc.):", 
 
 story.append(Paragraph("9a. Copy the widget files into the app", styles['H2']))
 story.append(Paragraph("Copy these two files from the repo into the app's src/components/ folder:", styles['Body']))
-story.append(Paragraph("<bullet>&bull;</bullet>bugs-managed-widget/src/BugsManagedWidget.tsx", styles['BulletItem']))
-story.append(Paragraph("<bullet>&bull;</bullet>bugs-managed-widget/src/types.ts (rename to BugsManagedTypes.ts)", styles['BulletItem']))
+story.append(Paragraph("<bullet>&bull;</bullet>bugout-managed-widget/src/BugOutManagedWidget.tsx", styles['BulletItem']))
+story.append(Paragraph("<bullet>&bull;</bullet>bugout-managed-widget/src/types.ts (rename to BugOutManagedTypes.ts)", styles['BulletItem']))
 story.append(Spacer(1, 4))
-story.append(Paragraph("Update the import in BugsManagedWidget.tsx:", styles['Body']))
-story.append(Paragraph("// Change this:<br/>import type { BugsManagedConfig } from './types';<br/>// To this:<br/>import type { BugsManagedConfig } from './BugsManagedTypes';", styles['CodeBlock']))
+story.append(Paragraph("Update the import in BugOutManagedWidget.tsx:", styles['Body']))
+story.append(Paragraph("// Change this:<br/>import type { BugOutManagedConfig } from './types';<br/>// To this:<br/>import type { BugOutManagedConfig } from './BugOutManagedTypes';", styles['CodeBlock']))
 
 story.append(Paragraph("9b. Add the widget to the app", styles['H2']))
 story.append(Paragraph("In the app's main layout component (e.g., App.tsx):", styles['Body']))
 story.append(Paragraph(
-    "import BugsManagedWidget from './components/BugsManagedWidget';<br/><br/>"
+    "import BugOutManagedWidget from './components/BugOutManagedWidget';<br/><br/>"
     "// Inside the JSX, near the closing tags:<br/>"
-    "&lt;BugsManagedWidget<br/>"
-    "  apiKey=\"bm_PASTE_API_KEY_FROM_STEP_8\"<br/>"
-    "  apiUrl=\"https://bugs-managed-api.azurewebsites.net/api\"<br/>"
+    "&lt;BugOutManagedWidget<br/>"
+    "  apiKey=\"bom_PASTE_API_KEY_FROM_STEP_8\"<br/>"
+    "  apiUrl=\"https://bugout-managed-api.azurewebsites.net/api\"<br/>"
     "  userEmail={currentUser.email}<br/>"
     "  userName={currentUser.name}<br/>"
     "  tenantName={currentTenant.name}<br/>"
@@ -201,11 +201,11 @@ story.append(Paragraph(
 story.append(Paragraph("Replace currentUser and currentTenant with however your app tracks the logged-in user and selected company/tenant.", styles['Note']))
 
 story.append(Paragraph("9c. Deploy the app", styles['H2']))
-story.append(Paragraph("Deploy your app as usual. The widget will now send bug reports to the central Bugs Managed dashboard.", styles['Body']))
+story.append(Paragraph("Deploy your app as usual. The widget will now send bug reports to the central Bug Out Managed dashboard.", styles['Body']))
 
 # Step 10
 story.append(Paragraph("Step 10: Add Team Members", styles['H1']))
-story.append(Paragraph("<bullet>1.</bullet>Log in to the Bugs Managed dashboard", styles['BulletItem']))
+story.append(Paragraph("<bullet>1.</bullet>Log in to the Bug Out Managed dashboard", styles['BulletItem']))
 story.append(Paragraph("<bullet>2.</bullet>Go to <b>Team</b> in the sidebar", styles['BulletItem']))
 story.append(Paragraph("<bullet>3.</bullet>Click <b>Add Team Member</b>", styles['BulletItem']))
 story.append(Paragraph("<bullet>4.</bullet>Enter their name, email, temporary password, and role:", styles['BulletItem']))
@@ -219,25 +219,25 @@ story.append(Paragraph("Step 11: Configure Slack (Optional)", styles['H1']))
 story.append(Paragraph("<bullet>1.</bullet>Go to <b>Settings</b> in the dashboard", styles['BulletItem']))
 story.append(Paragraph("<bullet>2.</bullet>Select the project (e.g., \"Financials Managed\")", styles['BulletItem']))
 story.append(Paragraph("<bullet>3.</bullet>Paste your <b>Slack Incoming Webhook URL</b>", styles['BulletItem']))
-story.append(Paragraph("<bullet>4.</bullet>Enter the <b>Slack channel</b> name (e.g., #bugs-financials)", styles['BulletItem']))
+story.append(Paragraph("<bullet>4.</bullet>Enter the <b>Slack channel</b> name (e.g., #bugout-financials)", styles['BulletItem']))
 story.append(Paragraph("<bullet>5.</bullet>Click <b>Save</b>", styles['BulletItem']))
 story.append(Spacer(1, 6))
 story.append(Paragraph("Now all ticket chat messages will sync to Slack.", styles['Body']))
 story.append(Spacer(1, 6))
 story.append(Paragraph("For inbound messages from Slack:", styles['Body']))
 story.append(Paragraph("<bullet>1.</bullet>Create a Slack App at https://api.slack.com/apps", styles['BulletItem']))
-story.append(Paragraph("<bullet>2.</bullet>Add slash command: /bug-chat pointing to https://bugs-managed-api.azurewebsites.net/api/slack/command", styles['BulletItem']))
+story.append(Paragraph("<bullet>2.</bullet>Add slash command: /bugout-chat pointing to https://bugout-managed-api.azurewebsites.net/api/slack/command", styles['BulletItem']))
 story.append(Paragraph("<bullet>3.</bullet>Install the app to your workspace", styles['BulletItem']))
 story.append(Spacer(1, 6))
-story.append(Paragraph("Usage: /bug-chat 42 Looking into this now - posts a note to ticket #42.", styles['Note']))
+story.append(Paragraph("Usage: /bugout-chat 42 Looking into this now - posts a note to ticket #42.", styles['Note']))
 
 # Summary URLs
 story.append(Paragraph("Summary of URLs", styles['H1']))
 url_data = [
     ['Resource', 'URL'],
-    ['API', 'https://bugs-managed-api.azurewebsites.net'],
-    ['Dashboard', 'https://bugs-managed-admin.azurestaticapps.net'],
-    ['Widget API URL', 'https://bugs-managed-api.azurewebsites.net/api'],
+    ['API', 'https://bugout-managed-api.azurewebsites.net'],
+    ['Dashboard', 'https://bugout-managed-admin.azurestaticapps.net'],
+    ['Widget API URL', 'https://bugout-managed-api.azurewebsites.net/api'],
 ]
 url_table = Table(url_data, colWidths=[1.8*inch, 4.5*inch])
 url_table.setStyle(TableStyle([

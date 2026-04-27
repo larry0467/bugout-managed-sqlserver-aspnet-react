@@ -36,6 +36,24 @@ public class Project
     [MaxLength(255)]
     public string? NotificationEmail { get; set; }
 
+    // Repo metadata used by the Claude Agent sidecar when "assign to Claude"
+    // runs. RepoPath is the absolute fs path on the host that runs the agent;
+    // GithubOwner/GithubRepo are used to open a PR back to dev branch.
+    [MaxLength(500)]
+    public string? RepoPath { get; set; }
+
+    [MaxLength(500)]
+    public string? RepoSubpath { get; set; }
+
+    [Required, MaxLength(100)]
+    public string DevBranch { get; set; } = "dev";
+
+    [MaxLength(100)]
+    public string? GithubOwner { get; set; }
+
+    [MaxLength(100)]
+    public string? GithubRepo { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

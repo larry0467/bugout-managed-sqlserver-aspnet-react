@@ -41,6 +41,15 @@ public class DevSeeder
         ("dev-sandbox",         "Dev Sandbox",         "dev-local-managed-platform-key"),
     };
 
+    // The "bug-out-managed" project doubles as the dogfooding repo target —
+    // assign-to-claude on a Bugs Managed self-bug points the agent at this
+    // very repo. Other apps fill in their own RepoPath later via UI.
+    private const string DogfoodSlug = "bug-out-managed";
+    private const string DogfoodRepoPath = "C:/Users/larry/bugs-managed-sqlserver-aspnet-react";
+    private const string DogfoodRepoSubpath = "BugsManaged.Api";
+    private const string DogfoodGithubOwner = "larry0467";
+    private const string DogfoodGithubRepo = "bugout-managed-sqlserver-aspnet-react";
+
     public async Task SeedAsync()
     {
         // Seeder runs at startup before any request has populated an org
@@ -75,6 +84,11 @@ public class DevSeeder
                 Slug = d.Slug,
                 ApiKey = d.Key,
                 OrganizationId = org.Id,
+                DevBranch = "dev",
+                RepoPath = d.Slug == DogfoodSlug ? DogfoodRepoPath : null,
+                RepoSubpath = d.Slug == DogfoodSlug ? DogfoodRepoSubpath : null,
+                GithubOwner = d.Slug == DogfoodSlug ? DogfoodGithubOwner : null,
+                GithubRepo = d.Slug == DogfoodSlug ? DogfoodGithubRepo : null,
             })
             .ToList();
 
@@ -85,5 +99,49 @@ public class DevSeeder
             _log.LogInformation("DevSeeder: created {Count} dev projects: {Names}",
                 toAdd.Count, string.Join(", ", toAdd.Select(p => p.Name)));
         }
+
+        // Backfill repo metadata on the dogfood project for existing devs whose
+        // database was seeded before these columns existed.
+        var dogfood = await _db.Projects.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Slug == DogfoodSlug && p.OrganizationId == org.Id);
+        if (dogfood != null && string.IsNullOrEmpty(dogfood.RepoPath))
+        {
+            dogfood.RepoPath = DogfoodRepoPath;
+            dogfood.RepoSubpath = DogfoodRepoSubpath;
+            dogfood.GithubOwner = DogfoodGithubOwner;
+            dogfood.GithubRepo = DogfoodGithubRepo;
+            if (string.IsNullOrEmpty(dogfood.DevBranch)) dogfood.DevBranch = "dev";
+            await _db.SaveChangesAsync();
+            _log.LogInformation("DevSeeder: backfilled repo metadata on dogfood project {Id}", dogfood.Id);
+        }
+
+        // Seed at least one PLATFORM_OWNER and one SUPER_ADMIN for the dev org
+        // so role-gated endpoints are exercisable in local development.
+        var ownerEmail = "owner@managedplatform.com";
+        var adminEmail = "admin@managedplatform.com";
+
+        if (!await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == ownerEmail))
+        {
+            _db.Users.Add(new User
+            {
+                Email = ownerEmail,
+                FullName = "Dev Platform Owner",
+                Password = BCrypt.Net.BCrypt.HashPassword("ChangeMe!Dev1"),
+                Role = "PLATFORM_OWNER",
+                OrganizationId = org.Id,
+            });
+        }
+        if (!await _db.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == adminEmail))
+        {
+            _db.Users.Add(new User
+            {
+                Email = adminEmail,
+                FullName = "Dev Super Admin",
+                Password = BCrypt.Net.BCrypt.HashPassword("ChangeMe!Dev1"),
+                Role = "SUPER_ADMIN",
+                OrganizationId = org.Id,
+            });
+        }
+        await _db.SaveChangesAsync();
     }
 }
