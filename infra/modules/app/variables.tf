@@ -141,3 +141,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "extra_cors_origins" {
+  description = "Additional origins to allow on the API in addition to localhost + the standard {app}-{env}.managedplatform.com SWA. Useful for partner test domains or beta white-label hosts."
+  type        = list(string)
+  default     = []
+}

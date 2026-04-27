@@ -255,6 +255,19 @@ resource "azurerm_container_app" "app" {
         secret_name = "sql-connection-string"
       }
 
+      # Allow the SWA frontend on managedplatform.com (per-env subdomains plus
+      # the prod apex) to call this API cross-origin. Program.cs reads this key
+      # via Configuration["BugOutManaged:Cors:AllowedOrigins"] (comma list).
+      env {
+        name  = "BugOutManaged__Cors__AllowedOrigins"
+        value = join(",", concat([
+          "http://localhost:5173",
+          "http://localhost:3000",
+          "https://bugout.managedplatform.com",
+          "https://bugout-${var.environment}.managedplatform.com",
+        ], var.extra_cors_origins))
+      }
+
       dynamic "env" {
         for_each = var.anthropic_enabled ? [1] : []
         content {
