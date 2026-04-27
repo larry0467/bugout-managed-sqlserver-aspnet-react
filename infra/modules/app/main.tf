@@ -250,8 +250,12 @@ resource "azurerm_container_app" "app" {
         name  = "ApplicationInsights__ConnectionString"
         value = azurerm_application_insights.app.connection_string
       }
+      # The API reads ConnectionStrings:DefaultConnection (not Default).
+      # The previous "Default" env var was silently ignored, leaving the app
+      # to fall back to appsettings.Development.json which has a LocalDB
+      # connection string — crashing the container on Linux.
       env {
-        name        = "ConnectionStrings__Default"
+        name        = "ConnectionStrings__DefaultConnection"
         secret_name = "sql-connection-string"
       }
 
