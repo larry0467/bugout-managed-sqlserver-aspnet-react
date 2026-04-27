@@ -1,7 +1,13 @@
 import axios from 'axios';
 
+// When the SPA is served behind an SWA linked backend, /api is proxied
+// same-origin and VITE_API_BASE_URL is empty. For envs without a linked
+// backend (dev — Free-tier SWA), set VITE_API_BASE_URL to the API host
+// (e.g. https://bugout-api-dev.managedplatform.com) at build time.
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${apiBaseUrl}/api`,
 });
 
 // Attach JWT token to every request

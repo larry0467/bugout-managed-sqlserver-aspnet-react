@@ -51,6 +51,12 @@ variable "extra_secrets" {
   default = {}
 }
 
+variable "extra_cors_origins" {
+  description = "Additional CORS origins on top of the standard localhost + bugout-{env}.managedplatform.com set."
+  type        = list(string)
+  default     = []
+}
+
 # Platform state lookup — the per-app TF reads platform outputs from this remote state
 variable "platform_state_resource_group" {
   type    = string

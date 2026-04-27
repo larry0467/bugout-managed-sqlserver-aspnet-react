@@ -33,4 +33,5 @@ module "app" {
   container_app_max_replicas = var.container_app_max_replicas
   static_web_app_sku         = var.static_web_app_sku
   extra_secrets              = var.extra_secrets
+  extra_cors_origins         = var.extra_cors_origins
 }

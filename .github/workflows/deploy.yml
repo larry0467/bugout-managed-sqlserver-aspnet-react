@@ -79,23 +79,9 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.tag.outputs.value }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:dev-latest
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Build web
-        working-directory: bugs-managed-admin
-        run: |
-          npm ci
-          npm run build
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: bugs-managed-admin/dist
-          retention-days: 7
+      # Web build moved into each deploy-* job so VITE_API_BASE_URL can be
+      # set per environment (Free-tier dev SWA needs the cross-origin API host;
+      # Standard-tier sandbox/beta/prod use linked backends and leave it empty).
 
   # =========================================================================
   # Deploy to dev — auto on push to master
@@ -107,10 +93,6 @@ jobs:
     environment: dev
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: bugs-managed-admin/dist
 
       - uses: azure/login@v2
         with:
@@ -138,6 +120,23 @@ jobs:
             -var="app_name=${{ env.APP_NAME }}" \
             -var="github_repo=${{ github.repository }}" \
             -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ needs.build.outputs.image_tag }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: bugs-managed-admin/package-lock.json
+
+      - name: Build web (dev env vars)
+        working-directory: bugs-managed-admin
+        env:
+          # Dev SWA is Free tier with no linked backend, so the SPA must call
+          # the API at its custom hostname directly. Container App CORS allows
+          # this origin via the BugOutManaged__Cors__AllowedOrigins env var.
+          VITE_API_BASE_URL: https://bugout-api-dev.managedplatform.com
+        run: |
+          npm ci
+          npm run build
 
       - name: Get SWA deploy token
         id: swa
