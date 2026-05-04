@@ -1,0 +1,32 @@
+{
+  "name": "bugs-managed-claude-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Agent SDK sidecar for Bugs Managed — analyzes bug reports, proposes fixes, opens PRs against the dev branch only.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.120",
+    "@octokit/rest": "^21.0.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "simple-git": "^3.27.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.16.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

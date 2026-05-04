@@ -1,0 +1,229 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to promote to prod (defaults to latest commit on master)"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  ACR_NAME: acrmpshared
+  APP_NAME: ${{ vars.APP_NAME }}
+  TF_STATE_RG: rg-mp-tfstate
+  TF_STATE_STORAGE: stmptfstatemkyf1j
+  TF_STATE_CONTAINER: tfstate
+
+jobs:
+  # =========================================================================
+  # Build (only on push to master and tag pushes)
+  # =========================================================================
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Azure login (dev UAMI for ACR push)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build and test API
+        working-directory: BugsManaged.Api
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          dotnet test --no-build --configuration Release --logger "trx;LogFileName=test-results.trx"
+
+      - name: Build + push API image
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.tag.outputs.value }} \
+                       -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:latest \
+                       -f BugsManaged.Api/Dockerfile BugsManaged.Api/
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.tag.outputs.value }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:latest
+
+      - name: Build + push Claude Agent sidecar image
+        # The sidecar is co-deployed in the same Container App as the API.
+        # Tagged with ${app}-claude-agent so they share the registry but
+        # don't collide with the API image's tags.
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:${{ steps.tag.outputs.value }} \
+                       -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:latest \
+                       -f BugsManaged.ClaudeAgent/Dockerfile BugsManaged.ClaudeAgent/
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:${{ steps.tag.outputs.value }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:latest
+
+      - name: Smoke-test sidecar image
+        # Catch the failure modes we've actually hit in prod:
+        #   - musl/glibc binary mismatch (Claude Code native binary not found)
+        #   - SDK package missing or unimportable
+        #   - express not installed
+        #   - server fails to bind on :7100
+        # If any of these regress, fail the build instead of letting prod
+        # find out via a $1.90 Claude run that can't even start.
+        run: |
+          IMAGE=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:${{ steps.tag.outputs.value }}
+
+          # 1. Verify the SDK + express load and the Claude binary resolves.
+          docker run --rm "$IMAGE" node -e "
+            const sdk = require('@anthropic-ai/claude-agent-sdk');
+            require('express');
+            require('simple-git');
+            require('@octokit/rest');
+            console.log('OK sdk-imports model=' + (sdk.query ? 'has-query' : 'NO-QUERY'));
+          "
+
+          # 2. Boot the actual server, hit /healthz, kill it. Catches port
+          # binding issues + module-resolution-at-startup bugs.
+          docker run -d --name agent-smoke -p 7101:7100 -e PORT=7100 "$IMAGE"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://localhost:7101/healthz > /tmp/healthz.json 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/healthz.json
+          docker rm -f agent-smoke
+          jq -e '.ok == true' /tmp/healthz.json
+
+      # Web build moved into each deploy-* job so VITE_API_BASE_URL can be
+      # set per environment (Free-tier dev SWA needs the cross-origin API host;
+      # Standard-tier sandbox/beta/prod use linked backends and leave it empty).
+
+  # =========================================================================
+  # Deploy to prod — auto on push to master, also tag (v*) OR workflow_dispatch.
+  #
+  # Bugs-managed has only one env now: prod. The dev tier was retired because
+  # the widget is the single deliverable embedded in every Managed Platform
+  # app — bug reports must land where prod triage + the Anthropic key live
+  # (see memory/project_bugout_always_prod.md). The GitHub Environment "prod"
+  # approval rule still gates every deploy; one click before terraform apply.
+  # =========================================================================
+  deploy-prod:
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref_type == 'tag')) || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+
+      - name: Resolve image tag
+        id: imgtag
+        run: |
+          IMG_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMG_TAG" ]]; then IMG_TAG="${{ needs.build.outputs.image_tag }}"; fi
+          if [[ -z "$IMG_TAG" ]]; then IMG_TAG=$(git rev-parse origin/master); fi
+          echo "value=$IMG_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform apply (prod)
+        working-directory: infra
+        env:
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_OIDC: "true"
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=app-${{ env.APP_NAME }}-prod.tfstate"
+          terraform apply -auto-approve \
+            -var-file=envs/prod.tfvars \
+            -var="app_name=${{ env.APP_NAME }}" \
+            -var="github_repo=${{ github.repository }}" \
+            -var="container_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}:${{ steps.imgtag.outputs.value }}" \
+            -var="sidecar_image=${{ env.ACR_NAME }}.azurecr.io/${{ env.APP_NAME }}-claude-agent:${{ steps.imgtag.outputs.value }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: bugs-managed-admin/package-lock.json
+
+      - name: Build web (prod env vars)
+        working-directory: bugs-managed-admin
+        env:
+          # Prod SWA is Standard tier — could use linked backend, but we
+          # bind the API custom hostname directly for now to match what dev
+          # already does. CORS allows the prod SWA origin via the
+          # BugOutManaged__Cors__AllowedOrigins env var on the Container App.
+          VITE_API_BASE_URL: https://bugout-api.managedplatform.com
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build widget IIFE and inject into SWA dist
+        run: |
+          cd bugs-managed-widget
+          npm ci
+          npm run build:iife
+          cp dist/widget.iife.js ../bugs-managed-admin/dist/widget.iife.js
+
+      - name: Get SWA deploy token
+        id: swa
+        working-directory: infra
+        run: |
+          token=$(terraform output -raw static_web_app_api_key)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: bugs-managed-admin/dist
+          skip_app_build: true
+
+      - name: Run EF migrations
+        working-directory: BugsManaged.Api
+        env:
+          ASPNETCORE_ENVIRONMENT: Production
+        run: |
+          dotnet tool install --global dotnet-ef
+          export PATH="$PATH:/root/.dotnet/tools:$HOME/.dotnet/tools"
+          dotnet restore
+          KV_NAME=$(az keyvault list -g rg-${{ env.APP_NAME }}-prod --query "[?starts_with(name, 'kv-${{ env.APP_NAME }}-prod-')].name | [0]" -o tsv)
+          if [[ -z "$KV_NAME" ]]; then echo "::error::No KV found in rg-${{ env.APP_NAME }}-prod matching kv-${{ env.APP_NAME }}-prod-*"; exit 1; fi
+          dotnet ef database update --connection "$(az keyvault secret show --vault-name $KV_NAME --name sql-connection-string --query value -o tsv)"
