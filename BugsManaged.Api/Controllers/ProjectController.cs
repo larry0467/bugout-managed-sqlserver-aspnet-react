@@ -15,11 +15,13 @@ public class ProjectController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
     private readonly IOrgContext _org;
+    private readonly BillingService _billing;
 
-    public ProjectController(BugsManagedDbContext db, IOrgContext org)
+    public ProjectController(BugsManagedDbContext db, IOrgContext org, BillingService billing)
     {
         _db = db;
         _org = org;
+        _billing = billing;
     }
 
     [HttpPost]
@@ -27,6 +29,10 @@ public class ProjectController : ControllerBase
     {
         if (_org.CurrentOrganizationId == null)
             return Unauthorized();
+
+        var (allowed, reason) = await _billing.CheckProjectLimitAsync(_org.CurrentOrganizationId.Value);
+        if (!allowed)
+            return StatusCode(402, new { message = reason });
 
         var slug = request.Name.ToLower().Replace(" ", "-");
         var project = new Project

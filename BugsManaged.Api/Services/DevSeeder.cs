@@ -57,6 +57,7 @@ public class DevSeeder
                 Name = "Acme Corp (Dev)",
                 Slug = "acme-corp-dev",
                 Plan = "ENTERPRISE",
+                IsBillingExempt = true,
             };
             _db.Organizations.Add(org);
             await _db.SaveChangesAsync();

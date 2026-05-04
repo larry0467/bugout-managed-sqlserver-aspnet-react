@@ -20,9 +20,10 @@ public class TicketController : ControllerBase
     private readonly IAuditLogger _audit;
     private readonly IClaudeAgentClient _sidecar;
     private readonly IVideoBlobService _blobs;
+    private readonly BillingService _billing;
     private readonly ILogger<TicketController> _log;
 
-    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, ILogger<TicketController> log)
+    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ILogger<TicketController> log)
     {
         _db = db;
         _classifier = classifier;
@@ -30,6 +31,7 @@ public class TicketController : ControllerBase
         _audit = audit;
         _sidecar = sidecar;
         _blobs = blobs;
+        _billing = billing;
         _log = log;
     }
 
@@ -77,6 +79,10 @@ public class TicketController : ControllerBase
     {
         if (_org.CurrentProjectId == null || _org.CurrentOrganizationId == null)
             return Unauthorized(new { message = "Missing or invalid X-BOM-API-Key header" });
+
+        var (allowed, reason) = await _billing.CheckTicketLimitAsync(_org.CurrentOrganizationId.Value);
+        if (!allowed)
+            return StatusCode(402, new { message = reason });
 
         var now = DateTime.UtcNow;
         ticket.ProjectId = _org.CurrentProjectId.Value;

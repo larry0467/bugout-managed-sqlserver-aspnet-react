@@ -62,6 +62,7 @@ builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TicketService>();
 builder.Services.AddScoped<PerformanceService>();
+builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<DevSeeder>();
 builder.Services.AddScoped<SandboxSeeder>();
 builder.Services.AddScoped<SandboxResetJob>();

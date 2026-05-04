@@ -19,6 +19,8 @@ public class Organization
     [Required, MaxLength(50)]
     public string Plan { get; set; } = "FREE"; // FREE, PRO, ENTERPRISE
 
+    public bool IsBillingExempt { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
