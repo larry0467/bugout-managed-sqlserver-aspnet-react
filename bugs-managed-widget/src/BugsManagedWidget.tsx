@@ -50,6 +50,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     appVersion,
     environment,
     onApiReady,
+    hideOrb = false,
   } = props;
 
   // Stable random suffix for SVG gradient IDs — must be unique per mount.
@@ -550,8 +551,8 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
   return (
     <>
-      {/* Floating Orb — animated SVG, amber tone */}
-      {(() => {
+      {/* Floating Orb — only when not managed by the ManagedLauncherOrb */}
+      {!hideOrb && (() => {
         const px = orbSize * 2;
         const core = orbColors[0];
         const ring = orbColors[1];

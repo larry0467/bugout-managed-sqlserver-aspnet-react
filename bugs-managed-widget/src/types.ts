@@ -19,4 +19,8 @@ export interface BugOutManagedConfig {
   // that want to open/close the modal programmatically (e.g. a unified
   // launcher that hosts multiple tools under one orb).
   onApiReady?: (api: { open: () => void; close: () => void }) => void;
+
+  // When true the widget renders only the modal panel — no floating orb button.
+  // Set by the IIFE entry when the ManagedLauncherOrb is handling the orb instead.
+  hideOrb?: boolean;
 }
