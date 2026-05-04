@@ -49,6 +49,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     databaseName,
     appVersion,
     environment,
+    onApiReady,
   } = props;
 
   // Stable random suffix for SVG gradient IDs — must be unique per mount.
@@ -85,6 +86,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const styleRef = useRef<HTMLStyleElement | null>(null);
   const consoleErrorsRef = useRef<CapturedError[]>([]);
   const networkErrorsRef = useRef<CapturedNetworkError[]>([]);
+
+  useEffect(() => {
+    onApiReady?.({ open: () => setIsOpen(true), close: () => setIsOpen(false) });
+  }, [onApiReady]);
 
   useEffect(() => {
     setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));

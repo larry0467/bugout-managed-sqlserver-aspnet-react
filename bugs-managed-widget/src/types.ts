@@ -14,4 +14,9 @@ export interface BugOutManagedConfig {
   databaseName?: string;
   appVersion?: string;
   environment?: 'PRODUCTION' | 'STAGING' | 'DEVELOPMENT';
+
+  // Called once after mount with an imperative handle. Used by host apps
+  // that want to open/close the modal programmatically (e.g. a unified
+  // launcher that hosts multiple tools under one orb).
+  onApiReady?: (api: { open: () => void; close: () => void }) => void;
 }

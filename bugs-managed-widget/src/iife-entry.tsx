@@ -32,6 +32,8 @@ declare global {
     BugOutManagedWidget?: {
       mount: (config: BugOutManagedConfig) => void;
       unmount: () => void;
+      open: () => void;
+      close: () => void;
     };
   }
 }
@@ -39,6 +41,7 @@ declare global {
 const ROOT_ID = 'bug-out-managed-root';
 
 let root: Root | null = null;
+let widgetApi: { open: () => void; close: () => void } | null = null;
 
 function getOrCreateRoot(): HTMLDivElement {
   let el = document.getElementById(ROOT_ID) as HTMLDivElement | null;
@@ -53,7 +56,10 @@ function getOrCreateRoot(): HTMLDivElement {
 function mount(config: BugOutManagedConfig) {
   const container = getOrCreateRoot();
   if (!root) root = createRoot(container);
-  root.render(React.createElement(BugOutManagedWidget, config));
+  root.render(React.createElement(BugOutManagedWidget, {
+    ...config,
+    onApiReady: (api) => { widgetApi = api; },
+  }));
 }
 
 function unmount() {
@@ -61,11 +67,17 @@ function unmount() {
     root.unmount();
     root = null;
   }
+  widgetApi = null;
   const el = document.getElementById(ROOT_ID);
   if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
-window.BugOutManagedWidget = { mount, unmount };
+window.BugOutManagedWidget = {
+  mount,
+  unmount,
+  open: () => widgetApi?.open(),
+  close: () => widgetApi?.close(),
+};
 
 function autoMount() {
   const cfg = window.__BUG_OUT_CONFIG__;
