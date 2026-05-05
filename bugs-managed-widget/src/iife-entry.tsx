@@ -42,6 +42,10 @@ declare global {
       unmount: () => void;
       open: () => void;
       close: () => void;
+      /** Update the submitter identity after the user logs in. Safe to call
+       *  multiple times (e.g. on auth state change). Re-renders the panel in
+       *  place — no flash, no remount, no lost state. */
+      setUser: (email: string, name: string) => void;
     };
   }
 }
@@ -53,6 +57,7 @@ let root: Root | null = null;
 let launcherRoot: Root | null = null;
 let widgetApi: { open: () => void; close: () => void } | null = null;
 let isLauncherHost = false;
+let currentConfig: BugOutManagedConfig | null = null;
 
 function getOrCreateContainer(id: string): HTMLDivElement {
   let el = document.getElementById(id) as HTMLDivElement | null;
@@ -75,6 +80,7 @@ function tearDownLauncherOrb() {
 }
 
 function mount(config: BugOutManagedConfig) {
+  currentConfig = config;
   const registry = getOrCreateRegistry();
 
   // Try to claim the orb host role. If Comms (or another launcher) already
@@ -138,6 +144,12 @@ window.BugOutManagedWidget = {
   unmount,
   open: () => widgetApi?.open(),
   close: () => widgetApi?.close(),
+  setUser: (email: string, name: string) => {
+    if (!currentConfig) return;
+    // Re-render with updated identity. React diffs props in place — no flash,
+    // no modal close, no lost form state. The launcher orb is unaffected.
+    mount({ ...currentConfig, userEmail: email, userName: name });
+  },
 };
 
 function autoMount() {
