@@ -1,6 +1,55 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { BugOutManagedConfig } from './types';
 
+// ─── Recording draft persistence (IndexedDB) ────────────────────────────────
+// Chunks are written to IndexedDB as they arrive so a page refresh during
+// recording doesn't lose the captured video. On mount the widget checks for
+// leftover chunks, reconstructs the Blob, and opens straight to the
+// submission form. Cleared on normal stop and on form reset.
+
+const _IDB_NAME = 'bom-draft';
+const _IDB_STORE = 'chunks';
+
+function _openRecordingDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_IDB_NAME, 1);
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore(_IDB_STORE, { autoIncrement: true });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbSaveChunk(chunk: Blob): void {
+  _openRecordingDB().then((db) => {
+    const tx = db.transaction(_IDB_STORE, 'readwrite');
+    tx.objectStore(_IDB_STORE).add(chunk);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  }).catch(() => {});
+}
+
+function dbLoadChunks(): Promise<Blob[]> {
+  return _openRecordingDB().then(
+    (db) => new Promise<Blob[]>((resolve) => {
+      const tx = db.transaction(_IDB_STORE, 'readonly');
+      const req = tx.objectStore(_IDB_STORE).getAll();
+      req.onsuccess = () => { db.close(); resolve(req.result as Blob[]); };
+      req.onerror  = () => { db.close(); resolve([]); };
+    })
+  ).catch(() => []);
+}
+
+function dbClearChunks(): void {
+  _openRecordingDB().then((db) => {
+    const tx = db.transaction(_IDB_STORE, 'readwrite');
+    tx.objectStore(_IDB_STORE).clear();
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  }).catch(() => {});
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 const TICKET_TYPES = [
   { value: 'BUG', label: 'Bug Report' },
   { value: 'FEATURE_REQUEST', label: 'Feature Request' },
@@ -61,6 +110,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [isRecovered, setIsRecovered] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [ticketType, setTicketType] = useState('BUG');
   const [priority, setPriority] = useState('MEDIUM');
@@ -91,6 +141,19 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   useEffect(() => {
     onApiReady?.({ open: () => setIsOpen(true), close: () => setIsOpen(false) });
   }, [onApiReady]);
+
+  // Recover any recording that was interrupted by a page refresh.
+  useEffect(() => {
+    dbLoadChunks().then((chunks) => {
+      if (chunks.length === 0) return;
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      dbClearChunks();
+      setRecordedBlob(blob);
+      setIsRecovered(true);
+      setIsOpen(true);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
@@ -386,11 +449,16 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
           : 'video/webm',
       });
       chunksRef.current = [];
+      dbClearChunks(); // clear any previous draft before this new recording
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+          dbSaveChunk(e.data); // persist chunk so a page refresh doesn't lose it
+        }
       };
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        dbClearChunks(); // normal stop — data is in the blob now
         setRecordedBlob(blob);
         displayStream.getTracks().forEach((t) => t.stop());
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -458,6 +526,8 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setUploadFile(null);
     setError('');
     setSubmitted(false);
+    setIsRecovered(false);
+    dbClearChunks();
   };
 
   const handleSubmit = async () => {
@@ -900,6 +970,19 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                           Stop Recording
                         </div>
                       )}
+                      {isRecovered && (
+                        <div style={{
+                          fontSize: 12,
+                          color: '#fb923c',
+                          background: 'rgba(251,146,60,0.12)',
+                          border: '1px solid rgba(251,146,60,0.35)',
+                          borderRadius: 6,
+                          padding: '5px 10px',
+                          marginBottom: 4,
+                        }}>
+                          Recording recovered after page reload — your video is intact.
+                        </div>
+                      )}
                       {recordedBlob && (
                         <>
                           <span style={{ fontSize: 12, opacity: 0.7 }}>
@@ -1013,9 +1096,56 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
       {/* Mini recording controller — renders independently of the modal so
           the user can navigate the page and reproduce the bug while the
-          screen is being captured. Drag from the grip to reposition. */}
+          screen is being captured. Drag anywhere on the pill to reposition. */}
       {isRecording && (
         <div
+          onMouseDown={(e) => {
+            // STOP button handles its own mousedown — don't start a drag.
+            if ((e.target as HTMLElement).closest('[data-bom-stop]')) return;
+            e.preventDefault();
+            dragOffsetRef.current = {
+              x: e.clientX - miniPos.left,
+              y: e.clientY - miniPos.top,
+            };
+            const onMove = (ev: MouseEvent) => {
+              if (!dragOffsetRef.current) return;
+              setMiniPos({
+                left: Math.max(0, Math.min(window.innerWidth - 240, ev.clientX - dragOffsetRef.current.x)),
+                top: Math.max(0, Math.min(window.innerHeight - 50, ev.clientY - dragOffsetRef.current.y)),
+              });
+            };
+            const onUp = () => {
+              dragOffsetRef.current = null;
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+          }}
+          onTouchStart={(e) => {
+            if ((e.target as HTMLElement).closest('[data-bom-stop]')) return;
+            const touch = e.touches[0];
+            dragOffsetRef.current = {
+              x: touch.clientX - miniPos.left,
+              y: touch.clientY - miniPos.top,
+            };
+            const onMove = (ev: TouchEvent) => {
+              if (!dragOffsetRef.current) return;
+              ev.preventDefault();
+              const t = ev.touches[0];
+              setMiniPos({
+                left: Math.max(0, Math.min(window.innerWidth - 240, t.clientX - dragOffsetRef.current.x)),
+                top: Math.max(0, Math.min(window.innerHeight - 50, t.clientY - dragOffsetRef.current.y)),
+              });
+            };
+            const onUp = () => {
+              dragOffsetRef.current = null;
+              document.removeEventListener('touchmove', onMove);
+              document.removeEventListener('touchend', onUp);
+            };
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onUp);
+          }}
           style={{
             position: 'fixed',
             top: miniPos.top,
@@ -1033,44 +1163,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
             fontSize: 13,
             userSelect: 'none',
+            cursor: 'grab',
+            touchAction: 'none',
           }}
         >
-          {/* Drag grip — mousedown starts a drag; the document-level
-              listeners (added on mousedown, removed on mouseup) keep
-              the controller pinned to the cursor even when it leaves
-              the small grip area. */}
-          <div
-            onMouseDown={(e) => {
-              dragOffsetRef.current = {
-                x: e.clientX - miniPos.left,
-                y: e.clientY - miniPos.top,
-              };
-              const onMove = (ev: MouseEvent) => {
-                if (!dragOffsetRef.current) return;
-                setMiniPos({
-                  left: Math.max(0, Math.min(window.innerWidth - 240, ev.clientX - dragOffsetRef.current.x)),
-                  top: Math.max(0, Math.min(window.innerHeight - 50, ev.clientY - dragOffsetRef.current.y)),
-                });
-              };
-              const onUp = () => {
-                dragOffsetRef.current = null;
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-              };
-              document.addEventListener('mousemove', onMove);
-              document.addEventListener('mouseup', onUp);
-            }}
-            style={{
-              cursor: 'grab',
-              padding: '2px 4px',
-              opacity: 0.6,
-              fontSize: 16,
-              lineHeight: 1,
-            }}
-            title="Drag to move"
-          >
+          {/* Grip dots — visual affordance that the whole pill is draggable */}
+          <span style={{ opacity: 0.45, fontSize: 14, lineHeight: 1, pointerEvents: 'none' }}>
             &#x2630;
-          </div>
+          </span>
 
           {/* Live indicator */}
           <span
@@ -1082,13 +1182,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
               background: '#e53935',
               boxShadow: '0 0 0 0 rgba(229,57,53,0.6)',
               animation: 'bom-pulse 1.4s ease-out infinite',
+              pointerEvents: 'none',
             }}
           />
-          <span style={{ fontWeight: 600 }}>Recording</span>
+          <span style={{ fontWeight: 600, pointerEvents: 'none' }}>Recording</span>
 
-          {/* Stop button — terminates the MediaRecorder and reopens the
-              big modal with the captured blob ready for review. */}
+          {/* Stop button — data-bom-stop prevents drag from firing on this element */}
           <div
+            data-bom-stop="true"
             onClick={stopRecording}
             style={{
               cursor: 'pointer',

@@ -1,41 +1,83 @@
-import { jsxs as n, Fragment as P, jsx as e } from "react/jsx-runtime";
-import { useRef as f, useState as p, useEffect as _e, useCallback as ce } from "react";
-const Me = [
+import { jsxs as n, Fragment as J, jsx as e } from "react/jsx-runtime";
+import { useRef as x, useState as b, useEffect as K, useCallback as xe } from "react";
+const Le = "bom-draft", R = "chunks";
+function Q() {
+  return new Promise((f, p) => {
+    const l = indexedDB.open(Le, 1);
+    l.onupgradeneeded = () => l.result.createObjectStore(R, { autoIncrement: !0 }), l.onsuccess = () => f(l.result), l.onerror = () => p(l.error);
+  });
+}
+function De(f) {
+  Q().then((p) => {
+    const l = p.transaction(R, "readwrite");
+    l.objectStore(R).add(f), l.oncomplete = () => p.close(), l.onerror = () => p.close();
+  }).catch(() => {
+  });
+}
+function Ue() {
+  return Q().then(
+    (f) => new Promise((p) => {
+      const E = f.transaction(R, "readonly").objectStore(R).getAll();
+      E.onsuccess = () => {
+        f.close(), p(E.result);
+      }, E.onerror = () => {
+        f.close(), p([]);
+      };
+    })
+  ).catch(() => []);
+}
+function F() {
+  Q().then((f) => {
+    const p = f.transaction(R, "readwrite");
+    p.objectStore(R).clear(), p.oncomplete = () => f.close(), p.onerror = () => f.close();
+  }).catch(() => {
+  });
+}
+const $e = [
   { value: "BUG", label: "Bug Report" },
   { value: "FEATURE_REQUEST", label: "Feature Request" },
   { value: "QUESTION", label: "Question" }
-], Oe = [
+], Ae = [
   { value: "LOW", label: "Low" },
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },
   { value: "CRITICAL", label: "Critical" }
-], Ce = (de) => {
+], je = (f) => {
   const {
-    apiKey: H,
-    apiUrl: y,
-    userEmail: pe,
-    userName: ue,
-    theme: me = "dark",
-    position: be = "bottom-right",
-    orbSize: fe = 24,
-    // Bug Out's identity is amber/orange ("we caught a bug" — warm, distinct
-    // from Jarvis blue/red so users can tell the orbs apart at a glance).
+    apiKey: p,
+    apiUrl: l,
+    userEmail: E,
+    userName: ke,
+    theme: Se = "dark",
+    position: Re = "bottom-right",
+    orbSize: _e = 24,
+    // Bug Out's identity is amber/orange ("we caught a bug" — warm, high contrast).
     // Hosts can override; if they do, we treat [0]=core, [1]=ring.
-    orbColors: b = ["#fbbf24", "#fb923c"],
+    orbColors: k = ["#fbbf24", "#fb923c"],
     // Tenant context
-    tenantId: j,
-    tenantName: A,
-    databaseName: X,
-    appVersion: q,
-    environment: Y
-  } = de, he = f(
+    tenantId: Z,
+    tenantName: ee,
+    databaseName: te,
+    appVersion: oe,
+    environment: re,
+    onApiReady: z,
+    hideOrb: Te = !1
+  } = f, Me = x(
     `bom-orb-${Math.random().toString(36).slice(2, 9)}`
-  ), [$, h] = p(!1), [M, G] = p(!1), [O, L] = p(null), [U, V] = p(""), [T, J] = p("BUG"), [K, Q] = p("MEDIUM"), [D, Z] = p(""), [ee, te] = p(""), [k, oe] = p(!1), [ge, re] = p(!1), [ne, z] = p(""), [ye, we] = p(!1), [N, ie] = p(null), [C, xe] = p(() => ({
+  ), [H, y] = b(!1), [W, ne] = b(!1), [L, D] = b(null), [Ee, ie] = b(!1), [X, se] = b(""), [U, ae] = b("BUG"), [ce, le] = b("MEDIUM"), [Y, de] = b(""), [pe, ue] = b(""), [O, me] = b(!1), [Oe, he] = b(!1), [be, $] = b(""), [Be, Ce] = b(!1), [q, fe] = b(null), [_, ge] = b(() => ({
     top: 24,
     left: typeof window < "u" ? Math.max(24, window.innerWidth - 280) : 24
-  })), S = f(null), I = f(null), F = f([]), B = f(null), R = f(null), c = f([]), d = f([]);
-  _e(() => {
-    if (we(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !R.current) {
+  })), w = x(null), A = x(null), G = x([]), V = x(null), N = x(null), B = x(null), u = x([]), m = x([]);
+  K(() => {
+    z == null || z({ open: () => y(!0), close: () => y(!1) });
+  }, [z]), K(() => {
+    Ue().then((t) => {
+      if (t.length === 0) return;
+      const r = new Blob(t, { type: "video/webm" });
+      F(), D(r), ie(!0), y(!0);
+    });
+  }, []), K(() => {
+    if (Ce(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !B.current) {
       const o = document.createElement("style");
       o.textContent = `
         @keyframes bom-fade-in {
@@ -151,166 +193,185 @@ const Me = [
           .bom-orb__halo,
           .bom-orb__scan { animation: none !important; }
         }
-      `, document.head.appendChild(o), R.current = o;
+      `, document.head.appendChild(o), B.current = o;
     }
     const t = console.error;
     console.error = (...o) => {
-      c.current.push({
+      u.current.push({
         type: "console.error",
-        message: o.map((r) => typeof r == "object" ? JSON.stringify(r) : String(r)).join(" "),
+        message: o.map((s) => typeof s == "object" ? JSON.stringify(s) : String(s)).join(" "),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), c.current.length > 50 && c.current.shift(), t.apply(console, o);
+      }), u.current.length > 50 && u.current.shift(), t.apply(console, o);
     };
-    const i = (o) => {
-      c.current.push({
+    const r = (o) => {
+      u.current.push({
         type: "window.onerror",
         message: o.message,
         source: o.filename,
         line: o.lineno,
         col: o.colno,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), c.current.length > 50 && c.current.shift();
+      }), u.current.length > 50 && u.current.shift();
     };
-    window.addEventListener("error", i);
-    const a = (o) => {
-      var r;
-      c.current.push({
+    window.addEventListener("error", r);
+    const i = (o) => {
+      var s;
+      u.current.push({
         type: "unhandledrejection",
-        message: ((r = o.reason) == null ? void 0 : r.message) || String(o.reason),
+        message: ((s = o.reason) == null ? void 0 : s.message) || String(o.reason),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), c.current.length > 50 && c.current.shift();
+      }), u.current.length > 50 && u.current.shift();
     };
-    window.addEventListener("unhandledrejection", a);
-    const s = window.fetch;
+    window.addEventListener("unhandledrejection", i);
+    const h = window.fetch;
     window.fetch = async (...o) => {
-      var W;
-      const r = typeof o[0] == "string" ? o[0] : o[0].url, v = (((W = o[1]) == null ? void 0 : W.method) || "GET").toUpperCase();
+      var v;
+      const s = typeof o[0] == "string" ? o[0] : o[0].url, a = (((v = o[1]) == null ? void 0 : v.method) || "GET").toUpperCase();
       try {
-        const m = await s.apply(window, o);
-        return !m.ok && !r.includes(y) && (d.current.push({
-          method: v,
-          url: r,
-          status: m.status,
-          statusText: m.statusText,
+        const c = await h.apply(window, o);
+        return !c.ok && !s.includes(l) && (m.current.push({
+          method: a,
+          url: s,
+          status: c.status,
+          statusText: c.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), d.current.length > 30 && d.current.shift()), m;
-      } catch (m) {
-        throw r.includes(y) || (d.current.push({
-          method: v,
-          url: r,
+        }), m.current.length > 30 && m.current.shift()), c;
+      } catch (c) {
+        throw s.includes(l) || (m.current.push({
+          method: a,
+          url: s,
           status: 0,
-          statusText: m.message || "Network Error",
+          statusText: c.message || "Network Error",
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), d.current.length > 30 && d.current.shift()), m;
+        }), m.current.length > 30 && m.current.shift()), c;
       }
     };
-    const l = XMLHttpRequest.prototype.open, u = XMLHttpRequest.prototype.send;
-    return XMLHttpRequest.prototype.open = function(o, r, ...v) {
-      return this._bomMethod = o, this._bomUrl = String(r), l.apply(this, [o, r, ...v]);
+    const d = XMLHttpRequest.prototype.open, g = XMLHttpRequest.prototype.send;
+    return XMLHttpRequest.prototype.open = function(o, s, ...a) {
+      return this._bomMethod = o, this._bomUrl = String(s), d.apply(this, [o, s, ...a]);
     }, XMLHttpRequest.prototype.send = function(...o) {
       return this.addEventListener("loadend", () => {
-        var r;
-        this.status >= 400 && !((r = this._bomUrl) != null && r.includes(y)) && (d.current.push({
+        var s;
+        this.status >= 400 && !((s = this._bomUrl) != null && s.includes(l)) && (m.current.push({
           method: this._bomMethod || "GET",
           url: this._bomUrl || "",
           status: this.status,
           statusText: this.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), d.current.length > 30 && d.current.shift());
-      }), u.apply(this, o);
+        }), m.current.length > 30 && m.current.shift());
+      }), g.apply(this, o);
     }, () => {
-      R.current && (document.head.removeChild(R.current), R.current = null), console.error = t, window.removeEventListener("error", i), window.removeEventListener("unhandledrejection", a), window.fetch = s, XMLHttpRequest.prototype.open = l, XMLHttpRequest.prototype.send = u;
+      B.current && (document.head.removeChild(B.current), B.current = null), console.error = t, window.removeEventListener("error", r), window.removeEventListener("unhandledrejection", i), window.fetch = h, XMLHttpRequest.prototype.open = d, XMLHttpRequest.prototype.send = g;
     };
-  }, [y]);
-  const w = me === "dark", se = w ? "#1a1a2e" : "#ffffff", x = w ? "#e0e0e0" : "#333333", g = w ? "#333" : "#ddd", E = w ? "#16213e" : "#f5f5f5", ve = be === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, ke = ce(async () => {
+  }, [l]);
+  const T = Se === "dark", ye = T ? "#1a1a2e" : "#ffffff", M = T ? "#e0e0e0" : "#333333", S = T ? "#333" : "#ddd", P = T ? "#16213e" : "#f5f5f5", Ie = Re === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, ze = xe(async () => {
     try {
       const t = await navigator.mediaDevices.getDisplayMedia({
         video: !0,
-        audio: !0
-      }), i = new MediaRecorder(t, {
+        // systemAudio: 'include' pre-checks the "Also share system audio" toggle in Chrome 105+.
+        audio: { systemAudio: "include", suppressLocalAudioPlayback: !1 }
+      });
+      let r = null;
+      try {
+        r = await navigator.mediaDevices.getUserMedia({ audio: !0, video: !1 });
+      } catch {
+      }
+      V.current = r;
+      const i = ((r == null ? void 0 : r.getAudioTracks().length) ?? 0) > 0, h = t.getAudioTracks().length > 0;
+      !i && !h && alert(
+        `Your recording will have no audio.
+
+To capture audio, re-start the recording and either:
+  • Enable "Also share system audio" in the screen picker (Chrome), or
+  • Allow microphone access when prompted.
+
+The recording will continue without audio.`
+      );
+      const d = i ? r.getAudioTracks() : t.getAudioTracks(), g = new MediaStream([...t.getVideoTracks(), ...d]), o = new MediaRecorder(g, {
         mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm"
       });
-      F.current = [], i.ondataavailable = (s) => {
-        s.data.size > 0 && F.current.push(s.data);
-      }, i.onstop = () => {
-        const s = new Blob(F.current, { type: "video/webm" });
-        L(s), t.getTracks().forEach((l) => l.stop());
-      }, i.start(1e3), I.current = i, G(!0), h(!1);
-      const a = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (a) {
-        const s = new a();
-        s.continuous = !0, s.interimResults = !0, s.lang = "en-US";
-        let l = "";
-        s.onresult = (u) => {
-          let o = "";
-          for (let r = u.resultIndex; r < u.results.length; r++)
-            u.results[r].isFinal ? l += u.results[r][0].transcript + " " : o += u.results[r][0].transcript;
-          V(l + o);
-        }, s.onerror = () => {
-        }, s.start(), B.current = s;
+      G.current = [], F(), o.ondataavailable = (a) => {
+        a.data.size > 0 && (G.current.push(a.data), De(a.data));
+      }, o.onstop = () => {
+        var v;
+        const a = new Blob(G.current, { type: "video/webm" });
+        F(), D(a), t.getTracks().forEach((c) => c.stop()), (v = V.current) == null || v.getTracks().forEach((c) => c.stop()), V.current = null;
+      }, o.start(1e3), A.current = o, ne(!0), y(!1);
+      const s = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (s) {
+        const a = new s();
+        a.continuous = !0, a.interimResults = !0, a.lang = "en-US";
+        let v = "";
+        a.onresult = (c) => {
+          let j = "";
+          for (let I = c.resultIndex; I < c.results.length; I++)
+            c.results[I].isFinal ? v += c.results[I][0].transcript + " " : j += c.results[I][0].transcript;
+          se(v + j);
+        }, a.onerror = () => {
+        }, a.start(), N.current = a;
       }
     } catch (t) {
       console.error("Failed to start recording:", t);
     }
-  }, []), ae = ce(() => {
-    I.current && I.current.state !== "inactive" && I.current.stop(), B.current && (B.current.stop(), B.current = null), G(!1), h(!0);
-  }, []), le = () => {
-    Z(""), te(""), J("BUG"), Q("MEDIUM"), V(""), L(null), ie(null), z(""), re(!1);
-  }, Se = async () => {
-    if (!D.trim()) {
-      z("Title is required");
+  }, []), we = xe(() => {
+    A.current && A.current.state !== "inactive" && A.current.stop(), N.current && (N.current.stop(), N.current = null), ne(!1), y(!0);
+  }, []), ve = () => {
+    de(""), ue(""), ae("BUG"), le("MEDIUM"), se(""), D(null), fe(null), $(""), he(!1), ie(!1), F();
+  }, We = async () => {
+    if (!Y.trim()) {
+      $("Title is required");
       return;
     }
-    oe(!0), z("");
+    me(!0), $("");
     try {
       const t = {
-        title: D.trim(),
-        description: ee.trim(),
-        ticketType: T,
-        priority: K,
-        submittedBy: pe || ue || "Anonymous",
+        title: Y.trim(),
+        description: pe.trim(),
+        ticketType: U,
+        priority: ce,
+        submittedBy: E || ke || "Anonymous",
         currentPageUrl: window.location.href,
         currentPageName: document.title,
         browserInfo: navigator.userAgent,
         screenWidth: window.innerWidth,
         screenHeight: window.innerHeight,
-        transcript: U || null,
-        consoleErrors: c.current.length > 0 ? JSON.stringify(c.current) : null,
-        networkErrors: d.current.length > 0 ? JSON.stringify(d.current) : null
+        transcript: X || null,
+        consoleErrors: u.current.length > 0 ? JSON.stringify(u.current) : null,
+        networkErrors: m.current.length > 0 ? JSON.stringify(m.current) : null
       };
-      j && (t.tenantId = j), A && (t.tenantName = A), X && (t.databaseName = X), q && (t.applicationVersion = q), Y && (t.environment = Y);
-      const i = await fetch(`${y}/tickets`, {
+      Z && (t.tenantId = Z), ee && (t.tenantName = ee), te && (t.databaseName = te), oe && (t.applicationVersion = oe), re && (t.environment = re);
+      const r = await fetch(`${l}/tickets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-BOM-API-Key": H
+          "X-BOM-API-Key": p
         },
         body: JSON.stringify(t)
       });
-      if (!i.ok) throw new Error("Failed to submit ticket");
-      const a = await i.json(), s = O || N;
-      if (s && a.id)
+      if (!r.ok) throw new Error("Failed to submit ticket");
+      const i = await r.json(), h = L || q;
+      if (h && i.id)
         try {
-          const l = new FormData();
-          l.append("file", s, "recording.webm");
-          const u = await fetch(`${y}/tickets/${a.id}/video`, {
+          const d = new FormData();
+          d.append("file", h, "recording.webm");
+          const g = await fetch(`${l}/tickets/${i.id}/video`, {
             method: "POST",
-            headers: { "X-BOM-API-Key": H },
-            body: l
+            headers: { "X-BOM-API-Key": p },
+            body: d
           });
-          u.ok || console.warn(`[Bug Out] Video upload failed (${u.status}) for ticket ${a.id}`);
-        } catch (l) {
-          console.warn("[Bug Out] Video upload network error:", l);
+          g.ok || console.warn(`[Bug Out] Video upload failed (${g.status}) for ticket ${i.id}`);
+        } catch (d) {
+          console.warn("[Bug Out] Video upload network error:", d);
         }
-      re(!0), setTimeout(() => {
-        h(!1), le();
+      he(!0), setTimeout(() => {
+        y(!1), ve();
       }, 2e3);
     } catch (t) {
-      z(t.message || "Failed to submit");
+      $(t.message || "Failed to submit");
     } finally {
-      oe(!1);
+      me(!1);
     }
-  }, _ = {
+  }, C = {
     padding: "8px 16px",
     border: "none",
     borderRadius: 6,
@@ -319,9 +380,9 @@ const Me = [
     fontWeight: 600,
     transition: "opacity 0.2s"
   };
-  return /* @__PURE__ */ n(P, { children: [
-    (() => {
-      const t = fe * 2, i = b[0], a = b[1], s = `${i}8c`, l = he.current;
+  return /* @__PURE__ */ n(J, { children: [
+    !Te && (() => {
+      const t = _e * 2, r = k[0], i = k[1], h = `${r}8c`, d = Me.current;
       return /* @__PURE__ */ e(
         "button",
         {
@@ -330,16 +391,16 @@ const Me = [
           "aria-label": "Report a bug",
           title: "Report a bug or request a feature",
           onClick: () => {
-            $ || le(), h(!$);
+            H || ve(), y(!H);
           },
           className: "bom-orb-wrap",
           style: {
-            ...ve,
+            ...Ie,
             width: t,
             height: t,
-            "--bom-core": i,
-            "--bom-ring": a,
-            "--bom-halo": s,
+            "--bom-core": r,
+            "--bom-ring": i,
+            "--bom-halo": h,
             "--bom-spin": "18s",
             "--bom-pulse": "4s"
           },
@@ -354,15 +415,15 @@ const Me = [
                 className: "bom-orb__svg",
                 children: [
                   /* @__PURE__ */ n("defs", { children: [
-                    /* @__PURE__ */ n("radialGradient", { id: `${l}-core`, cx: "50%", cy: "50%", r: "50%", children: [
-                      /* @__PURE__ */ e("stop", { offset: "0%", stopColor: i, stopOpacity: "1" }),
-                      /* @__PURE__ */ e("stop", { offset: "55%", stopColor: i, stopOpacity: "0.55" }),
+                    /* @__PURE__ */ n("radialGradient", { id: `${d}-core`, cx: "50%", cy: "50%", r: "50%", children: [
+                      /* @__PURE__ */ e("stop", { offset: "0%", stopColor: r, stopOpacity: "1" }),
+                      /* @__PURE__ */ e("stop", { offset: "55%", stopColor: r, stopOpacity: "0.55" }),
                       /* @__PURE__ */ e("stop", { offset: "100%", stopColor: "#1a0f00", stopOpacity: "0" })
                     ] }),
-                    /* @__PURE__ */ n("radialGradient", { id: `${l}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
+                    /* @__PURE__ */ n("radialGradient", { id: `${d}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
                       /* @__PURE__ */ e("stop", { offset: "0%", stopColor: "#fff7dc", stopOpacity: "0.95" }),
-                      /* @__PURE__ */ e("stop", { offset: "40%", stopColor: i, stopOpacity: "0.7" }),
-                      /* @__PURE__ */ e("stop", { offset: "100%", stopColor: i, stopOpacity: "0" })
+                      /* @__PURE__ */ e("stop", { offset: "40%", stopColor: r, stopOpacity: "0.7" }),
+                      /* @__PURE__ */ e("stop", { offset: "100%", stopColor: r, stopOpacity: "0" })
                     ] })
                   ] }),
                   /* @__PURE__ */ e(
@@ -371,7 +432,7 @@ const Me = [
                       cx: "50",
                       cy: "50",
                       r: "48",
-                      fill: `url(#${l}-core)`,
+                      fill: `url(#${d}-core)`,
                       className: "bom-orb__halo"
                     }
                   ),
@@ -383,21 +444,21 @@ const Me = [
                         cy: "50",
                         r: "44",
                         fill: "none",
-                        stroke: a,
+                        stroke: i,
                         strokeOpacity: "0.55",
                         strokeWidth: "0.5"
                       }
                     ),
-                    Array.from({ length: 36 }).map((u, o) => {
-                      const r = o * 10 * Math.PI / 180, v = 50 + Math.cos(r) * 41, W = 50 + Math.sin(r) * 41, m = 50 + Math.cos(r) * (o % 3 === 0 ? 44 : 43), Re = 50 + Math.sin(r) * (o % 3 === 0 ? 44 : 43);
+                    Array.from({ length: 36 }).map((g, o) => {
+                      const s = o * 10 * Math.PI / 180, a = 50 + Math.cos(s) * 41, v = 50 + Math.sin(s) * 41, c = 50 + Math.cos(s) * (o % 3 === 0 ? 44 : 43), j = 50 + Math.sin(s) * (o % 3 === 0 ? 44 : 43);
                       return /* @__PURE__ */ e(
                         "line",
                         {
-                          x1: v,
-                          y1: W,
-                          x2: m,
-                          y2: Re,
-                          stroke: a,
+                          x1: a,
+                          y1: v,
+                          x2: c,
+                          y2: j,
+                          stroke: i,
                           strokeOpacity: o % 3 === 0 ? 0.8 : 0.35,
                           strokeWidth: "0.8"
                         },
@@ -413,7 +474,7 @@ const Me = [
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: a,
+                        stroke: i,
                         strokeOpacity: "0.18",
                         strokeWidth: "0.5"
                       }
@@ -425,7 +486,7 @@ const Me = [
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: a,
+                        stroke: i,
                         strokeOpacity: "0.85",
                         strokeWidth: "1.4",
                         strokeDasharray: "42 30 18 36 24 32",
@@ -440,7 +501,7 @@ const Me = [
                       cy: "50",
                       r: "28",
                       fill: "none",
-                      stroke: i,
+                      stroke: r,
                       strokeOpacity: "0.7",
                       strokeWidth: "0.9",
                       strokeDasharray: "2 4"
@@ -452,7 +513,7 @@ const Me = [
                       cx: "50",
                       cy: "50",
                       r: "20",
-                      fill: `url(#${l}-iris)`,
+                      fill: `url(#${d}-iris)`,
                       className: "bom-orb__core"
                     }
                   ),
@@ -460,10 +521,10 @@ const Me = [
                     /* @__PURE__ */ e("line", { x1: "50", y1: "42", x2: "50", y2: "42", strokeWidth: "3.4" }),
                     /* @__PURE__ */ e("line", { x1: "50", y1: "48", x2: "50", y2: "58", strokeWidth: "2.4" })
                   ] }),
-                  /* @__PURE__ */ e("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: a, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: a, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: a, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: a, strokeOpacity: "0.7", strokeWidth: "0.6" })
+                  /* @__PURE__ */ e("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" })
                 ]
               }
             ),
@@ -472,7 +533,7 @@ const Me = [
         }
       );
     })(),
-    $ && /* @__PURE__ */ e(
+    H && /* @__PURE__ */ e(
       "div",
       {
         style: {
@@ -486,14 +547,14 @@ const Me = [
           animation: "bom-fade-in 0.2s ease-out"
         },
         onClick: (t) => {
-          t.target === t.currentTarget && h(!1);
+          t.target === t.currentTarget && y(!1);
         },
         children: /* @__PURE__ */ e(
           "div",
           {
             style: {
-              background: se,
-              color: x,
+              background: ye,
+              color: M,
               borderRadius: 12,
               padding: 24,
               width: "90%",
@@ -503,17 +564,17 @@ const Me = [
               boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
             },
-            children: ge ? /* @__PURE__ */ n("div", { style: { textAlign: "center", padding: 40 }, children: [
+            children: Oe ? /* @__PURE__ */ n("div", { style: { textAlign: "center", padding: 40 }, children: [
               /* @__PURE__ */ e("div", { style: { fontSize: 48, marginBottom: 16 }, children: "✓" }),
               /* @__PURE__ */ e("h3", { style: { margin: 0, fontSize: 20 }, children: "Submitted!" }),
               /* @__PURE__ */ e("p", { style: { opacity: 0.7, marginTop: 8 }, children: "Thank you for your feedback." })
-            ] }) : /* @__PURE__ */ n(P, { children: [
+            ] }) : /* @__PURE__ */ n(J, { children: [
               /* @__PURE__ */ n("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }, children: [
                 /* @__PURE__ */ e("h3", { style: { margin: 0, fontSize: 18, fontWeight: 700 }, children: "Report an Issue" }),
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => h(!1),
+                    onClick: () => y(!1),
                     style: { cursor: "pointer", fontSize: 20, opacity: 0.6, padding: "0 4px" },
                     children: "✕"
                   }
@@ -521,20 +582,20 @@ const Me = [
               ] }),
               /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Type" }),
-                /* @__PURE__ */ e("div", { style: { display: "flex", gap: 8 }, children: Me.map((t) => /* @__PURE__ */ e(
+                /* @__PURE__ */ e("div", { style: { display: "flex", gap: 8 }, children: $e.map((t) => /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => J(t.value),
+                    onClick: () => ae(t.value),
                     style: {
                       flex: 1,
                       padding: "8px 4px",
                       textAlign: "center",
                       borderRadius: 6,
-                      border: `2px solid ${T === t.value ? b[0] : g}`,
-                      background: T === t.value ? `${b[0]}22` : "transparent",
+                      border: `2px solid ${U === t.value ? k[0] : S}`,
+                      background: U === t.value ? `${k[0]}22` : "transparent",
                       cursor: "pointer",
                       fontSize: 12,
-                      fontWeight: T === t.value ? 700 : 400
+                      fontWeight: U === t.value ? 700 : 400
                     },
                     children: t.label
                   },
@@ -546,19 +607,19 @@ const Me = [
                 /* @__PURE__ */ e(
                   "select",
                   {
-                    value: K,
-                    onChange: (t) => Q(t.target.value),
+                    value: ce,
+                    onChange: (t) => le(t.target.value),
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${g}`,
-                      background: E,
-                      color: x,
+                      border: `1px solid ${S}`,
+                      background: P,
+                      color: M,
                       fontSize: 14,
                       outline: "none"
                     },
-                    children: Oe.map((t) => /* @__PURE__ */ e("option", { value: t.value, children: t.label }, t.value))
+                    children: Ae.map((t) => /* @__PURE__ */ e("option", { value: t.value, children: t.label }, t.value))
                   }
                 )
               ] }),
@@ -571,17 +632,17 @@ const Me = [
                   "input",
                   {
                     type: "text",
-                    value: D,
-                    onChange: (t) => Z(t.target.value),
+                    value: Y,
+                    onChange: (t) => de(t.target.value),
                     placeholder: "Brief summary of the issue",
                     maxLength: 500,
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${g}`,
-                      background: E,
-                      color: x,
+                      border: `1px solid ${S}`,
+                      background: P,
+                      color: M,
                       fontSize: 14,
                       outline: "none",
                       boxSizing: "border-box"
@@ -594,17 +655,17 @@ const Me = [
                 /* @__PURE__ */ e(
                   "textarea",
                   {
-                    value: ee,
-                    onChange: (t) => te(t.target.value),
+                    value: pe,
+                    onChange: (t) => ue(t.target.value),
                     placeholder: "Describe the issue in detail...",
                     rows: 3,
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${g}`,
-                      background: E,
-                      color: x,
+                      border: `1px solid ${S}`,
+                      background: P,
+                      color: M,
                       fontSize: 14,
                       outline: "none",
                       resize: "vertical",
@@ -616,60 +677,69 @@ const Me = [
               ] }),
               /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Screen Recording" }),
-                ye ? /* @__PURE__ */ n("div", { children: [
+                Be ? /* @__PURE__ */ n("div", { children: [
                   /* @__PURE__ */ e(
                     "input",
                     {
                       type: "file",
                       accept: "video/*",
                       onChange: (t) => {
-                        var i;
-                        return ie(((i = t.target.files) == null ? void 0 : i[0]) || null);
+                        var r;
+                        return fe(((r = t.target.files) == null ? void 0 : r[0]) || null);
                       },
                       style: { fontSize: 13 }
                     }
                   ),
-                  N && /* @__PURE__ */ e("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: N.name })
+                  q && /* @__PURE__ */ e("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: q.name })
                 ] }) : /* @__PURE__ */ n("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-                  !M && !O && /* @__PURE__ */ e(
+                  !W && !L && /* @__PURE__ */ e(
                     "div",
                     {
-                      onClick: ke,
+                      onClick: ze,
                       style: {
-                        ..._,
-                        background: `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                        ...C,
+                        background: `linear-gradient(135deg, ${k[0]}, ${k[1]})`,
                         color: "#fff"
                       },
                       children: "Start Recording"
                     }
                   ),
-                  M && /* @__PURE__ */ e(
+                  W && /* @__PURE__ */ e(
                     "div",
                     {
-                      onClick: ae,
-                      style: { ..._, background: "#e53935", color: "#fff" },
+                      onClick: we,
+                      style: { ...C, background: "#e53935", color: "#fff" },
                       children: "Stop Recording"
                     }
                   ),
-                  O && /* @__PURE__ */ n(P, { children: [
+                  Ee && /* @__PURE__ */ e("div", { style: {
+                    fontSize: 12,
+                    color: "#fb923c",
+                    background: "rgba(251,146,60,0.12)",
+                    border: "1px solid rgba(251,146,60,0.35)",
+                    borderRadius: 6,
+                    padding: "5px 10px",
+                    marginBottom: 4
+                  }, children: "Recording recovered after page reload — your video is intact." }),
+                  L && /* @__PURE__ */ n(J, { children: [
                     /* @__PURE__ */ n("span", { style: { fontSize: 12, opacity: 0.7 }, children: [
                       "Recording captured (",
-                      (O.size / 1024 / 1024).toFixed(1),
+                      (L.size / 1024 / 1024).toFixed(1),
                       " MB)"
                     ] }),
                     /* @__PURE__ */ e(
                       "div",
                       {
-                        onClick: () => L(null),
-                        style: { ..._, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
+                        onClick: () => D(null),
+                        style: { ...C, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
                         children: "Remove"
                       }
                     )
                   ] }),
-                  M && /* @__PURE__ */ e("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
+                  W && /* @__PURE__ */ e("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
                 ] })
               ] }),
-              U && /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
+              X && /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Voice Transcript" }),
                 /* @__PURE__ */ e(
                   "div",
@@ -677,48 +747,48 @@ const Me = [
                     style: {
                       padding: "8px 12px",
                       borderRadius: 6,
-                      background: E,
-                      border: `1px solid ${g}`,
+                      background: P,
+                      border: `1px solid ${S}`,
                       fontSize: 13,
                       maxHeight: 80,
                       overflowY: "auto",
                       opacity: 0.8
                     },
-                    children: U
+                    children: X
                   }
                 )
               ] }),
-              (c.current.length > 0 || d.current.length > 0) && /* @__PURE__ */ n("div", { style: {
+              (u.current.length > 0 || m.current.length > 0) && /* @__PURE__ */ n("div", { style: {
                 marginBottom: 14,
                 padding: "6px 12px",
                 borderRadius: 6,
-                background: w ? "#2a1a1a" : "#fff3f0",
-                border: `1px solid ${w ? "#4a2020" : "#ffccc7"}`,
+                background: T ? "#2a1a1a" : "#fff3f0",
+                border: `1px solid ${T ? "#4a2020" : "#ffccc7"}`,
                 fontSize: 12,
                 opacity: 0.8
               }, children: [
-                c.current.length > 0 && /* @__PURE__ */ n("span", { children: [
-                  c.current.length,
+                u.current.length > 0 && /* @__PURE__ */ n("span", { children: [
+                  u.current.length,
                   " console error(s) captured"
                 ] }),
-                c.current.length > 0 && d.current.length > 0 && " | ",
-                d.current.length > 0 && /* @__PURE__ */ n("span", { children: [
-                  d.current.length,
+                u.current.length > 0 && m.current.length > 0 && " | ",
+                m.current.length > 0 && /* @__PURE__ */ n("span", { children: [
+                  m.current.length,
                   " network error(s) captured"
                 ] }),
                 /* @__PURE__ */ e("span", { style: { display: "block", marginTop: 2, opacity: 0.7 }, children: "These will be included in your report automatically." })
               ] }),
-              ne && /* @__PURE__ */ e("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: ne }),
+              be && /* @__PURE__ */ e("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: be }),
               /* @__PURE__ */ n("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" }, children: [
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => h(!1),
+                    onClick: () => y(!1),
                     style: {
-                      ..._,
+                      ...C,
                       background: "transparent",
-                      color: x,
-                      border: `1px solid ${g}`
+                      color: M,
+                      border: `1px solid ${S}`
                     },
                     children: "Cancel"
                   }
@@ -726,15 +796,15 @@ const Me = [
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: k ? void 0 : Se,
+                    onClick: O ? void 0 : We,
                     style: {
-                      ..._,
-                      background: k ? "#666" : `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                      ...C,
+                      background: O ? "#666" : `linear-gradient(135deg, ${k[0]}, ${k[1]})`,
                       color: "#fff",
-                      opacity: k ? 0.6 : 1,
-                      cursor: k ? "not-allowed" : "pointer"
+                      opacity: O ? 0.6 : 1,
+                      cursor: O ? "not-allowed" : "pointer"
                     },
-                    children: k ? "Submitting..." : "Submit"
+                    children: O ? "Submitting..." : "Submit"
                   }
                 )
               ] }),
@@ -744,57 +814,67 @@ const Me = [
         )
       }
     ),
-    M && /* @__PURE__ */ n(
+    W && /* @__PURE__ */ n(
       "div",
       {
+        onMouseDown: (t) => {
+          if (t.target.closest("[data-bom-stop]")) return;
+          t.preventDefault(), w.current = {
+            x: t.clientX - _.left,
+            y: t.clientY - _.top
+          };
+          const r = (h) => {
+            w.current && ge({
+              left: Math.max(0, Math.min(window.innerWidth - 240, h.clientX - w.current.x)),
+              top: Math.max(0, Math.min(window.innerHeight - 50, h.clientY - w.current.y))
+            });
+          }, i = () => {
+            w.current = null, document.removeEventListener("mousemove", r), document.removeEventListener("mouseup", i);
+          };
+          document.addEventListener("mousemove", r), document.addEventListener("mouseup", i);
+        },
+        onTouchStart: (t) => {
+          if (t.target.closest("[data-bom-stop]")) return;
+          const r = t.touches[0];
+          w.current = {
+            x: r.clientX - _.left,
+            y: r.clientY - _.top
+          };
+          const i = (d) => {
+            if (!w.current) return;
+            d.preventDefault();
+            const g = d.touches[0];
+            ge({
+              left: Math.max(0, Math.min(window.innerWidth - 240, g.clientX - w.current.x)),
+              top: Math.max(0, Math.min(window.innerHeight - 50, g.clientY - w.current.y))
+            });
+          }, h = () => {
+            w.current = null, document.removeEventListener("touchmove", i), document.removeEventListener("touchend", h);
+          };
+          document.addEventListener("touchmove", i, { passive: !1 }), document.addEventListener("touchend", h);
+        },
         style: {
           position: "fixed",
-          top: C.top,
-          left: C.left,
+          top: _.top,
+          left: _.left,
           zIndex: 1000001,
           display: "flex",
           alignItems: "center",
           gap: 10,
           padding: "8px 12px",
-          background: se,
-          color: x,
+          background: ye,
+          color: M,
           borderRadius: 999,
-          border: `1px solid ${g}`,
+          border: `1px solid ${S}`,
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: 13,
-          userSelect: "none"
+          userSelect: "none",
+          cursor: "grab",
+          touchAction: "none"
         },
         children: [
-          /* @__PURE__ */ e(
-            "div",
-            {
-              onMouseDown: (t) => {
-                S.current = {
-                  x: t.clientX - C.left,
-                  y: t.clientY - C.top
-                };
-                const i = (s) => {
-                  S.current && xe({
-                    left: Math.max(0, Math.min(window.innerWidth - 240, s.clientX - S.current.x)),
-                    top: Math.max(0, Math.min(window.innerHeight - 50, s.clientY - S.current.y))
-                  });
-                }, a = () => {
-                  S.current = null, document.removeEventListener("mousemove", i), document.removeEventListener("mouseup", a);
-                };
-                document.addEventListener("mousemove", i), document.addEventListener("mouseup", a);
-              },
-              style: {
-                cursor: "grab",
-                padding: "2px 4px",
-                opacity: 0.6,
-                fontSize: 16,
-                lineHeight: 1
-              },
-              title: "Drag to move",
-              children: "☰"
-            }
-          ),
+          /* @__PURE__ */ e("span", { style: { opacity: 0.45, fontSize: 14, lineHeight: 1, pointerEvents: "none" }, children: "☰" }),
           /* @__PURE__ */ e(
             "span",
             {
@@ -805,15 +885,17 @@ const Me = [
                 borderRadius: "50%",
                 background: "#e53935",
                 boxShadow: "0 0 0 0 rgba(229,57,53,0.6)",
-                animation: "bom-pulse 1.4s ease-out infinite"
+                animation: "bom-pulse 1.4s ease-out infinite",
+                pointerEvents: "none"
               }
             }
           ),
-          /* @__PURE__ */ e("span", { style: { fontWeight: 600 }, children: "Recording" }),
+          /* @__PURE__ */ e("span", { style: { fontWeight: 600, pointerEvents: "none" }, children: "Recording" }),
           /* @__PURE__ */ e(
             "div",
             {
-              onClick: ae,
+              "data-bom-stop": "true",
+              onClick: we,
               style: {
                 cursor: "pointer",
                 background: "#e53935",
@@ -833,6 +915,6 @@ const Me = [
   ] });
 };
 export {
-  Ce as BugOutManagedWidget,
-  Ce as BugsManagedWidget
+  je as BugOutManagedWidget,
+  je as BugsManagedWidget
 };
