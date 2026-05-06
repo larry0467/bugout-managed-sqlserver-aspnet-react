@@ -157,7 +157,7 @@ const TeamPage: React.FC = () => {
       key: 'specialty',
       width: 160,
       render: (specialty: string | undefined, record: TeamMember) => {
-        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER')
+        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER' && record.role !== 'SUPER_ADMIN')
           return <span style={{ color: '#bbb' }}>—</span>;
         return (
           <Select
@@ -181,7 +181,7 @@ const TeamPage: React.FC = () => {
       width: 260,
       render: (_: any, record: TeamMember) => {
         // Only show project assignments for developers and platform owners
-        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER') {
+        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER' && record.role !== 'SUPER_ADMIN') {
           return <span style={{ color: '#bbb' }}>—</span>;
         }
         // Build select value: empty projectIds → show 'all'

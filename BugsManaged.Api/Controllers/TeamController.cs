@@ -57,7 +57,7 @@ public class TeamController : ControllerBase
         // Specialty as FULLSTACK (they qualify for any category).
         var query = _db.Users
             .Include(u => u.ProjectAssignments)
-            .Where(u => u.Role == "DEVELOPER" || u.Role == "PLATFORM_OWNER");
+            .Where(u => u.Role == "DEVELOPER" || u.Role == "PLATFORM_OWNER" || u.Role == "SUPER_ADMIN");
 
         if (!string.IsNullOrEmpty(category) && category != "FULLSTACK")
             query = query.Where(u =>
@@ -167,7 +167,7 @@ public class TeamController : ControllerBase
         if (user == null) return NotFound(new { message = "User not found" });
 
         user.Role = request.Role;
-        if (request.Role == "DEVELOPER" || request.Role == "PLATFORM_OWNER")
+        if (request.Role == "DEVELOPER" || request.Role == "PLATFORM_OWNER" || request.Role == "SUPER_ADMIN")
             user.Specialty = request.Specialty ?? user.Specialty;
         else
             user.Specialty = null;

@@ -738,7 +738,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       render: (v: string, record: Ticket) => {
         const cat = record.developerCategory;
         const eligible = teamMembers.filter((m) => {
-          if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER') return false;
+          if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
           // Project filter: empty projectIds = all projects; otherwise must include this ticket's project
           const projectId = record.projectId;
           if (m.projectIds && m.projectIds.length > 0 && projectId) {
