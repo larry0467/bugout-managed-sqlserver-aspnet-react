@@ -167,7 +167,7 @@ public class TeamController : ControllerBase
         if (user == null) return NotFound(new { message = "User not found" });
 
         user.Role = request.Role;
-        if (request.Role == "DEVELOPER")
+        if (request.Role == "DEVELOPER" || request.Role == "PLATFORM_OWNER")
             user.Specialty = request.Specialty ?? user.Specialty;
         else
             user.Specialty = null;

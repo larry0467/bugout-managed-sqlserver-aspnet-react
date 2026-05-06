@@ -77,7 +77,7 @@ const TeamPage: React.FC = () => {
 
   const handleSpecialtyChange = async (member: TeamMember, specialty: string) => {
     try {
-      await teamApi.updateRole(member.id, 'DEVELOPER', specialty);
+      await teamApi.updateRole(member.id, member.role, specialty);
       message.success('Specialty updated');
       load();
     } catch (err: any) {
@@ -157,7 +157,8 @@ const TeamPage: React.FC = () => {
       key: 'specialty',
       width: 160,
       render: (specialty: string | undefined, record: TeamMember) => {
-        if (record.role !== 'DEVELOPER') return <span style={{ color: '#bbb' }}>—</span>;
+        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER')
+          return <span style={{ color: '#bbb' }}>—</span>;
         return (
           <Select
             value={specialty}
