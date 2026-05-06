@@ -21,6 +21,7 @@ public class BugsManagedDbContext : DbContext
     public DbSet<ClaudeRun> ClaudeRuns => Set<ClaudeRun>();
     public DbSet<TicketStageHistory> TicketStageHistory => Set<TicketStageHistory>();
     public DbSet<SandboxResetLog> SandboxResetLogs => Set<SandboxResetLog>();
+    public DbSet<UserProjectAssignment> UserProjectAssignments => Set<UserProjectAssignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +76,10 @@ public class BugsManagedDbContext : DbContext
         modelBuilder.Entity<SandboxResetLog>()
             .HasIndex(l => l.OccurredAtUtc);
 
+        modelBuilder.Entity<UserProjectAssignment>()
+            .HasIndex(x => new { x.UserId, x.ProjectId })
+            .IsUnique();
+
         // Global query filters — every org-scoped query auto-filters by the
         // current org resolved by OrgResolutionMiddleware. Use
         // .IgnoreQueryFilters() when you genuinely need to read across orgs
@@ -100,6 +105,12 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketStageHistory>()
             .HasQueryFilter(h => _orgContext.CurrentOrganizationId != null && h.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        // UserProjectAssignment is scoped through its User FK — no direct
+        // OrganizationId column. Filter via the User navigation so org isolation
+        // is maintained and EF's global-filter/required-nav warning is resolved.
+        modelBuilder.Entity<UserProjectAssignment>()
+            .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.User.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()

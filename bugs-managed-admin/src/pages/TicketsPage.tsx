@@ -739,6 +739,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         const cat = record.developerCategory;
         const eligible = teamMembers.filter((m) => {
           if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER') return false;
+          // Project filter: empty projectIds = all projects; otherwise must include this ticket's project
+          const projectId = record.projectId;
+          if (m.projectIds && m.projectIds.length > 0 && projectId) {
+            if (!m.projectIds.includes(projectId)) return false;
+          }
           if (!cat || cat === 'FULLSTACK') return true;
           if (!m.specialty || m.specialty === 'FULLSTACK') return true; // PLATFORM_OWNER with no specialty qualifies for all
           return m.specialty === cat;

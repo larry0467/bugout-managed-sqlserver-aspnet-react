@@ -360,6 +360,7 @@ export interface TeamMember {
   role: UserRole;
   specialty?: DeveloperSpecialty;
   createdAt: string;
+  projectIds: number[];
 }
 
 export interface DeveloperOption {
@@ -367,6 +368,7 @@ export interface DeveloperOption {
   email: string;
   fullName: string;
   specialty?: DeveloperSpecialty;
+  projectIds: number[];
 }
 
 export const teamApi = {
@@ -377,11 +379,16 @@ export const teamApi = {
     api.put<TeamMember>(`/team/${userId}/role`, { role, specialty }).then(r => r.data),
   remove: (userId: number) =>
     api.delete(`/team/${userId}`).then(r => r.data),
-  developers: (category?: string) => {
+  developers: (category?: string, projectId?: number) => {
     const params: any = {};
     if (category) params.category = category;
+    if (projectId != null) params.projectId = projectId;
     return api.get<DeveloperOption[]>('/team/developers', { params }).then(r => r.data);
   },
+  getUserProjects: (userId: number) =>
+    api.get<number[]>(`/team/${userId}/projects`).then(r => r.data),
+  setUserProjects: (userId: number, projectIds: number[]) =>
+    api.put(`/team/${userId}/projects`, projectIds).then(r => r.data),
 };
 
 // Ticket assign

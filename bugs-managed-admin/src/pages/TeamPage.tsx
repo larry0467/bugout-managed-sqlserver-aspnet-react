@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Tag, Typography, message, Space, Popconfirm } from 'antd';
 import { PlusOutlined, DeleteOutlined, CrownOutlined, UserOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
-import { teamApi, type TeamMember } from '../api';
+import { teamApi, projectApi, type TeamMember, type Project } from '../api';
 
 const { Title } = Typography;
 
@@ -33,6 +33,9 @@ const TeamPage: React.FC = () => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [form] = Form.useForm();
+  const [projects, setProjects] = useState<Project[]>([]);
+  // Track which user's project select is open / being saved
+  const [projectsSaving, setProjectsSaving] = useState<Record<number, boolean>>({});
 
   const currentUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
 
@@ -41,7 +44,10 @@ const TeamPage: React.FC = () => {
     teamApi.list().then(setMembers).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    projectApi.list().then(setProjects).catch(() => {});
+  }, []);
 
   const handleInvite = async () => {
     setInviteLoading(true);
@@ -88,6 +94,24 @@ const TeamPage: React.FC = () => {
       message.error(err.response?.data?.error || 'Failed to remove member');
     }
   };
+
+  const handleProjectAssignments = async (userId: number, selected: (number | 'all')[]) => {
+    // If 'all' is the last item added, clear all specific IDs
+    const allSelected = selected.includes('all' as any);
+    const projectIds = allSelected ? [] : (selected as number[]);
+    setProjectsSaving((prev) => ({ ...prev, [userId]: true }));
+    try {
+      await teamApi.setUserProjects(userId, projectIds);
+      message.success('Project assignments updated');
+      load();
+    } catch (err: any) {
+      message.error(err.response?.data?.error || 'Failed to update project assignments');
+    } finally {
+      setProjectsSaving((prev) => ({ ...prev, [userId]: false }));
+    }
+  };
+
+  const projectMap = Object.fromEntries(projects.map((p) => [p.id, p.name]));
 
   const columns = [
     {
@@ -146,6 +170,71 @@ const TeamPage: React.FC = () => {
               { label: 'Backend', value: 'BACKEND' },
               { label: 'Full-stack', value: 'FULLSTACK' },
             ]}
+          />
+        );
+      },
+    },
+    {
+      title: 'Projects',
+      key: 'projects',
+      width: 260,
+      render: (_: any, record: TeamMember) => {
+        // Only show project assignments for developers and platform owners
+        if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER') {
+          return <span style={{ color: '#bbb' }}>—</span>;
+        }
+        // Build select value: empty projectIds → show 'all'
+        const value: (number | 'all')[] =
+          record.projectIds && record.projectIds.length > 0
+            ? record.projectIds
+            : ['all'];
+
+        const options = [
+          { label: 'All Projects', value: 'all' as any },
+          ...projects.map((p) => ({ label: p.name, value: p.id })),
+        ];
+
+        return (
+          <Select
+            mode="multiple"
+            size="small"
+            style={{ width: 240 }}
+            value={value}
+            loading={projectsSaving[record.id]}
+            options={options}
+            onChange={(selected: (number | 'all')[]) => {
+              // If 'all' was just picked, strip everything else
+              const hadAll = value.includes('all');
+              const nowHasAll = selected.includes('all' as any);
+              let next: (number | 'all')[];
+              if (!hadAll && nowHasAll) {
+                // user just picked 'all' — clear specific selections
+                next = ['all'];
+              } else if (hadAll && selected.length > 1) {
+                // user picked a specific project while 'all' was set — drop 'all'
+                next = selected.filter((v) => v !== 'all');
+              } else if (selected.length === 0) {
+                // nothing selected — default back to 'all'
+                next = ['all'];
+              } else {
+                next = selected;
+              }
+              handleProjectAssignments(record.id, next);
+            }}
+            tagRender={(props) => {
+              const { value: v, closable, onClose } = props;
+              if (v === 'all') return <Tag color="blue" closable={closable} onClose={onClose}>All</Tag>;
+              return (
+                <Tag closable={closable} onClose={onClose} style={{ marginRight: 2 }}>
+                  {projectMap[v as number] || `#${v}`}
+                </Tag>
+              );
+            }}
+            placeholder="All Projects"
+            showSearch
+            filterOption={(input, option) =>
+              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+            }
           />
         );
       },
