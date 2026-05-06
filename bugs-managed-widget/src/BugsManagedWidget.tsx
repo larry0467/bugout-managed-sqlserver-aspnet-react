@@ -427,8 +427,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const startRecording = useCallback(async () => {
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        // systemAudio: 'include' pre-checks the "Also share system audio" toggle in Chrome 105+.
+        // 'monitor' hints Chrome/Edge to pre-select "Entire Screen" in the picker.
+        // System audio is available on full-screen captures; tab captures often block it.
+        video: { displaySurface: 'monitor' } as MediaTrackConstraints,
+        // 'include' pre-checks "Also share system audio" in the Chrome picker.
         audio: { systemAudio: 'include', suppressLocalAudioPlayback: false } as MediaTrackConstraints,
       });
 
@@ -442,17 +444,18 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       }
       micStreamRef.current = micStream;
 
-      // Warn if neither system audio nor mic is available.
+      // Require audio — stop immediately and ask the user to retry.
       const hasMic = (micStream?.getAudioTracks().length ?? 0) > 0;
       const hasSystemAudio = displayStream.getAudioTracks().length > 0;
       if (!hasMic && !hasSystemAudio) {
-        alert(
-          'Your recording will have no audio.\n\n' +
-          'To capture audio, re-start the recording and either:\n' +
-          '  • Enable "Also share system audio" in the screen picker (Chrome), or\n' +
-          '  • Allow microphone access when prompted.\n\n' +
-          'The recording will continue without audio.'
+        displayStream.getTracks().forEach((t) => t.stop());
+        micStream?.getTracks().forEach((t) => t.stop());
+        setError(
+          'No audio detected. In the screen picker, enable "Share system audio" ' +
+          '(or allow microphone access) and try again.'
         );
+        setIsOpen(true);
+        return;
       }
 
       // Build the recording stream: all video tracks from the display capture,
