@@ -738,9 +738,9 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       render: (v: string, record: Ticket) => {
         const cat = record.developerCategory;
         const eligible = teamMembers.filter((m) => {
-          if (m.role !== 'DEVELOPER') return false;
+          if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER') return false;
           if (!cat || cat === 'FULLSTACK') return true;
-          if (m.specialty === 'FULLSTACK') return true;
+          if (!m.specialty || m.specialty === 'FULLSTACK') return true; // PLATFORM_OWNER with no specialty qualifies for all
           return m.specialty === cat;
         });
 

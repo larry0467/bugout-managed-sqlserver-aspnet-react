@@ -49,10 +49,15 @@ public class TeamController : ControllerBase
     [HttpGet("developers")]
     public async Task<IActionResult> GetDevelopers([FromQuery] string? category)
     {
-        var query = _db.Users.Where(u => u.Role == "DEVELOPER");
+        // PLATFORM_OWNER users can also develop — include them, treating a null
+        // Specialty as FULLSTACK (they qualify for any category).
+        var query = _db.Users.Where(u => u.Role == "DEVELOPER" || u.Role == "PLATFORM_OWNER");
 
         if (!string.IsNullOrEmpty(category) && category != "FULLSTACK")
-            query = query.Where(u => u.Specialty == category || u.Specialty == "FULLSTACK");
+            query = query.Where(u =>
+                u.Specialty == category ||
+                u.Specialty == "FULLSTACK" ||
+                u.Specialty == null);  // PLATFORM_OWNER with no specialty → qualifies for all
 
         var devs = await query
             .OrderBy(u => u.FullName)
