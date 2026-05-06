@@ -198,7 +198,20 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseStaticFiles();
+// The IIFE widget is embedded in every consumer app with no version in the
+// URL, so we must force revalidation on every request. no-cache means
+// "always revalidate with the server" — the browser only re-downloads if
+// the ETag/Last-Modified changed, so bandwidth cost is minimal.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.File.Name.Equals("widget.iife.js", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["Cache-Control"] = "no-cache";
+        }
+    }
+});
 app.UseCors("AdminPolicy");
 app.UseRateLimiter();
 app.UseAuthentication();
