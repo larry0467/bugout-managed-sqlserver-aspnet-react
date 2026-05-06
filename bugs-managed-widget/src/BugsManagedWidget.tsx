@@ -5,47 +5,56 @@ import type { BugOutManagedConfig } from './types';
 // Chunks are written to IndexedDB as they arrive so a page refresh during
 // recording doesn't lose the captured video. On mount the widget checks for
 // leftover chunks, reconstructs the Blob, and opens straight to the
-// submission form. Cleared on normal stop and on form reset.
+// submission form. Cleared when a new recording starts and on form reset.
+//
+// Design notes:
+//   - Singleton DB connection: opened once per page, reused for every chunk
+//     write. Opening a fresh connection per-chunk is async and unreliable
+//     when the page is being torn down (the open might never resolve).
+//   - beforeunload hook (added in startRecording, removed in stopRecording)
+//     calls requestData() to flush the MediaRecorder's current buffer so
+//     the final partial-second chunk lands in IndexedDB before the page dies.
 
 const _IDB_NAME = 'bom-draft';
 const _IDB_STORE = 'chunks';
 
-function _openRecordingDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(_IDB_NAME, 1);
-    req.onupgradeneeded = () =>
-      req.result.createObjectStore(_IDB_STORE, { autoIncrement: true });
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+// Lazily opened, kept alive for the page lifetime.
+let _dbConn: Promise<IDBDatabase> | null = null;
+
+function _getDB(): Promise<IDBDatabase> {
+  if (!_dbConn) {
+    _dbConn = new Promise((resolve, reject) => {
+      const req = indexedDB.open(_IDB_NAME, 1);
+      req.onupgradeneeded = () =>
+        req.result.createObjectStore(_IDB_STORE, { autoIncrement: true });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => { _dbConn = null; reject(req.error); };
+    });
+  }
+  return _dbConn;
 }
 
 function dbSaveChunk(chunk: Blob): void {
-  _openRecordingDB().then((db) => {
-    const tx = db.transaction(_IDB_STORE, 'readwrite');
-    tx.objectStore(_IDB_STORE).add(chunk);
-    tx.oncomplete = () => db.close();
-    tx.onerror = () => db.close();
+  _getDB().then((db) => {
+    // Fire-and-forget write on the persistent connection — no open overhead.
+    db.transaction(_IDB_STORE, 'readwrite').objectStore(_IDB_STORE).add(chunk);
   }).catch(() => {});
 }
 
 function dbLoadChunks(): Promise<Blob[]> {
-  return _openRecordingDB().then(
+  return _getDB().then(
     (db) => new Promise<Blob[]>((resolve) => {
-      const tx = db.transaction(_IDB_STORE, 'readonly');
-      const req = tx.objectStore(_IDB_STORE).getAll();
-      req.onsuccess = () => { db.close(); resolve(req.result as Blob[]); };
-      req.onerror  = () => { db.close(); resolve([]); };
+      const req = db.transaction(_IDB_STORE, 'readonly')
+        .objectStore(_IDB_STORE).getAll();
+      req.onsuccess = () => resolve(req.result as Blob[]);
+      req.onerror  = () => resolve([]);
     })
   ).catch(() => []);
 }
 
 function dbClearChunks(): void {
-  _openRecordingDB().then((db) => {
-    const tx = db.transaction(_IDB_STORE, 'readwrite');
-    tx.objectStore(_IDB_STORE).clear();
-    tx.oncomplete = () => db.close();
-    tx.onerror = () => db.close();
+  _getDB().then((db) => {
+    db.transaction(_IDB_STORE, 'readwrite').objectStore(_IDB_STORE).clear();
   }).catch(() => {});
 }
 // ────────────────────────────────────────────────────────────────────────────
@@ -124,11 +133,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
   // Mini-controller floating position. Defaults to top-right; user can
   // drag it anywhere. Persisted only for the lifetime of one recording.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   const [miniPos, setMiniPos] = useState<{ top: number; left: number }>(() => ({
     top: 24,
     left: typeof window !== 'undefined' ? Math.max(24, window.innerWidth - 280) : 24,
   }));
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const beforeUnloadRef = useRef<(() => void) | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -149,6 +161,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       const blob = new Blob(chunks, { type: 'video/webm' });
       dbClearChunks();
       setRecordedBlob(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
       setIsRecovered(true);
       setIsOpen(true);
     });
@@ -459,12 +472,24 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
         setRecordedBlob(blob);
+        setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
         displayStream.getTracks().forEach((t) => t.stop());
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
         micStreamRef.current = null;
       };
       mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
+
+      // Flush the current partial chunk before the page unloads so it lands
+      // in IndexedDB before the browser tears down the tab.
+      const handleBeforeUnload = () => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.requestData();
+        }
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      beforeUnloadRef.current = handleBeforeUnload;
+
       setIsRecording(true);
       // Get the big modal out of the user's way so they can actually
       // demonstrate the bug. The mini controller (rendered below the
@@ -502,6 +527,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   }, []);
 
   const stopRecording = useCallback(() => {
+    if (beforeUnloadRef.current) {
+      window.removeEventListener('beforeunload', beforeUnloadRef.current);
+      beforeUnloadRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -522,6 +551,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setPriority('MEDIUM');
     setTranscript('');
     setRecordedBlob(null);
+    setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setUploadFile(null);
     setError('');
     setSubmitted(false);
@@ -983,17 +1013,17 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                         </div>
                       )}
                       {recordedBlob && (
-                        <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, opacity: 0.7 }}>
-                            Recording captured ({(recordedBlob.size / 1024 / 1024).toFixed(1)} MB)
+                            {(recordedBlob.size / 1024 / 1024).toFixed(1)} MB
                           </span>
                           <div
-                            onClick={() => setRecordedBlob(null)}
+                            onClick={() => { setRecordedBlob(null); setPreviewUrl((p) => { if (p) URL.revokeObjectURL(p); return null; }); }}
                             style={{ ...btnStyle, background: '#666', color: '#fff', padding: '4px 10px', fontSize: 12 }}
                           >
                             Remove
                           </div>
-                        </>
+                        </div>
                       )}
                       {isRecording && (
                         <span style={{ fontSize: 12, color: '#e53935', fontWeight: 600 }}>
@@ -1003,6 +1033,30 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                     </div>
                   )}
                 </div>
+
+                {/* Video preview — lets the user verify audio was captured before submitting */}
+                {previewUrl && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 600, opacity: 0.8 }}>
+                      Preview
+                    </label>
+                    <video
+                      src={previewUrl}
+                      controls
+                      style={{
+                        width: '100%',
+                        borderRadius: 8,
+                        border: `1px solid ${borderColor}`,
+                        background: '#000',
+                        maxHeight: 220,
+                        display: 'block',
+                      }}
+                    />
+                    <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
+                      Make sure your audio is audible before submitting.
+                    </div>
+                  </div>
+                )}
 
                 {/* Transcript */}
                 {transcript && (
