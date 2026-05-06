@@ -118,6 +118,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
   const [isOpen, setIsOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [noAudioWarning, setNoAudioWarning] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [isRecovered, setIsRecovered] = useState(false);
   const [showRecoveryPill, setShowRecoveryPill] = useState(false);
@@ -428,10 +429,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
         // 'monitor' hints Chrome/Edge to pre-select "Entire Screen" in the picker.
-        // System audio is available on full-screen captures; tab captures often block it.
         video: { displaySurface: 'monitor' } as MediaTrackConstraints,
-        // 'include' pre-checks "Also share system audio" in the Chrome picker.
-        audio: { systemAudio: 'include', suppressLocalAudioPlayback: false } as MediaTrackConstraints,
+        // Passing only systemAudio:'include' — extra constraints alongside it
+        // cause Chrome to silently ignore the pre-check.
+        audio: { systemAudio: 'include' } as MediaTrackConstraints,
       });
 
       // Request mic so the user's narration is captured alongside the screen.
@@ -444,17 +445,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       }
       micStreamRef.current = micStream;
 
-      // Require audio — stop immediately and ask the user to retry.
+      // Require audio — stop immediately and show the dedicated retry prompt.
       const hasMic = (micStream?.getAudioTracks().length ?? 0) > 0;
       const hasSystemAudio = displayStream.getAudioTracks().length > 0;
       if (!hasMic && !hasSystemAudio) {
         displayStream.getTracks().forEach((t) => t.stop());
         micStream?.getTracks().forEach((t) => t.stop());
-        setError(
-          'No audio detected. In the screen picker, enable "Share system audio" ' +
-          '(or allow microphone access) and try again.'
-        );
-        setIsOpen(true);
+        setNoAudioWarning(true);
+        setIsOpen(false);
         return;
       }
 
@@ -573,6 +571,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setSubmitted(false);
     setIsRecovered(false);
     setShowRecoveryPill(false);
+    setNoAudioWarning(false);
     recoveredChunksRef.current = [];
     dbClearChunks();
   };
@@ -830,6 +829,53 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
           </button>
         );
       })()}
+
+      {/* No-audio gate — shown when recording started but no audio track was captured */}
+      {noAudioWarning && (
+        <div
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.65)',
+            zIndex: 1000000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'bom-fade-in 0.2s ease-out',
+          }}
+        >
+          <div style={{
+            background: bg, color: fg, borderRadius: 12, padding: 28,
+            width: '90%', maxWidth: 420,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🔇</div>
+            <h3 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}>No audio detected</h3>
+            <p style={{ margin: '0 0 18px', fontSize: 14, opacity: 0.75, lineHeight: 1.5 }}>
+              Your recording would have no sound. In the screen picker, enable the
+              <strong> "Also share system audio"</strong> toggle before clicking Share.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <div
+                onClick={() => { setNoAudioWarning(false); startRecording(); }}
+                style={{
+                  ...btnStyle,
+                  background: `linear-gradient(135deg, ${orbColors[0]}, ${orbColors[1]})`,
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Try again
+              </div>
+              <div
+                onClick={() => { setNoAudioWarning(false); setIsOpen(true); }}
+                style={{ ...btnStyle, background: 'transparent', color: fg, border: `1px solid ${borderColor}`, cursor: 'pointer' }}
+              >
+                Skip audio
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {isOpen && (
