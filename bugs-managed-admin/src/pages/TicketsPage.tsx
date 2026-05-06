@@ -14,6 +14,8 @@ import {
   SendOutlined,
   DeleteOutlined,
   RobotOutlined,
+  DownloadOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -289,6 +291,8 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [videoModal, setVideoModal] = useState<number | null>(null);
   const [videoSasUrl, setVideoSasUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState<number | null>(null);
+  const [shareLoading, setShareLoading] = useState<number | null>(null);
   const [resolveModal, setResolveModal] = useState<Ticket | null>(null);
   const [resolution, setResolution] = useState('');
   const [activeTabByTicket, setActiveTabByTicket] = useState<Record<number, string>>({});
@@ -482,6 +486,40 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       out.push({ text: s.replace(/_/g, ' '), value: v });
     }
     return out.sort((a, b) => String(a.text).localeCompare(String(b.text)));
+  };
+
+  const handleVideoDownload = async (ticketId: number) => {
+    setDownloadLoading(ticketId);
+    try {
+      const url = await ticketApi.getVideoUrl(ticketId);
+      // Fetch as blob so the cross-origin SAS URL triggers a real download
+      // instead of opening in a new tab.
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `bug-recording-${ticketId}.webm`;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      message.error('Failed to download video');
+    } finally {
+      setDownloadLoading(null);
+    }
+  };
+
+  const handleVideoShare = async (ticketId: number) => {
+    setShareLoading(ticketId);
+    try {
+      const url = await ticketApi.getVideoUrl(ticketId);
+      await navigator.clipboard.writeText(url);
+      message.success('Video link copied to clipboard — valid for 1 hour');
+    } catch {
+      message.error('Failed to copy link');
+    } finally {
+      setShareLoading(null);
+    }
   };
 
   // Every column gets sorter + (where it makes sense) filters. Most carry
@@ -771,10 +809,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 150,
+      width: 220,
       fixed: 'right',
       render: (_: any, record: Ticket) => (
-        <Space size="small">
+        <Space size="small" wrap>
           {record.videoUrl && (
             <Button
               size="small"
@@ -793,6 +831,26 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               }}
             >
               Video
+            </Button>
+          )}
+          {record.videoUrl && (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={downloadLoading === record.id}
+              onClick={() => handleVideoDownload(record.id)}
+            >
+              Download
+            </Button>
+          )}
+          {record.videoUrl && (
+            <Button
+              size="small"
+              icon={<ShareAltOutlined />}
+              loading={shareLoading === record.id}
+              onClick={() => handleVideoShare(record.id)}
+            >
+              Share
             </Button>
           )}
           <Button
@@ -1156,7 +1214,24 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         title="Screen Recording"
         open={videoModal !== null}
         onCancel={() => { setVideoModal(null); setVideoSasUrl(null); }}
-        footer={null}
+        footer={videoSasUrl && videoModal !== null ? (
+          <Space>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={downloadLoading === videoModal}
+              onClick={() => handleVideoDownload(videoModal)}
+            >
+              Download
+            </Button>
+            <Button
+              icon={<ShareAltOutlined />}
+              loading={shareLoading === videoModal}
+              onClick={() => handleVideoShare(videoModal)}
+            >
+              Copy link
+            </Button>
+          </Space>
+        ) : null}
         width={800}
       >
         {videoLoading && <div style={{ textAlign: 'center', padding: 32 }}>Loading video…</div>}
