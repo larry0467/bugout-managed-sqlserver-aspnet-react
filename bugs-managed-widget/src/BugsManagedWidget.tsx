@@ -120,6 +120,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [isRecovered, setIsRecovered] = useState(false);
+  const [showRecoveryPill, setShowRecoveryPill] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [ticketType, setTicketType] = useState('BUG');
   const [priority, setPriority] = useState('MEDIUM');
@@ -141,6 +142,9 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   }));
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const beforeUnloadRef = useRef<(() => void) | null>(null);
+  // Holds chunks recovered from IndexedDB so startRecording can prepend them
+  // if the user chooses to continue recording after a refresh.
+  const recoveredChunksRef = useRef<Blob[]>([]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -159,11 +163,13 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     dbLoadChunks().then((chunks) => {
       if (chunks.length === 0) return;
       const blob = new Blob(chunks, { type: 'video/webm' });
-      dbClearChunks();
+      // Keep IDB intact — startRecording will clear it if user continues recording,
+      // resetForm will clear it if user submits/discards.
+      recoveredChunksRef.current = chunks; // store raw chunks for possible merge
       setRecordedBlob(blob);
       setPreviewUrl(URL.createObjectURL(blob));
       setIsRecovered(true);
-      setIsOpen(true);
+      setShowRecoveryPill(true);  // show pill, NOT modal
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -462,7 +468,9 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
           : 'video/webm',
       });
       chunksRef.current = [];
-      dbClearChunks(); // clear any previous draft before this new recording
+      if (recoveredChunksRef.current.length === 0) {
+        dbClearChunks(); // only clear if not merging with a recovery
+      }
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunksRef.current.push(e.data);
@@ -470,9 +478,14 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
         }
       };
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const allChunks = [...recoveredChunksRef.current, ...chunksRef.current];
+        const blob = new Blob(allChunks, { type: 'video/webm' });
+        recoveredChunksRef.current = [];
+        dbClearChunks(); // now safe to clear — we have the merged blob
         setRecordedBlob(blob);
         setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+        setIsRecovered(false);
+        setShowRecoveryPill(false);
         displayStream.getTracks().forEach((t) => t.stop());
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
         micStreamRef.current = null;
@@ -556,6 +569,8 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setError('');
     setSubmitted(false);
     setIsRecovered(false);
+    setShowRecoveryPill(false);
+    recoveredChunksRef.current = [];
     dbClearChunks();
   };
 
@@ -1256,6 +1271,58 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
             }}
           >
             STOP
+          </div>
+        </div>
+      )}
+
+      {/* Recovery pill — shown after page refresh recovers an in-progress recording */}
+      {showRecoveryPill && !isRecording && !isOpen && recordedBlob && (
+        <div style={{
+          position: 'fixed',
+          bottom: 80,
+          right: 24,
+          zIndex: 1000001,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 14px',
+          background: bg,
+          color: fg,
+          borderRadius: 999,
+          border: `1px solid rgba(251,146,60,0.5)`,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontSize: 13,
+          userSelect: 'none',
+        }}>
+          <span style={{ fontSize: 16 }}>🎥</span>
+          <span style={{ fontWeight: 600, color: '#fb923c' }}>
+            Recovered ({(recordedBlob.size / 1024 / 1024).toFixed(1)} MB)
+          </span>
+          <div
+            onClick={() => { setShowRecoveryPill(false); startRecording(); }}
+            style={{ cursor: 'pointer', background: `linear-gradient(135deg, ${orbColors[0]}, ${orbColors[1]})`, color: '#fff', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 700 }}
+          >
+            Continue
+          </div>
+          <div
+            onClick={() => { setShowRecoveryPill(false); setIsOpen(true); }}
+            style={{ cursor: 'pointer', background: '#22c55e', color: '#fff', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 700 }}
+          >
+            Submit
+          </div>
+          <div
+            onClick={() => {
+              setShowRecoveryPill(false);
+              setIsRecovered(false);
+              setRecordedBlob(null);
+              setPreviewUrl((p) => { if (p) URL.revokeObjectURL(p); return null; });
+              recoveredChunksRef.current = [];
+              dbClearChunks();
+            }}
+            style={{ cursor: 'pointer', opacity: 0.5, fontSize: 12, padding: '5px 8px' }}
+          >
+            ✕
           </div>
         </div>
       )}
