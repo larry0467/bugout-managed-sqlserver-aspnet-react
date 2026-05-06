@@ -458,7 +458,6 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       };
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        dbClearChunks(); // normal stop — data is in the blob now
         setRecordedBlob(blob);
         displayStream.getTracks().forEach((t) => t.stop());
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
