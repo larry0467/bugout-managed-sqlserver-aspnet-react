@@ -1,83 +1,41 @@
-import { jsxs as n, Fragment as J, jsx as e } from "react/jsx-runtime";
-import { useRef as x, useState as b, useEffect as K, useCallback as xe } from "react";
-const Le = "bom-draft", R = "chunks";
-function Q() {
-  return new Promise((f, p) => {
-    const l = indexedDB.open(Le, 1);
-    l.onupgradeneeded = () => l.result.createObjectStore(R, { autoIncrement: !0 }), l.onsuccess = () => f(l.result), l.onerror = () => p(l.error);
-  });
-}
-function De(f) {
-  Q().then((p) => {
-    const l = p.transaction(R, "readwrite");
-    l.objectStore(R).add(f), l.oncomplete = () => p.close(), l.onerror = () => p.close();
-  }).catch(() => {
-  });
-}
-function Ue() {
-  return Q().then(
-    (f) => new Promise((p) => {
-      const E = f.transaction(R, "readonly").objectStore(R).getAll();
-      E.onsuccess = () => {
-        f.close(), p(E.result);
-      }, E.onerror = () => {
-        f.close(), p([]);
-      };
-    })
-  ).catch(() => []);
-}
-function F() {
-  Q().then((f) => {
-    const p = f.transaction(R, "readwrite");
-    p.objectStore(R).clear(), p.oncomplete = () => f.close(), p.onerror = () => f.close();
-  }).catch(() => {
-  });
-}
-const $e = [
+import { jsxs as n, Fragment as H, jsx as e } from "react/jsx-runtime";
+import { useRef as f, useState as u, useEffect as Te, useCallback as de } from "react";
+const Me = [
   { value: "BUG", label: "Bug Report" },
   { value: "FEATURE_REQUEST", label: "Feature Request" },
   { value: "QUESTION", label: "Question" }
-], Ae = [
+], Oe = [
   { value: "LOW", label: "Low" },
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },
   { value: "CRITICAL", label: "Critical" }
-], je = (f) => {
+], Ee = (pe) => {
   const {
-    apiKey: p,
-    apiUrl: l,
-    userEmail: E,
-    userName: ke,
-    theme: Se = "dark",
-    position: Re = "bottom-right",
-    orbSize: _e = 24,
-    // Bug Out's identity is amber/orange ("we caught a bug" — warm, high contrast).
+    apiKey: A,
+    apiUrl: x,
+    userEmail: ue,
+    userName: me,
+    theme: be = "dark",
+    position: fe = "bottom-right",
+    orbSize: he = 24,
+    // Bug Out's identity is amber/orange ("we caught a bug" — warm, distinct
+    // from Jarvis blue/red so users can tell the orbs apart at a glance).
     // Hosts can override; if they do, we treat [0]=core, [1]=ring.
-    orbColors: k = ["#fbbf24", "#fb923c"],
+    orbColors: h = ["#fbbf24", "#fb923c"],
     // Tenant context
-    tenantId: Z,
-    tenantName: ee,
-    databaseName: te,
-    appVersion: oe,
-    environment: re,
-    onApiReady: z,
-    hideOrb: Te = !1
-  } = f, Me = x(
+    tenantId: j,
+    tenantName: X,
+    databaseName: q,
+    appVersion: Y,
+    environment: G
+  } = pe, ge = f(
     `bom-orb-${Math.random().toString(36).slice(2, 9)}`
-  ), [H, y] = b(!1), [W, ne] = b(!1), [L, D] = b(null), [Ee, ie] = b(!1), [X, se] = b(""), [U, ae] = b("BUG"), [ce, le] = b("MEDIUM"), [Y, de] = b(""), [pe, ue] = b(""), [O, me] = b(!1), [Oe, he] = b(!1), [be, $] = b(""), [Be, Ce] = b(!1), [q, fe] = b(null), [_, ge] = b(() => ({
+  ), [U, g] = u(!1), [M, V] = u(!1), [O, $] = u(null), [D, J] = u(""), [z, K] = u("BUG"), [Q, Z] = u("MEDIUM"), [L, ee] = u(""), [te, oe] = u(""), [S, re] = u(!1), [ye, ne] = u(!1), [ie, C] = u(""), [we, xe] = u(!1), [N, se] = u(null), [E, ve] = u(() => ({
     top: 24,
     left: typeof window < "u" ? Math.max(24, window.innerWidth - 280) : 24
-  })), w = x(null), A = x(null), G = x([]), V = x(null), N = x(null), B = x(null), u = x([]), m = x([]);
-  K(() => {
-    z == null || z({ open: () => y(!0), close: () => y(!1) });
-  }, [z]), K(() => {
-    Ue().then((t) => {
-      if (t.length === 0) return;
-      const r = new Blob(t, { type: "video/webm" });
-      F(), D(r), ie(!0), y(!0);
-    });
-  }, []), K(() => {
-    if (Ce(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !B.current) {
+  })), R = f(null), I = f(null), F = f([]), P = f(null), B = f(null), _ = f(null), c = f([]), d = f([]);
+  Te(() => {
+    if (xe(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !_.current) {
       const o = document.createElement("style");
       o.textContent = `
         @keyframes bom-fade-in {
@@ -193,185 +151,174 @@ const $e = [
           .bom-orb__halo,
           .bom-orb__scan { animation: none !important; }
         }
-      `, document.head.appendChild(o), B.current = o;
+      `, document.head.appendChild(o), _.current = o;
     }
     const t = console.error;
     console.error = (...o) => {
-      u.current.push({
+      c.current.push({
         type: "console.error",
-        message: o.map((s) => typeof s == "object" ? JSON.stringify(s) : String(s)).join(" "),
+        message: o.map((r) => typeof r == "object" ? JSON.stringify(r) : String(r)).join(" "),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), u.current.length > 50 && u.current.shift(), t.apply(console, o);
+      }), c.current.length > 50 && c.current.shift(), t.apply(console, o);
     };
-    const r = (o) => {
-      u.current.push({
+    const i = (o) => {
+      c.current.push({
         type: "window.onerror",
         message: o.message,
         source: o.filename,
         line: o.lineno,
         col: o.colno,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), u.current.length > 50 && u.current.shift();
+      }), c.current.length > 50 && c.current.shift();
     };
-    window.addEventListener("error", r);
-    const i = (o) => {
-      var s;
-      u.current.push({
+    window.addEventListener("error", i);
+    const s = (o) => {
+      var r;
+      c.current.push({
         type: "unhandledrejection",
-        message: ((s = o.reason) == null ? void 0 : s.message) || String(o.reason),
+        message: ((r = o.reason) == null ? void 0 : r.message) || String(o.reason),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), u.current.length > 50 && u.current.shift();
+      }), c.current.length > 50 && c.current.shift();
     };
-    window.addEventListener("unhandledrejection", i);
-    const h = window.fetch;
+    window.addEventListener("unhandledrejection", s);
+    const m = window.fetch;
     window.fetch = async (...o) => {
-      var v;
-      const s = typeof o[0] == "string" ? o[0] : o[0].url, a = (((v = o[1]) == null ? void 0 : v.method) || "GET").toUpperCase();
+      var w;
+      const r = typeof o[0] == "string" ? o[0] : o[0].url, l = (((w = o[1]) == null ? void 0 : w.method) || "GET").toUpperCase();
       try {
-        const c = await h.apply(window, o);
-        return !c.ok && !s.includes(l) && (m.current.push({
-          method: a,
-          url: s,
-          status: c.status,
-          statusText: c.statusText,
+        const p = await m.apply(window, o);
+        return !p.ok && !r.includes(x) && (d.current.push({
+          method: l,
+          url: r,
+          status: p.status,
+          statusText: p.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), m.current.length > 30 && m.current.shift()), c;
-      } catch (c) {
-        throw s.includes(l) || (m.current.push({
-          method: a,
-          url: s,
+        }), d.current.length > 30 && d.current.shift()), p;
+      } catch (p) {
+        throw r.includes(x) || (d.current.push({
+          method: l,
+          url: r,
           status: 0,
-          statusText: c.message || "Network Error",
+          statusText: p.message || "Network Error",
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), m.current.length > 30 && m.current.shift()), c;
+        }), d.current.length > 30 && d.current.shift()), p;
       }
     };
-    const d = XMLHttpRequest.prototype.open, g = XMLHttpRequest.prototype.send;
-    return XMLHttpRequest.prototype.open = function(o, s, ...a) {
-      return this._bomMethod = o, this._bomUrl = String(s), d.apply(this, [o, s, ...a]);
+    const a = XMLHttpRequest.prototype.open, b = XMLHttpRequest.prototype.send;
+    return XMLHttpRequest.prototype.open = function(o, r, ...l) {
+      return this._bomMethod = o, this._bomUrl = String(r), a.apply(this, [o, r, ...l]);
     }, XMLHttpRequest.prototype.send = function(...o) {
       return this.addEventListener("loadend", () => {
-        var s;
-        this.status >= 400 && !((s = this._bomUrl) != null && s.includes(l)) && (m.current.push({
+        var r;
+        this.status >= 400 && !((r = this._bomUrl) != null && r.includes(x)) && (d.current.push({
           method: this._bomMethod || "GET",
           url: this._bomUrl || "",
           status: this.status,
           statusText: this.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), m.current.length > 30 && m.current.shift());
-      }), g.apply(this, o);
+        }), d.current.length > 30 && d.current.shift());
+      }), b.apply(this, o);
     }, () => {
-      B.current && (document.head.removeChild(B.current), B.current = null), console.error = t, window.removeEventListener("error", r), window.removeEventListener("unhandledrejection", i), window.fetch = h, XMLHttpRequest.prototype.open = d, XMLHttpRequest.prototype.send = g;
+      _.current && (document.head.removeChild(_.current), _.current = null), console.error = t, window.removeEventListener("error", i), window.removeEventListener("unhandledrejection", s), window.fetch = m, XMLHttpRequest.prototype.open = a, XMLHttpRequest.prototype.send = b;
     };
-  }, [l]);
-  const T = Se === "dark", ye = T ? "#1a1a2e" : "#ffffff", M = T ? "#e0e0e0" : "#333333", S = T ? "#333" : "#ddd", P = T ? "#16213e" : "#f5f5f5", Ie = Re === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, ze = xe(async () => {
+  }, [x]);
+  const v = be === "dark", ae = v ? "#1a1a2e" : "#ffffff", k = v ? "#e0e0e0" : "#333333", y = v ? "#333" : "#ddd", W = v ? "#16213e" : "#f5f5f5", ke = fe === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, Se = de(async () => {
     try {
       const t = await navigator.mediaDevices.getDisplayMedia({
         video: !0,
-        // systemAudio: 'include' pre-checks the "Also share system audio" toggle in Chrome 105+.
-        audio: { systemAudio: "include", suppressLocalAudioPlayback: !1 }
+        audio: !0
       });
-      let r = null;
+      let i = null;
       try {
-        r = await navigator.mediaDevices.getUserMedia({ audio: !0, video: !1 });
+        i = await navigator.mediaDevices.getUserMedia({ audio: !0, video: !1 });
       } catch {
       }
-      V.current = r;
-      const i = ((r == null ? void 0 : r.getAudioTracks().length) ?? 0) > 0, h = t.getAudioTracks().length > 0;
-      !i && !h && alert(
-        `Your recording will have no audio.
-
-To capture audio, re-start the recording and either:
-  • Enable "Also share system audio" in the screen picker (Chrome), or
-  • Allow microphone access when prompted.
-
-The recording will continue without audio.`
-      );
-      const d = i ? r.getAudioTracks() : t.getAudioTracks(), g = new MediaStream([...t.getVideoTracks(), ...d]), o = new MediaRecorder(g, {
+      P.current = i;
+      const s = i != null && i.getAudioTracks().length ? i.getAudioTracks() : t.getAudioTracks(), m = new MediaStream([...t.getVideoTracks(), ...s]), a = new MediaRecorder(m, {
         mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm"
       });
-      G.current = [], F(), o.ondataavailable = (a) => {
-        a.data.size > 0 && (G.current.push(a.data), De(a.data));
-      }, o.onstop = () => {
-        var v;
-        const a = new Blob(G.current, { type: "video/webm" });
-        F(), D(a), t.getTracks().forEach((c) => c.stop()), (v = V.current) == null || v.getTracks().forEach((c) => c.stop()), V.current = null;
-      }, o.start(1e3), A.current = o, ne(!0), y(!1);
-      const s = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (s) {
-        const a = new s();
-        a.continuous = !0, a.interimResults = !0, a.lang = "en-US";
-        let v = "";
-        a.onresult = (c) => {
-          let j = "";
-          for (let I = c.resultIndex; I < c.results.length; I++)
-            c.results[I].isFinal ? v += c.results[I][0].transcript + " " : j += c.results[I][0].transcript;
-          se(v + j);
-        }, a.onerror = () => {
-        }, a.start(), N.current = a;
+      F.current = [], a.ondataavailable = (o) => {
+        o.data.size > 0 && F.current.push(o.data);
+      }, a.onstop = () => {
+        var r;
+        const o = new Blob(F.current, { type: "video/webm" });
+        $(o), t.getTracks().forEach((l) => l.stop()), (r = P.current) == null || r.getTracks().forEach((l) => l.stop()), P.current = null;
+      }, a.start(1e3), I.current = a, V(!0), g(!1);
+      const b = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (b) {
+        const o = new b();
+        o.continuous = !0, o.interimResults = !0, o.lang = "en-US";
+        let r = "";
+        o.onresult = (l) => {
+          let w = "";
+          for (let p = l.resultIndex; p < l.results.length; p++)
+            l.results[p].isFinal ? r += l.results[p][0].transcript + " " : w += l.results[p][0].transcript;
+          J(r + w);
+        }, o.onerror = () => {
+        }, o.start(), B.current = o;
       }
     } catch (t) {
       console.error("Failed to start recording:", t);
     }
-  }, []), we = xe(() => {
-    A.current && A.current.state !== "inactive" && A.current.stop(), N.current && (N.current.stop(), N.current = null), ne(!1), y(!0);
-  }, []), ve = () => {
-    de(""), ue(""), ae("BUG"), le("MEDIUM"), se(""), D(null), fe(null), $(""), he(!1), ie(!1), F();
-  }, We = async () => {
-    if (!Y.trim()) {
-      $("Title is required");
+  }, []), le = de(() => {
+    I.current && I.current.state !== "inactive" && I.current.stop(), B.current && (B.current.stop(), B.current = null), V(!1), g(!0);
+  }, []), ce = () => {
+    ee(""), oe(""), K("BUG"), Z("MEDIUM"), J(""), $(null), se(null), C(""), ne(!1);
+  }, Re = async () => {
+    if (!L.trim()) {
+      C("Title is required");
       return;
     }
-    me(!0), $("");
+    re(!0), C("");
     try {
       const t = {
-        title: Y.trim(),
-        description: pe.trim(),
-        ticketType: U,
-        priority: ce,
-        submittedBy: E || ke || "Anonymous",
+        title: L.trim(),
+        description: te.trim(),
+        ticketType: z,
+        priority: Q,
+        submittedBy: ue || me || "Anonymous",
         currentPageUrl: window.location.href,
         currentPageName: document.title,
         browserInfo: navigator.userAgent,
         screenWidth: window.innerWidth,
         screenHeight: window.innerHeight,
-        transcript: X || null,
-        consoleErrors: u.current.length > 0 ? JSON.stringify(u.current) : null,
-        networkErrors: m.current.length > 0 ? JSON.stringify(m.current) : null
+        transcript: D || null,
+        consoleErrors: c.current.length > 0 ? JSON.stringify(c.current) : null,
+        networkErrors: d.current.length > 0 ? JSON.stringify(d.current) : null
       };
-      Z && (t.tenantId = Z), ee && (t.tenantName = ee), te && (t.databaseName = te), oe && (t.applicationVersion = oe), re && (t.environment = re);
-      const r = await fetch(`${l}/tickets`, {
+      j && (t.tenantId = j), X && (t.tenantName = X), q && (t.databaseName = q), Y && (t.applicationVersion = Y), G && (t.environment = G);
+      const i = await fetch(`${x}/tickets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-BOM-API-Key": p
+          "X-BOM-API-Key": A
         },
         body: JSON.stringify(t)
       });
-      if (!r.ok) throw new Error("Failed to submit ticket");
-      const i = await r.json(), h = L || q;
-      if (h && i.id)
+      if (!i.ok) throw new Error("Failed to submit ticket");
+      const s = await i.json(), m = O || N;
+      if (m && s.id)
         try {
-          const d = new FormData();
-          d.append("file", h, "recording.webm");
-          const g = await fetch(`${l}/tickets/${i.id}/video`, {
+          const a = new FormData();
+          a.append("file", m, "recording.webm");
+          const b = await fetch(`${x}/tickets/${s.id}/video`, {
             method: "POST",
-            headers: { "X-BOM-API-Key": p },
-            body: d
+            headers: { "X-BOM-API-Key": A },
+            body: a
           });
-          g.ok || console.warn(`[Bug Out] Video upload failed (${g.status}) for ticket ${i.id}`);
-        } catch (d) {
-          console.warn("[Bug Out] Video upload network error:", d);
+          b.ok || console.warn(`[Bug Out] Video upload failed (${b.status}) for ticket ${s.id}`);
+        } catch (a) {
+          console.warn("[Bug Out] Video upload network error:", a);
         }
-      he(!0), setTimeout(() => {
-        y(!1), ve();
+      ne(!0), setTimeout(() => {
+        g(!1), ce();
       }, 2e3);
     } catch (t) {
-      $(t.message || "Failed to submit");
+      C(t.message || "Failed to submit");
     } finally {
-      me(!1);
+      re(!1);
     }
-  }, C = {
+  }, T = {
     padding: "8px 16px",
     border: "none",
     borderRadius: 6,
@@ -380,9 +327,9 @@ The recording will continue without audio.`
     fontWeight: 600,
     transition: "opacity 0.2s"
   };
-  return /* @__PURE__ */ n(J, { children: [
-    !Te && (() => {
-      const t = _e * 2, r = k[0], i = k[1], h = `${r}8c`, d = Me.current;
+  return /* @__PURE__ */ n(H, { children: [
+    (() => {
+      const t = he * 2, i = h[0], s = h[1], m = `${i}8c`, a = ge.current;
       return /* @__PURE__ */ e(
         "button",
         {
@@ -391,16 +338,16 @@ The recording will continue without audio.`
           "aria-label": "Report a bug",
           title: "Report a bug or request a feature",
           onClick: () => {
-            H || ve(), y(!H);
+            U || ce(), g(!U);
           },
           className: "bom-orb-wrap",
           style: {
-            ...Ie,
+            ...ke,
             width: t,
             height: t,
-            "--bom-core": r,
-            "--bom-ring": i,
-            "--bom-halo": h,
+            "--bom-core": i,
+            "--bom-ring": s,
+            "--bom-halo": m,
             "--bom-spin": "18s",
             "--bom-pulse": "4s"
           },
@@ -415,15 +362,15 @@ The recording will continue without audio.`
                 className: "bom-orb__svg",
                 children: [
                   /* @__PURE__ */ n("defs", { children: [
-                    /* @__PURE__ */ n("radialGradient", { id: `${d}-core`, cx: "50%", cy: "50%", r: "50%", children: [
-                      /* @__PURE__ */ e("stop", { offset: "0%", stopColor: r, stopOpacity: "1" }),
-                      /* @__PURE__ */ e("stop", { offset: "55%", stopColor: r, stopOpacity: "0.55" }),
+                    /* @__PURE__ */ n("radialGradient", { id: `${a}-core`, cx: "50%", cy: "50%", r: "50%", children: [
+                      /* @__PURE__ */ e("stop", { offset: "0%", stopColor: i, stopOpacity: "1" }),
+                      /* @__PURE__ */ e("stop", { offset: "55%", stopColor: i, stopOpacity: "0.55" }),
                       /* @__PURE__ */ e("stop", { offset: "100%", stopColor: "#1a0f00", stopOpacity: "0" })
                     ] }),
-                    /* @__PURE__ */ n("radialGradient", { id: `${d}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
+                    /* @__PURE__ */ n("radialGradient", { id: `${a}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
                       /* @__PURE__ */ e("stop", { offset: "0%", stopColor: "#fff7dc", stopOpacity: "0.95" }),
-                      /* @__PURE__ */ e("stop", { offset: "40%", stopColor: r, stopOpacity: "0.7" }),
-                      /* @__PURE__ */ e("stop", { offset: "100%", stopColor: r, stopOpacity: "0" })
+                      /* @__PURE__ */ e("stop", { offset: "40%", stopColor: i, stopOpacity: "0.7" }),
+                      /* @__PURE__ */ e("stop", { offset: "100%", stopColor: i, stopOpacity: "0" })
                     ] })
                   ] }),
                   /* @__PURE__ */ e(
@@ -432,7 +379,7 @@ The recording will continue without audio.`
                       cx: "50",
                       cy: "50",
                       r: "48",
-                      fill: `url(#${d}-core)`,
+                      fill: `url(#${a}-core)`,
                       className: "bom-orb__halo"
                     }
                   ),
@@ -444,21 +391,21 @@ The recording will continue without audio.`
                         cy: "50",
                         r: "44",
                         fill: "none",
-                        stroke: i,
+                        stroke: s,
                         strokeOpacity: "0.55",
                         strokeWidth: "0.5"
                       }
                     ),
-                    Array.from({ length: 36 }).map((g, o) => {
-                      const s = o * 10 * Math.PI / 180, a = 50 + Math.cos(s) * 41, v = 50 + Math.sin(s) * 41, c = 50 + Math.cos(s) * (o % 3 === 0 ? 44 : 43), j = 50 + Math.sin(s) * (o % 3 === 0 ? 44 : 43);
+                    Array.from({ length: 36 }).map((b, o) => {
+                      const r = o * 10 * Math.PI / 180, l = 50 + Math.cos(r) * 41, w = 50 + Math.sin(r) * 41, p = 50 + Math.cos(r) * (o % 3 === 0 ? 44 : 43), _e = 50 + Math.sin(r) * (o % 3 === 0 ? 44 : 43);
                       return /* @__PURE__ */ e(
                         "line",
                         {
-                          x1: a,
-                          y1: v,
-                          x2: c,
-                          y2: j,
-                          stroke: i,
+                          x1: l,
+                          y1: w,
+                          x2: p,
+                          y2: _e,
+                          stroke: s,
                           strokeOpacity: o % 3 === 0 ? 0.8 : 0.35,
                           strokeWidth: "0.8"
                         },
@@ -474,7 +421,7 @@ The recording will continue without audio.`
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: i,
+                        stroke: s,
                         strokeOpacity: "0.18",
                         strokeWidth: "0.5"
                       }
@@ -486,7 +433,7 @@ The recording will continue without audio.`
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: i,
+                        stroke: s,
                         strokeOpacity: "0.85",
                         strokeWidth: "1.4",
                         strokeDasharray: "42 30 18 36 24 32",
@@ -501,7 +448,7 @@ The recording will continue without audio.`
                       cy: "50",
                       r: "28",
                       fill: "none",
-                      stroke: r,
+                      stroke: i,
                       strokeOpacity: "0.7",
                       strokeWidth: "0.9",
                       strokeDasharray: "2 4"
@@ -513,7 +460,7 @@ The recording will continue without audio.`
                       cx: "50",
                       cy: "50",
                       r: "20",
-                      fill: `url(#${d}-iris)`,
+                      fill: `url(#${a}-iris)`,
                       className: "bom-orb__core"
                     }
                   ),
@@ -521,10 +468,10 @@ The recording will continue without audio.`
                     /* @__PURE__ */ e("line", { x1: "50", y1: "42", x2: "50", y2: "42", strokeWidth: "3.4" }),
                     /* @__PURE__ */ e("line", { x1: "50", y1: "48", x2: "50", y2: "58", strokeWidth: "2.4" })
                   ] }),
-                  /* @__PURE__ */ e("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ e("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: i, strokeOpacity: "0.7", strokeWidth: "0.6" })
+                  /* @__PURE__ */ e("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: s, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: s, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: s, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ e("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: s, strokeOpacity: "0.7", strokeWidth: "0.6" })
                 ]
               }
             ),
@@ -533,7 +480,7 @@ The recording will continue without audio.`
         }
       );
     })(),
-    H && /* @__PURE__ */ e(
+    U && /* @__PURE__ */ e(
       "div",
       {
         style: {
@@ -547,14 +494,14 @@ The recording will continue without audio.`
           animation: "bom-fade-in 0.2s ease-out"
         },
         onClick: (t) => {
-          t.target === t.currentTarget && y(!1);
+          t.target === t.currentTarget && g(!1);
         },
         children: /* @__PURE__ */ e(
           "div",
           {
             style: {
-              background: ye,
-              color: M,
+              background: ae,
+              color: k,
               borderRadius: 12,
               padding: 24,
               width: "90%",
@@ -564,17 +511,17 @@ The recording will continue without audio.`
               boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
             },
-            children: Oe ? /* @__PURE__ */ n("div", { style: { textAlign: "center", padding: 40 }, children: [
+            children: ye ? /* @__PURE__ */ n("div", { style: { textAlign: "center", padding: 40 }, children: [
               /* @__PURE__ */ e("div", { style: { fontSize: 48, marginBottom: 16 }, children: "✓" }),
               /* @__PURE__ */ e("h3", { style: { margin: 0, fontSize: 20 }, children: "Submitted!" }),
               /* @__PURE__ */ e("p", { style: { opacity: 0.7, marginTop: 8 }, children: "Thank you for your feedback." })
-            ] }) : /* @__PURE__ */ n(J, { children: [
+            ] }) : /* @__PURE__ */ n(H, { children: [
               /* @__PURE__ */ n("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }, children: [
                 /* @__PURE__ */ e("h3", { style: { margin: 0, fontSize: 18, fontWeight: 700 }, children: "Report an Issue" }),
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => y(!1),
+                    onClick: () => g(!1),
                     style: { cursor: "pointer", fontSize: 20, opacity: 0.6, padding: "0 4px" },
                     children: "✕"
                   }
@@ -582,20 +529,20 @@ The recording will continue without audio.`
               ] }),
               /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Type" }),
-                /* @__PURE__ */ e("div", { style: { display: "flex", gap: 8 }, children: $e.map((t) => /* @__PURE__ */ e(
+                /* @__PURE__ */ e("div", { style: { display: "flex", gap: 8 }, children: Me.map((t) => /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => ae(t.value),
+                    onClick: () => K(t.value),
                     style: {
                       flex: 1,
                       padding: "8px 4px",
                       textAlign: "center",
                       borderRadius: 6,
-                      border: `2px solid ${U === t.value ? k[0] : S}`,
-                      background: U === t.value ? `${k[0]}22` : "transparent",
+                      border: `2px solid ${z === t.value ? h[0] : y}`,
+                      background: z === t.value ? `${h[0]}22` : "transparent",
                       cursor: "pointer",
                       fontSize: 12,
-                      fontWeight: U === t.value ? 700 : 400
+                      fontWeight: z === t.value ? 700 : 400
                     },
                     children: t.label
                   },
@@ -607,19 +554,19 @@ The recording will continue without audio.`
                 /* @__PURE__ */ e(
                   "select",
                   {
-                    value: ce,
-                    onChange: (t) => le(t.target.value),
+                    value: Q,
+                    onChange: (t) => Z(t.target.value),
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${S}`,
-                      background: P,
-                      color: M,
+                      border: `1px solid ${y}`,
+                      background: W,
+                      color: k,
                       fontSize: 14,
                       outline: "none"
                     },
-                    children: Ae.map((t) => /* @__PURE__ */ e("option", { value: t.value, children: t.label }, t.value))
+                    children: Oe.map((t) => /* @__PURE__ */ e("option", { value: t.value, children: t.label }, t.value))
                   }
                 )
               ] }),
@@ -632,17 +579,17 @@ The recording will continue without audio.`
                   "input",
                   {
                     type: "text",
-                    value: Y,
-                    onChange: (t) => de(t.target.value),
+                    value: L,
+                    onChange: (t) => ee(t.target.value),
                     placeholder: "Brief summary of the issue",
                     maxLength: 500,
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${S}`,
-                      background: P,
-                      color: M,
+                      border: `1px solid ${y}`,
+                      background: W,
+                      color: k,
                       fontSize: 14,
                       outline: "none",
                       boxSizing: "border-box"
@@ -655,17 +602,17 @@ The recording will continue without audio.`
                 /* @__PURE__ */ e(
                   "textarea",
                   {
-                    value: pe,
-                    onChange: (t) => ue(t.target.value),
+                    value: te,
+                    onChange: (t) => oe(t.target.value),
                     placeholder: "Describe the issue in detail...",
                     rows: 3,
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${S}`,
-                      background: P,
-                      color: M,
+                      border: `1px solid ${y}`,
+                      background: W,
+                      color: k,
                       fontSize: 14,
                       outline: "none",
                       resize: "vertical",
@@ -677,69 +624,60 @@ The recording will continue without audio.`
               ] }),
               /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Screen Recording" }),
-                Be ? /* @__PURE__ */ n("div", { children: [
+                we ? /* @__PURE__ */ n("div", { children: [
                   /* @__PURE__ */ e(
                     "input",
                     {
                       type: "file",
                       accept: "video/*",
                       onChange: (t) => {
-                        var r;
-                        return fe(((r = t.target.files) == null ? void 0 : r[0]) || null);
+                        var i;
+                        return se(((i = t.target.files) == null ? void 0 : i[0]) || null);
                       },
                       style: { fontSize: 13 }
                     }
                   ),
-                  q && /* @__PURE__ */ e("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: q.name })
+                  N && /* @__PURE__ */ e("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: N.name })
                 ] }) : /* @__PURE__ */ n("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-                  !W && !L && /* @__PURE__ */ e(
+                  !M && !O && /* @__PURE__ */ e(
                     "div",
                     {
-                      onClick: ze,
+                      onClick: Se,
                       style: {
-                        ...C,
-                        background: `linear-gradient(135deg, ${k[0]}, ${k[1]})`,
+                        ...T,
+                        background: `linear-gradient(135deg, ${h[0]}, ${h[1]})`,
                         color: "#fff"
                       },
                       children: "Start Recording"
                     }
                   ),
-                  W && /* @__PURE__ */ e(
+                  M && /* @__PURE__ */ e(
                     "div",
                     {
-                      onClick: we,
-                      style: { ...C, background: "#e53935", color: "#fff" },
+                      onClick: le,
+                      style: { ...T, background: "#e53935", color: "#fff" },
                       children: "Stop Recording"
                     }
                   ),
-                  Ee && /* @__PURE__ */ e("div", { style: {
-                    fontSize: 12,
-                    color: "#fb923c",
-                    background: "rgba(251,146,60,0.12)",
-                    border: "1px solid rgba(251,146,60,0.35)",
-                    borderRadius: 6,
-                    padding: "5px 10px",
-                    marginBottom: 4
-                  }, children: "Recording recovered after page reload — your video is intact." }),
-                  L && /* @__PURE__ */ n(J, { children: [
+                  O && /* @__PURE__ */ n(H, { children: [
                     /* @__PURE__ */ n("span", { style: { fontSize: 12, opacity: 0.7 }, children: [
                       "Recording captured (",
-                      (L.size / 1024 / 1024).toFixed(1),
+                      (O.size / 1024 / 1024).toFixed(1),
                       " MB)"
                     ] }),
                     /* @__PURE__ */ e(
                       "div",
                       {
-                        onClick: () => D(null),
-                        style: { ...C, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
+                        onClick: () => $(null),
+                        style: { ...T, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
                         children: "Remove"
                       }
                     )
                   ] }),
-                  W && /* @__PURE__ */ e("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
+                  M && /* @__PURE__ */ e("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
                 ] })
               ] }),
-              X && /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
+              D && /* @__PURE__ */ n("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ e("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Voice Transcript" }),
                 /* @__PURE__ */ e(
                   "div",
@@ -747,48 +685,48 @@ The recording will continue without audio.`
                     style: {
                       padding: "8px 12px",
                       borderRadius: 6,
-                      background: P,
-                      border: `1px solid ${S}`,
+                      background: W,
+                      border: `1px solid ${y}`,
                       fontSize: 13,
                       maxHeight: 80,
                       overflowY: "auto",
                       opacity: 0.8
                     },
-                    children: X
+                    children: D
                   }
                 )
               ] }),
-              (u.current.length > 0 || m.current.length > 0) && /* @__PURE__ */ n("div", { style: {
+              (c.current.length > 0 || d.current.length > 0) && /* @__PURE__ */ n("div", { style: {
                 marginBottom: 14,
                 padding: "6px 12px",
                 borderRadius: 6,
-                background: T ? "#2a1a1a" : "#fff3f0",
-                border: `1px solid ${T ? "#4a2020" : "#ffccc7"}`,
+                background: v ? "#2a1a1a" : "#fff3f0",
+                border: `1px solid ${v ? "#4a2020" : "#ffccc7"}`,
                 fontSize: 12,
                 opacity: 0.8
               }, children: [
-                u.current.length > 0 && /* @__PURE__ */ n("span", { children: [
-                  u.current.length,
+                c.current.length > 0 && /* @__PURE__ */ n("span", { children: [
+                  c.current.length,
                   " console error(s) captured"
                 ] }),
-                u.current.length > 0 && m.current.length > 0 && " | ",
-                m.current.length > 0 && /* @__PURE__ */ n("span", { children: [
-                  m.current.length,
+                c.current.length > 0 && d.current.length > 0 && " | ",
+                d.current.length > 0 && /* @__PURE__ */ n("span", { children: [
+                  d.current.length,
                   " network error(s) captured"
                 ] }),
                 /* @__PURE__ */ e("span", { style: { display: "block", marginTop: 2, opacity: 0.7 }, children: "These will be included in your report automatically." })
               ] }),
-              be && /* @__PURE__ */ e("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: be }),
+              ie && /* @__PURE__ */ e("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: ie }),
               /* @__PURE__ */ n("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" }, children: [
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: () => y(!1),
+                    onClick: () => g(!1),
                     style: {
-                      ...C,
+                      ...T,
                       background: "transparent",
-                      color: M,
-                      border: `1px solid ${S}`
+                      color: k,
+                      border: `1px solid ${y}`
                     },
                     children: "Cancel"
                   }
@@ -796,15 +734,15 @@ The recording will continue without audio.`
                 /* @__PURE__ */ e(
                   "div",
                   {
-                    onClick: O ? void 0 : We,
+                    onClick: S ? void 0 : Re,
                     style: {
-                      ...C,
-                      background: O ? "#666" : `linear-gradient(135deg, ${k[0]}, ${k[1]})`,
+                      ...T,
+                      background: S ? "#666" : `linear-gradient(135deg, ${h[0]}, ${h[1]})`,
                       color: "#fff",
-                      opacity: O ? 0.6 : 1,
-                      cursor: O ? "not-allowed" : "pointer"
+                      opacity: S ? 0.6 : 1,
+                      cursor: S ? "not-allowed" : "pointer"
                     },
-                    children: O ? "Submitting..." : "Submit"
+                    children: S ? "Submitting..." : "Submit"
                   }
                 )
               ] }),
@@ -814,67 +752,57 @@ The recording will continue without audio.`
         )
       }
     ),
-    W && /* @__PURE__ */ n(
+    M && /* @__PURE__ */ n(
       "div",
       {
-        onMouseDown: (t) => {
-          if (t.target.closest("[data-bom-stop]")) return;
-          t.preventDefault(), w.current = {
-            x: t.clientX - _.left,
-            y: t.clientY - _.top
-          };
-          const r = (h) => {
-            w.current && ge({
-              left: Math.max(0, Math.min(window.innerWidth - 240, h.clientX - w.current.x)),
-              top: Math.max(0, Math.min(window.innerHeight - 50, h.clientY - w.current.y))
-            });
-          }, i = () => {
-            w.current = null, document.removeEventListener("mousemove", r), document.removeEventListener("mouseup", i);
-          };
-          document.addEventListener("mousemove", r), document.addEventListener("mouseup", i);
-        },
-        onTouchStart: (t) => {
-          if (t.target.closest("[data-bom-stop]")) return;
-          const r = t.touches[0];
-          w.current = {
-            x: r.clientX - _.left,
-            y: r.clientY - _.top
-          };
-          const i = (d) => {
-            if (!w.current) return;
-            d.preventDefault();
-            const g = d.touches[0];
-            ge({
-              left: Math.max(0, Math.min(window.innerWidth - 240, g.clientX - w.current.x)),
-              top: Math.max(0, Math.min(window.innerHeight - 50, g.clientY - w.current.y))
-            });
-          }, h = () => {
-            w.current = null, document.removeEventListener("touchmove", i), document.removeEventListener("touchend", h);
-          };
-          document.addEventListener("touchmove", i, { passive: !1 }), document.addEventListener("touchend", h);
-        },
         style: {
           position: "fixed",
-          top: _.top,
-          left: _.left,
+          top: E.top,
+          left: E.left,
           zIndex: 1000001,
           display: "flex",
           alignItems: "center",
           gap: 10,
           padding: "8px 12px",
-          background: ye,
-          color: M,
+          background: ae,
+          color: k,
           borderRadius: 999,
-          border: `1px solid ${S}`,
+          border: `1px solid ${y}`,
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: 13,
-          userSelect: "none",
-          cursor: "grab",
-          touchAction: "none"
+          userSelect: "none"
         },
         children: [
-          /* @__PURE__ */ e("span", { style: { opacity: 0.45, fontSize: 14, lineHeight: 1, pointerEvents: "none" }, children: "☰" }),
+          /* @__PURE__ */ e(
+            "div",
+            {
+              onMouseDown: (t) => {
+                R.current = {
+                  x: t.clientX - E.left,
+                  y: t.clientY - E.top
+                };
+                const i = (m) => {
+                  R.current && ve({
+                    left: Math.max(0, Math.min(window.innerWidth - 240, m.clientX - R.current.x)),
+                    top: Math.max(0, Math.min(window.innerHeight - 50, m.clientY - R.current.y))
+                  });
+                }, s = () => {
+                  R.current = null, document.removeEventListener("mousemove", i), document.removeEventListener("mouseup", s);
+                };
+                document.addEventListener("mousemove", i), document.addEventListener("mouseup", s);
+              },
+              style: {
+                cursor: "grab",
+                padding: "2px 4px",
+                opacity: 0.6,
+                fontSize: 16,
+                lineHeight: 1
+              },
+              title: "Drag to move",
+              children: "☰"
+            }
+          ),
           /* @__PURE__ */ e(
             "span",
             {
@@ -885,17 +813,15 @@ The recording will continue without audio.`
                 borderRadius: "50%",
                 background: "#e53935",
                 boxShadow: "0 0 0 0 rgba(229,57,53,0.6)",
-                animation: "bom-pulse 1.4s ease-out infinite",
-                pointerEvents: "none"
+                animation: "bom-pulse 1.4s ease-out infinite"
               }
             }
           ),
-          /* @__PURE__ */ e("span", { style: { fontWeight: 600, pointerEvents: "none" }, children: "Recording" }),
+          /* @__PURE__ */ e("span", { style: { fontWeight: 600 }, children: "Recording" }),
           /* @__PURE__ */ e(
             "div",
             {
-              "data-bom-stop": "true",
-              onClick: we,
+              onClick: le,
               style: {
                 cursor: "pointer",
                 background: "#e53935",
@@ -915,6 +841,6 @@ The recording will continue without audio.`
   ] });
 };
 export {
-  je as BugOutManagedWidget,
-  je as BugsManagedWidget
+  Ee as BugOutManagedWidget,
+  Ee as BugsManagedWidget
 };

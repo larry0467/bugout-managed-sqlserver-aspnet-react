@@ -68,6 +68,18 @@ builder.Services.AddScoped<SandboxSeeder>();
 builder.Services.AddScoped<SandboxResetJob>();
 builder.Services.Configure<SandboxOptions>(builder.Configuration.GetSection("Sandbox"));
 builder.Services.AddSingleton<IVideoBlobService, VideoBlobService>();
+// Comms Managed notification bridge — replaces the no-op NotificationService.
+var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
+    ?? new CommsManagedOptions();
+builder.Services.AddSingleton(commsOpts);
+builder.Services.AddHttpClient<ITicketNotificationService, CommsManagedNotificationService>(client =>
+{
+    client.BaseAddress = new Uri(
+        string.IsNullOrWhiteSpace(commsOpts.ApiUrl)
+            ? "http://localhost:5080"
+            : commsOpts.ApiUrl);
+    client.DefaultRequestHeaders.Add("X-Comms-Api-Key", commsOpts.ApiKey);
+});
 builder.Services.AddHttpClient<NotificationService>();
 builder.Services.AddHttpClient<TicketNoteService>();
 builder.Services.AddHttpClient<TicketClassifierService>();
@@ -206,7 +218,9 @@ app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
     {
-        if (ctx.File.Name.Equals("widget.iife.js", StringComparison.OrdinalIgnoreCase))
+        var name = ctx.File.Name;
+        if (name.Equals("widget.iife.js", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("launcher.iife.js", StringComparison.OrdinalIgnoreCase))
         {
             ctx.Context.Response.Headers["Cache-Control"] = "no-cache";
         }

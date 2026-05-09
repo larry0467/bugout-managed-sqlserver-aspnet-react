@@ -22,8 +22,9 @@ public class TicketController : ControllerBase
     private readonly IVideoBlobService _blobs;
     private readonly BillingService _billing;
     private readonly ILogger<TicketController> _log;
+    private readonly ITicketNotificationService _notify;
 
-    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ILogger<TicketController> log)
+    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ILogger<TicketController> log, ITicketNotificationService notify)
     {
         _db = db;
         _classifier = classifier;
@@ -33,6 +34,7 @@ public class TicketController : ControllerBase
         _blobs = blobs;
         _billing = billing;
         _log = log;
+        _notify = notify;
     }
 
     // Looks up a ticket by id but only inside the caller's current org.
@@ -150,6 +152,9 @@ public class TicketController : ControllerBase
             changedAt: now,
             note: note);
         await _db.SaveChangesAsync();
+
+        // Notify reporter via Comms — fire-and-forget, never blocks the response.
+        _ = _notify.NotifyTicketReceivedAsync(ticket);
 
         return CreatedAtAction(nameof(GetById), new { id = ticket.Id }, ticket);
     }
@@ -362,6 +367,9 @@ public class TicketController : ControllerBase
         RecordStageTransition(ticket, fromStage, ticket.EscalationStage, caller, now);
 
         await _db.SaveChangesAsync();
+        _ = Task.WhenAll(
+            _notify.NotifyTicketAssignedToDevAsync(ticket, request.DeveloperEmail),
+            _notify.NotifyReporterInProgressAsync(ticket));
         return Ok(ticket);
     }
 
@@ -755,6 +763,7 @@ public class TicketController : ControllerBase
         RecordStageTransition(ticket, fromStage, ticket.EscalationStage, caller, now);
 
         await _db.SaveChangesAsync();
+        _ = _notify.NotifyReporterResolvedAsync(ticket);
 
         if (didPromote)
         {
@@ -816,6 +825,7 @@ public class TicketController : ControllerBase
         RecordStageTransition(ticket, fromStage, ticket.EscalationStage, caller, now, request.Reason);
 
         await _db.SaveChangesAsync();
+        _ = _notify.NotifyAssigneeChangesRequestedAsync(ticket, request.Reason ?? string.Empty);
         return Ok(ticket);
     }
 
