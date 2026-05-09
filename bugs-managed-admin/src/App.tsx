@@ -19,6 +19,7 @@ import TeamPage from './pages/TeamPage';
 import LoginPage from './pages/LoginPage';
 import PerformancePage from './pages/PerformancePage';
 import SandboxBanner from './components/SandboxBanner';
+import ManagedLauncher from './components/ManagedLauncher';
 import type { AuthUser, Organization } from './api';
 
 const { Content, Header } = Layout;
@@ -152,6 +153,11 @@ const App: React.FC = () => {
           <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         </Routes>
       </Content>
+
+      {/* Unified launcher orb — Messages + Report tabs. Position: bottom-right
+          (no JARVIS chrome on the right in Bug Out admin). Unmounts on logout
+          because user becomes null and the component is only rendered here. */}
+      <ManagedLauncher userEmail={user.email} userName={user.fullName} />
     </Layout>
   );
 };

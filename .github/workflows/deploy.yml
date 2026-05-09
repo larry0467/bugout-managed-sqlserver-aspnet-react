@@ -189,6 +189,13 @@ jobs:
           # already does. CORS allows the prod SWA origin via the
           # BugOutManaged__Cors__AllowedOrigins env var on the Container App.
           VITE_API_BASE_URL: https://bugout-api.managedplatform.com
+          # ── Unified Managed Launcher (orb) ────────────────────────────────
+          VITE_BUG_OUT_API_KEY:     ${{ secrets.VITE_BUG_OUT_API_KEY }}
+          VITE_BUG_OUT_API_URL:     ${{ secrets.VITE_BUG_OUT_API_URL }}
+          VITE_COMMS_API_KEY:       ${{ secrets.VITE_COMMS_API_KEY }}
+          VITE_COMMS_API_URL:       ${{ secrets.VITE_COMMS_API_URL }}
+          VITE_COMMS_WORKSPACE_ID:  ${{ secrets.VITE_COMMS_WORKSPACE_ID }}
+          VITE_COMMS_SENDER_ID:     ${{ secrets.VITE_COMMS_SENDER_ID }}
         run: |
           npm ci
           npm run build
