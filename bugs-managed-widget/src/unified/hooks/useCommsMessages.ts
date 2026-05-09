@@ -24,7 +24,7 @@ function groupIntoThreads(msgs: CommsMessage[]): CommsThread[] {
     }
     const t = map.get(m.threadId)!;
     t.messages.push(m);
-    if (m.direction === 'inbound') t.unreadCount++;
+    if (m.direction === 'outbound') t.unreadCount++; // outbound = team replying to user
     if (m.sentAt > t.lastMessageAt) t.lastMessageAt = m.sentAt;
   }
   return Array.from(map.values()).sort(
@@ -66,33 +66,38 @@ export function useCommsMessages(
 
   const sendReply = useCallback(
     async (body: string, threadId?: string | null) => {
-      const tid = threadId ?? selectedThreadId;
       if (!body.trim()) return;
       setSending(true);
       try {
         const payload = {
           workspaceId: config.workspaceId,
-          senderUserId: config.senderUserId,
-          channel: 'email',
-          to: user?.email ?? 'support@managedplatform.com',
+          fromEmail: user?.email ?? 'widget@managedplatform.com',
+          fromName: user?.name ?? undefined,
           body,
           entityId,
           visibility: 'shared',
         };
-        const res = await fetch(`${config.apiUrl}/v1/messages/send`, {
+        const res = await fetch(`${config.apiUrl}/v1/messages/widget-send`, {
           method: 'POST',
           headers: buildHeaders(config.apiKey),
           body: JSON.stringify(payload),
         });
         if (res.ok) {
           const msg: CommsMessage = await res.json();
-          setThreads(prev =>
-            prev.map(t =>
-              t.id === (tid ?? msg.threadId)
-                ? { ...t, messages: [...t.messages, msg], lastMessageAt: msg.sentAt }
-                : t,
-            ),
-          );
+          setThreads(prev => {
+            const tid = threadId ?? selectedThreadId ?? msg.threadId;
+            const exists = prev.find(t => t.id === tid);
+            if (exists) {
+              return prev.map(t =>
+                t.id === tid
+                  ? { ...t, messages: [...t.messages, msg], lastMessageAt: msg.sentAt }
+                  : t,
+              );
+            }
+            // New thread created server-side — trigger a refetch
+            fetch_();
+            return prev;
+          });
         }
       } catch {
         /* silent — UX shows sending=false */
@@ -100,7 +105,7 @@ export function useCommsMessages(
         setSending(false);
       }
     },
-    [selectedThreadId, config, user, entityId],
+    [selectedThreadId, config, user, entityId, fetch_],
   );
 
   useEffect(() => {

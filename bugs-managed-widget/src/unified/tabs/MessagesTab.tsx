@@ -57,8 +57,8 @@ function MessageBubble({
   compact: boolean;
   accentColor: string;
 }) {
-  const isOut = msg.direction === 'outbound';
-  // Outbound bubbles use the accent color; inbound stay neutral
+  const isOut = msg.direction === 'inbound'; // inbound to workspace = sent by the widget user
+  // User-sent bubbles use the accent color; team replies stay neutral
   const bubbleBg = isOut
     ? accentColor
     : isDark ? '#1e293b' : '#f1f5f9';
