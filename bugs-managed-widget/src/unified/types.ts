@@ -25,6 +25,8 @@ export interface UnifiedLauncherConfig {
   entityTitle?: string;
   theme?: 'dark' | 'light';
   position?: 'bottom-right' | 'bottom-left';
+  /** Hex accent color for the orb glow, panel tabs, send button, etc. Defaults to '#6366f1' (indigo). */
+  accentColor?: string;
   appName?: string;
   tenantId?: string;
   tenantName?: string;

@@ -20,6 +20,7 @@ interface Props {
   onClose: () => void;
   onUnreadChange: (n: number) => void;
   position: 'bottom-right' | 'bottom-left';
+  accentColor: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,19 +31,21 @@ function SizeBtn({
   active,
   onClick,
   isDark,
+  accentColor,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   isDark: boolean;
+  accentColor: string;
 }) {
   return (
     <button
       onClick={onClick}
       title={label}
       style={{
-        background: active ? '#6366f1' : 'transparent',
-        border: `1px solid ${active ? '#6366f1' : isDark ? '#334155' : '#cbd5e1'}`,
+        background: active ? accentColor : 'transparent',
+        border: `1px solid ${active ? accentColor : isDark ? '#334155' : '#cbd5e1'}`,
         borderRadius: 6,
         color: active ? '#fff' : isDark ? '#94a3b8' : '#64748b',
         cursor: 'pointer',
@@ -67,6 +70,7 @@ export default function UnifiedPanel({
   onClose,
   onUnreadChange,
   position,
+  accentColor,
 }: Props) {
   const [tab, setTab]   = useState<PanelTab>(initialTab);
   const [size, setSize] = useState<PanelSize>('mini');
@@ -79,8 +83,8 @@ export default function UnifiedPanel({
     size === 'fullscreen'
       ? { position: 'fixed', inset: 0, borderRadius: 0 }
       : position === 'bottom-left'
-        ? { position: 'fixed', bottom: 88, left: 24, borderRadius: 16 }
-        : { position: 'fixed', bottom: 88, right: 24, borderRadius: 16 };
+        ? { position: 'fixed', bottom: 88, left: 20, borderRadius: 16 }
+        : { position: 'fixed', bottom: 88, right: 20, borderRadius: 16 };
 
   const bg      = isDark ? '#0f172a' : '#ffffff';
   const border  = isDark ? '#1e293b' : '#e2e8f0';
@@ -97,7 +101,7 @@ export default function UnifiedPanel({
         height: dims ? dims.height : undefined,
         background: bg,
         border: `1px solid ${border}`,
-        boxShadow: '0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(99,102,241,0.15)',
+        boxShadow: `0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px ${accentColor}26`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -126,7 +130,7 @@ export default function UnifiedPanel({
           <button
             onClick={() => setTab('messages')}
             style={{
-              background: tab === 'messages' ? '#6366f1' : 'transparent',
+              background: tab === 'messages' ? accentColor : 'transparent',
               color: tab === 'messages' ? '#fff' : isDark ? '#94a3b8' : '#64748b',
               border: 'none',
               borderRadius: 8,
@@ -145,7 +149,7 @@ export default function UnifiedPanel({
           <button
             onClick={() => setTab('bug')}
             style={{
-              background: tab === 'bug' ? '#6366f1' : 'transparent',
+              background: tab === 'bug' ? accentColor : 'transparent',
               color: tab === 'bug' ? '#fff' : isDark ? '#94a3b8' : '#64748b',
               border: 'none',
               borderRadius: 8,
@@ -166,9 +170,9 @@ export default function UnifiedPanel({
         {/* Right controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* Size controls */}
-          <SizeBtn label="–"  active={size === 'mini'}       onClick={() => setSize('mini')}       isDark={isDark} />
-          <SizeBtn label="▪"  active={size === 'large'}      onClick={() => setSize('large')}      isDark={isDark} />
-          <SizeBtn label="⛶"  active={size === 'fullscreen'} onClick={() => setSize('fullscreen')} isDark={isDark} />
+          <SizeBtn label="–"  active={size === 'mini'}       onClick={() => setSize('mini')}       isDark={isDark} accentColor={accentColor} />
+          <SizeBtn label="▪"  active={size === 'large'}      onClick={() => setSize('large')}      isDark={isDark} accentColor={accentColor} />
+          <SizeBtn label="⛶"  active={size === 'fullscreen'} onClick={() => setSize('fullscreen')} isDark={isDark} accentColor={accentColor} />
 
           {/* Close */}
           <button
@@ -202,6 +206,7 @@ export default function UnifiedPanel({
             size={size}
             theme={config.theme ?? 'dark'}
             onUnreadChange={handleUnread}
+            accentColor={accentColor}
           />
         ) : (
           <BugTab
@@ -231,6 +236,7 @@ export default function UnifiedPanel({
           letterSpacing: '0.08em',
           flexShrink: 0,
           fontWeight: 600,
+          borderLeft: `3px solid ${accentColor}`,
         }}
       >
         MANAGED PLATFORM

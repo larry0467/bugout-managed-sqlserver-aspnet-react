@@ -10,6 +10,7 @@
 //       entityId: 'ticket:42',   // optional — scopes messages to an entity
 //       theme:    'dark',
 //       position: 'bottom-left',
+//       accentColor: '#6366f1',  // optional — hex accent; defaults to indigo
 //       tenantId: 'my-app',
 //     };
 //   </script>
@@ -41,8 +42,10 @@ declare global {
   }
 }
 
-const ROOT_ID = 'managed-launcher-root';
-const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+const ROOT_ID  = 'managed-launcher-root';
+const FONT     = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+const LS_KEY   = 'mpl_pos_override';
+const DEFAULT_ACCENT = '#6366f1';
 
 // ---------------------------------------------------------------------------
 // Styles injected once
@@ -64,6 +67,30 @@ function injectStyles() {
     .ml-ccw { transform-origin:50% 50%; animation: ml-spin 18s linear infinite reverse; }
     .ml-halo-anim  { animation: ml-halo 4s ease-in-out infinite; transform-origin:50% 50%; }
     .ml-core-anim  { transform-origin:50% 50%; animation: ml-core 4s ease-in-out infinite; }
+    .ml-orb-wrap { position: relative; }
+    .ml-flip-btn {
+      position: absolute;
+      top: -26px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15,23,42,0.85);
+      border: 1px solid rgba(148,163,184,0.25);
+      border-radius: 20px;
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 150ms;
+      font-family: ${FONT};
+    }
+    .ml-orb-wrap:hover .ml-flip-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
     @media (prefers-reduced-motion: reduce) {
       .ml-cw,.ml-ccw,.ml-halo-anim,.ml-core-anim { animation:none !important; }
     }
@@ -72,23 +99,54 @@ function injectStyles() {
 }
 
 // ---------------------------------------------------------------------------
-// Orb — floating button with unread badge
+// Darken a hex color by mixing toward black (simple version)
+// ---------------------------------------------------------------------------
+function darkenHex(hex: string, amount = 0.35): string {
+  const c = hex.replace('#', '');
+  if (c.length !== 6) return hex;
+  const r = Math.round(parseInt(c.slice(0, 2), 16) * (1 - amount));
+  const g = Math.round(parseInt(c.slice(2, 4), 16) * (1 - amount));
+  const b = Math.round(parseInt(c.slice(4, 6), 16) * (1 - amount));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Orb — floating button with unread badge + flip button
 // ---------------------------------------------------------------------------
 interface OrbProps {
   open: boolean;
   unread: number;
   onClick: () => void;
-  position: 'bottom-right' | 'bottom-left';
+  effectivePosition: 'bottom-right' | 'bottom-left';
+  accentColor: string;
+  onFlip: () => void;
 }
 
-function Orb({ open, unread, onClick, position }: OrbProps) {
+function Orb({ open, unread, onClick, effectivePosition, accentColor, onFlip }: OrbProps) {
   const PX = 52;
   const posStyle: React.CSSProperties =
-    position === 'bottom-left' ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 };
+    effectivePosition === 'bottom-left'
+      ? { position: 'fixed', bottom: 20, left: 20, right: 'auto' }
+      : { position: 'fixed', bottom: 20, right: 20, left: 'auto' };
+
   const uid = useRef(`ml-${Math.random().toString(36).slice(2, 7)}`).current;
+  const darker = darkenHex(accentColor, 0.4);
+
+  const glowNormal = `drop-shadow(0 0 6px ${accentColor}88) drop-shadow(0 0 18px ${accentColor}55)`;
+  const glowHover  = `drop-shadow(0 0 8px ${accentColor}aa) drop-shadow(0 0 26px ${accentColor}77)`;
 
   return (
-    <div style={{ position: 'fixed', ...posStyle, zIndex: 999999 }}>
+    <div style={{ ...posStyle, zIndex: 999999 }} className="ml-orb-wrap">
+      {/* Flip button — visible on hover via CSS */}
+      <button
+        type="button"
+        className="ml-flip-btn"
+        onClick={e => { e.stopPropagation(); onFlip(); }}
+        aria-label="Move launcher to other side"
+      >
+        ⇄
+      </button>
+
       <button
         type="button"
         onClick={onClick}
@@ -102,26 +160,24 @@ function Orb({ open, unread, onClick, position }: OrbProps) {
           padding: 0,
           cursor: 'pointer',
           outline: 'none',
-          filter: `drop-shadow(0 0 6px #6366f188) drop-shadow(0 0 18px #6366f155)`,
+          filter: glowNormal,
           transition: 'filter 200ms, transform 150ms',
           transform: open ? 'scale(0.93)' : 'scale(1)',
         }}
-        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.filter =
-          'drop-shadow(0 0 8px #6366f1aa) drop-shadow(0 0 26px #6366f177)')}
-        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.filter =
-          'drop-shadow(0 0 6px #6366f188) drop-shadow(0 0 18px #6366f155)')}
+        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.filter = glowHover)}
+        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.filter = glowNormal)}
       >
         <svg viewBox="0 0 100 100" width={PX} height={PX} aria-hidden>
           <defs>
             <radialGradient id={`${uid}-c`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%"   stopColor="#6366f1" stopOpacity="1" />
-              <stop offset="60%"  stopColor="#6366f1" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#0f0a2e" stopOpacity="0" />
+              <stop offset="0%"   stopColor={accentColor} stopOpacity="1" />
+              <stop offset="60%"  stopColor={accentColor} stopOpacity="0.5" />
+              <stop offset="100%" stopColor={darker}      stopOpacity="0" />
             </radialGradient>
             <radialGradient id={`${uid}-i`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%"   stopColor="#e0e7ff" stopOpacity="0.95" />
-              <stop offset="45%"  stopColor="#6366f1" stopOpacity="0.65" />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+              <stop offset="0%"   stopColor="#e0e7ff"     stopOpacity="0.95" />
+              <stop offset="45%"  stopColor={accentColor} stopOpacity="0.65" />
+              <stop offset="100%" stopColor={accentColor} stopOpacity="0" />
             </radialGradient>
           </defs>
           <circle cx="50" cy="50" r="48" fill={`url(#${uid}-c)`} className="ml-halo-anim" />
@@ -152,7 +208,7 @@ function Orb({ open, unread, onClick, position }: OrbProps) {
           ))}
         </svg>
 
-        {/* Unread badge */}
+        {/* Unread badge — always red, not brand-colored */}
         {unread > 0 && (
           <span
             style={{
@@ -185,21 +241,40 @@ function Orb({ open, unread, onClick, position }: OrbProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Root app component — owns open/unread state
+// Root app component — owns open/unread/position state
 // ---------------------------------------------------------------------------
 interface AppProps {
   config: UnifiedLauncherConfig;
-  openSignal: React.MutableRefObject<((tab?: PanelTab) => void) | null>;
+  openSignal:  React.MutableRefObject<((tab?: PanelTab) => void) | null>;
   closeSignal: React.MutableRefObject<(() => void) | null>;
 }
 
 function LauncherApp({ config, openSignal, closeSignal }: AppProps) {
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelOpen,  setPanelOpen]  = useState(false);
   const [initialTab, setInitialTab] = useState<PanelTab>('messages');
-  const [unread, setUnread]   = useState(0);
-  const pos = config.position ?? 'bottom-left';
+  const [unread,     setUnread]     = useState(0);
 
-  const open = useCallback((tab?: PanelTab) => {
+  const accentColor = config.accentColor ?? DEFAULT_ACCENT;
+
+  // ---- Position with localStorage persistence ----
+  const [effectivePosition, setEffectivePosition] = useState<'bottom-right' | 'bottom-left'>(() => {
+    try {
+      const stored = localStorage.getItem(LS_KEY);
+      if (stored === 'left')  return 'bottom-left';
+      if (stored === 'right') return 'bottom-right';
+    } catch { /* ignore */ }
+    return config.position ?? 'bottom-right';
+  });
+
+  const handleFlip = useCallback(() => {
+    setEffectivePosition(prev => {
+      const next = prev === 'bottom-right' ? 'bottom-left' : 'bottom-right';
+      try { localStorage.setItem(LS_KEY, next === 'bottom-left' ? 'left' : 'right'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const open  = useCallback((tab?: PanelTab) => {
     if (tab) setInitialTab(tab);
     setPanelOpen(true);
   }, []);
@@ -217,7 +292,9 @@ function LauncherApp({ config, openSignal, closeSignal }: AppProps) {
         open={panelOpen}
         unread={unread}
         onClick={() => (panelOpen ? close() : open())}
-        position={pos}
+        effectivePosition={effectivePosition}
+        accentColor={accentColor}
+        onFlip={handleFlip}
       />
       {panelOpen && (
         <UnifiedPanel
@@ -225,7 +302,8 @@ function LauncherApp({ config, openSignal, closeSignal }: AppProps) {
           initialTab={initialTab}
           onClose={close}
           onUnreadChange={setUnread}
-          position={pos}
+          position={effectivePosition}
+          accentColor={accentColor}
         />
       )}
     </>

@@ -17,6 +17,7 @@ interface Props {
   size: PanelSize;
   theme: 'dark' | 'light';
   onUnreadChange: (n: number) => void;
+  accentColor: string;
 }
 
 const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
@@ -49,14 +50,17 @@ function MessageBubble({
   msg,
   isDark,
   compact,
+  accentColor,
 }: {
   msg: CommsMessage;
   isDark: boolean;
   compact: boolean;
+  accentColor: string;
 }) {
   const isOut = msg.direction === 'outbound';
+  // Outbound bubbles use the accent color; inbound stay neutral
   const bubbleBg = isOut
-    ? isDark ? '#4f46e5' : '#6366f1'
+    ? accentColor
     : isDark ? '#1e293b' : '#f1f5f9';
   const bubbleColor = isOut ? '#fff' : isDark ? '#e2e8f0' : '#1e293b';
   const metaColor = isDark ? '#64748b' : '#94a3b8';
@@ -116,11 +120,13 @@ function ThreadList({
   selectedId,
   onSelect,
   isDark,
+  accentColor,
 }: {
   threads: CommsThread[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   isDark: boolean;
+  accentColor: string;
 }) {
   return (
     <div
@@ -175,7 +181,7 @@ function ThreadList({
                 ? isDark ? '#1e293b' : '#f0f4ff'
                 : 'transparent',
               border: 'none',
-              borderLeft: isSelected ? '3px solid #6366f1' : '3px solid transparent',
+              borderLeft: isSelected ? `3px solid ${accentColor}` : '3px solid transparent',
               cursor: 'pointer',
               textAlign: 'left',
               fontFamily: FONT,
@@ -205,7 +211,7 @@ function ThreadList({
               {t.unreadCount > 0 && (
                 <span
                   style={{
-                    background: '#6366f1',
+                    background: accentColor,
                     color: '#fff',
                     borderRadius: 10,
                     padding: '1px 6px',
@@ -347,11 +353,13 @@ function ReplyBar({
   sending,
   isDark,
   multiline,
+  accentColor,
 }: {
   onSend: (text: string) => void;
   sending: boolean;
   isDark: boolean;
   multiline: boolean;
+  accentColor: string;
 }) {
   const [text, setText] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -411,7 +419,7 @@ function ReplyBar({
           outline: 'none',
           lineHeight: 1.5,
         }}
-        onFocus={e => (e.target.style.borderColor = '#6366f1')}
+        onFocus={e => (e.target.style.borderColor = accentColor)}
         onBlur={e => (e.target.style.borderColor = border)}
       />
       <button
@@ -419,7 +427,7 @@ function ReplyBar({
         disabled={sending || !text.trim()}
         style={{
           flexShrink: 0,
-          background: '#6366f1',
+          background: accentColor,
           border: 'none',
           borderRadius: 10,
           padding: multiline ? '8px 14px' : '7px 12px',
@@ -447,11 +455,13 @@ function MessageThread({
   loading,
   isDark,
   compact,
+  accentColor,
 }: {
   messages: CommsMessage[];
   loading: boolean;
   isDark: boolean;
   compact: boolean;
+  accentColor: string;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -510,7 +520,7 @@ function MessageThread({
       }}
     >
       {messages.map(m => (
-        <MessageBubble key={m.id} msg={m} isDark={isDark} compact={compact} />
+        <MessageBubble key={m.id} msg={m} isDark={isDark} compact={compact} accentColor={accentColor} />
       ))}
       <div ref={endRef} />
     </div>
@@ -520,7 +530,7 @@ function MessageThread({
 // ---------------------------------------------------------------------------
 // MessagesTab — main export
 // ---------------------------------------------------------------------------
-export default function MessagesTab({ commsConfig, user, entityId, size, theme, onUnreadChange }: Props) {
+export default function MessagesTab({ commsConfig, user, entityId, size, theme, onUnreadChange, accentColor }: Props) {
   const isDark = theme === 'dark';
   const bg = isDark ? '#0f172a' : '#ffffff';
 
@@ -551,6 +561,7 @@ export default function MessagesTab({ commsConfig, user, entityId, size, theme, 
           selectedId={selectedThreadId}
           onSelect={setSelectedThreadId}
           isDark={isDark}
+          accentColor={accentColor}
         />
       )}
 
@@ -571,7 +582,7 @@ export default function MessagesTab({ commsConfig, user, entityId, size, theme, 
               gap: 8,
             }}
           >
-            <span style={{ color: '#6366f1' }}>●</span>
+            <span style={{ color: accentColor }}>●</span>
             {selectedThread.subject}
           </div>
         )}
@@ -595,8 +606,8 @@ export default function MessagesTab({ commsConfig, user, entityId, size, theme, 
                   flexShrink: 0,
                   padding: '3px 8px',
                   borderRadius: 8,
-                  border: `1px solid ${t.id === selectedThreadId ? '#6366f1' : isDark ? '#1e293b' : '#e2e8f0'}`,
-                  background: t.id === selectedThreadId ? '#6366f1' : 'transparent',
+                  border: `1px solid ${t.id === selectedThreadId ? accentColor : isDark ? '#1e293b' : '#e2e8f0'}`,
+                  background: t.id === selectedThreadId ? accentColor : 'transparent',
                   color: t.id === selectedThreadId ? '#fff' : isDark ? '#94a3b8' : '#64748b',
                   fontSize: 11,
                   cursor: 'pointer',
@@ -630,6 +641,7 @@ export default function MessagesTab({ commsConfig, user, entityId, size, theme, 
           loading={loading && messages.length === 0}
           isDark={isDark}
           compact={compact}
+          accentColor={accentColor}
         />
 
         <ReplyBar
@@ -637,6 +649,7 @@ export default function MessagesTab({ commsConfig, user, entityId, size, theme, 
           sending={sending}
           isDark={isDark}
           multiline={!compact}
+          accentColor={accentColor}
         />
       </div>
     </div>
