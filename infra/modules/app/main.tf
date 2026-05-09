@@ -100,6 +100,25 @@ resource "azurerm_storage_account" "videos" {
     delete_retention_policy {
       days = 30
     }
+
+    # Allow browser-side direct blob fetches (SAS video URLs) from all
+    # consumer app origins. Without this the browser blocks the fetch even
+    # though the SAS token is valid.
+    cors_rule {
+      allowed_origins = concat(
+        [
+          "http://localhost:5173",
+          "http://localhost:3000",
+          "https://bugout.managedplatform.com",
+          "https://bugout-${var.environment}.managedplatform.com",
+        ],
+        var.extra_cors_origins
+      )
+      allowed_methods    = ["GET", "HEAD"]
+      allowed_headers    = ["*"]
+      exposed_headers    = ["Content-Length", "Content-Type", "Content-Range"]
+      max_age_in_seconds = 3600
+    }
   }
 
   tags = local.tags
