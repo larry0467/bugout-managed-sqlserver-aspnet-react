@@ -292,6 +292,62 @@ data "azurerm_key_vault_secret" "github_token" {
   key_vault_id = azurerm_key_vault.app.id
 }
 
+# ---- CommsManaged secrets ---------------------------------------------------
+# Four secrets populated out of band via `az keyvault secret set` after the
+# CommsManaged workspace is provisioned. Terraform creates placeholder slots;
+# lifecycle ignores live values on re-apply.
+resource "azurerm_key_vault_secret" "comms_managed_api_key" {
+  count        = var.comms_managed_enabled ? 1 : 0
+  name         = "comms-managed-api-key"
+  key_vault_id = azurerm_key_vault.app.id
+  value        = "placeholder-replace-via-az-keyvault-secret-set"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_deployer_officer]
+}
+
+resource "azurerm_key_vault_secret" "comms_managed_workspace_id" {
+  count        = var.comms_managed_enabled ? 1 : 0
+  name         = "comms-managed-workspace-id"
+  key_vault_id = azurerm_key_vault.app.id
+  value        = "placeholder-replace-via-az-keyvault-secret-set"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_deployer_officer]
+}
+
+resource "azurerm_key_vault_secret" "comms_managed_system_sender_user_id" {
+  count        = var.comms_managed_enabled ? 1 : 0
+  name         = "comms-managed-system-sender-user-id"
+  key_vault_id = azurerm_key_vault.app.id
+  value        = "placeholder-replace-via-az-keyvault-secret-set"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_deployer_officer]
+}
+
+resource "azurerm_key_vault_secret" "comms_managed_webhook_secret" {
+  count        = var.comms_managed_enabled ? 1 : 0
+  name         = "comms-managed-webhook-secret"
+  key_vault_id = azurerm_key_vault.app.id
+  value        = "placeholder-replace-via-az-keyvault-secret-set"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  depends_on = [azurerm_role_assignment.kv_deployer_officer]
+}
+
 # -----------------------------------------------------------------------------
 # Application Insights — workspace-based, points at platform LAW
 # -----------------------------------------------------------------------------
@@ -442,6 +498,40 @@ resource "azurerm_container_app" "app" {
           secret_name = "claude-agent-sidecar-api-key"
         }
       }
+
+      # CommsManaged — four secrets injected as env overrides; the non-secret
+      # keys (ApiUrl, TeamName) come from appsettings.Production.json.
+      dynamic "env" {
+        for_each = var.comms_managed_enabled ? [1] : []
+        content {
+          name        = "CommsManaged__ApiKey"
+          secret_name = "comms-managed-api-key"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.comms_managed_enabled ? [1] : []
+        content {
+          name        = "CommsManaged__WorkspaceId"
+          secret_name = "comms-managed-workspace-id"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.comms_managed_enabled ? [1] : []
+        content {
+          name        = "CommsManaged__SystemSenderUserId"
+          secret_name = "comms-managed-system-sender-user-id"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.comms_managed_enabled ? [1] : []
+        content {
+          name        = "CommsManaged__WebhookSecret"
+          secret_name = "comms-managed-webhook-secret"
+        }
+      }
     }
 
     # Claude Agent sidecar — Node.js, listens on :7100 in the same
@@ -554,6 +644,42 @@ resource "azurerm_container_app" "app" {
     content {
       name                = "github-token"
       key_vault_secret_id = data.azurerm_key_vault_secret.github_token[0].versionless_id
+      identity            = azurerm_user_assigned_identity.app.id
+    }
+  }
+
+  dynamic "secret" {
+    for_each = var.comms_managed_enabled ? [1] : []
+    content {
+      name                = "comms-managed-api-key"
+      key_vault_secret_id = azurerm_key_vault_secret.comms_managed_api_key[0].versionless_id
+      identity            = azurerm_user_assigned_identity.app.id
+    }
+  }
+
+  dynamic "secret" {
+    for_each = var.comms_managed_enabled ? [1] : []
+    content {
+      name                = "comms-managed-workspace-id"
+      key_vault_secret_id = azurerm_key_vault_secret.comms_managed_workspace_id[0].versionless_id
+      identity            = azurerm_user_assigned_identity.app.id
+    }
+  }
+
+  dynamic "secret" {
+    for_each = var.comms_managed_enabled ? [1] : []
+    content {
+      name                = "comms-managed-system-sender-user-id"
+      key_vault_secret_id = azurerm_key_vault_secret.comms_managed_system_sender_user_id[0].versionless_id
+      identity            = azurerm_user_assigned_identity.app.id
+    }
+  }
+
+  dynamic "secret" {
+    for_each = var.comms_managed_enabled ? [1] : []
+    content {
+      name                = "comms-managed-webhook-secret"
+      key_vault_secret_id = azurerm_key_vault_secret.comms_managed_webhook_secret[0].versionless_id
       identity            = azurerm_user_assigned_identity.app.id
     }
   }

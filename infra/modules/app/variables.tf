@@ -159,3 +159,9 @@ variable "extra_cors_origins" {
   type        = list(string)
   default     = []
 }
+
+variable "comms_managed_enabled" {
+  description = "Whether to provision CommsManaged secret slots in KV and inject CommsManaged__* env vars into the Container App. Set true in any env where notifications should fire."
+  type        = bool
+  default     = false
+}

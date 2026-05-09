@@ -91,3 +91,9 @@ variable "anthropic_api_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "comms_managed_enabled" {
+  description = "Whether to provision CommsManaged secret slots in KV and inject CommsManaged__* env vars. Set true in prod (and any env that sends notifications)."
+  type        = bool
+  default     = false
+}

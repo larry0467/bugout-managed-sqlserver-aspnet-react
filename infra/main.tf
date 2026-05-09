@@ -38,4 +38,5 @@ module "app" {
   extra_cors_origins         = var.extra_cors_origins
   anthropic_enabled          = var.anthropic_enabled
   anthropic_api_key          = var.anthropic_api_key
+  comms_managed_enabled      = var.comms_managed_enabled
 }
