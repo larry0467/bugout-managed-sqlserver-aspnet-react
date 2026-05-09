@@ -12,6 +12,13 @@ static_web_app_sku         = "Standard"
 anthropic_enabled = true
 anthropic_api_key = "set-via-az-keyvault-secret-set-not-tf"
 
+# CommsManaged — secret slots created in KV; values set via az keyvault secret set.
+# comms-managed-api-key        = seeder value "dev-bugout-key" (rotate to prod key after Comms prod deploys)
+# comms-managed-workspace-id   = placeholder 00000000-... (update after Comms prod seed runs)
+# comms-managed-system-sender-user-id = placeholder 00000000-... (update after Comms prod seed runs)
+# comms-managed-webhook-secret = seeder deterministic value (rotate via Comms Developers tab in prod)
+comms_managed_enabled = true
+
 # Consumer app origins — Bug Out is prod-only so every consumer env
 # (including dev/beta subdomains) must be listed here.
 extra_cors_origins = [
