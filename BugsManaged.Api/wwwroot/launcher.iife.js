@@ -65,10 +65,10 @@ Error generating stack: `+o.message+`
     .ml-ccw { transform-origin:50% 50%; animation: ml-spin 18s linear infinite reverse; }
     .ml-halo-anim  { animation: ml-halo 4s ease-in-out infinite; transform-origin:50% 50%; }
     .ml-core-anim  { transform-origin:50% 50%; animation: ml-core 4s ease-in-out infinite; }
-    .ml-orb-wrap { position: relative; }
+    .ml-orb-wrap { position: relative; padding-top: 34px; }
     .ml-flip-btn {
       position: absolute;
-      top: -26px;
+      top: 4px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(15,23,42,0.85);
@@ -82,12 +82,16 @@ Error generating stack: `+o.message+`
       white-space: nowrap;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 150ms;
+      transition: opacity 120ms ease;
       font-family: ${Xc};
     }
     .ml-orb-wrap:hover .ml-flip-btn {
       opacity: 1;
       pointer-events: auto;
+      transition: opacity 80ms ease;
+    }
+    .ml-orb-wrap:not(:hover) .ml-flip-btn {
+      transition: opacity 250ms ease 200ms;
     }
     @media (prefers-reduced-motion: reduce) {
       .ml-cw,.ml-ccw,.ml-halo-anim,.ml-core-anim { animation:none !important; }
