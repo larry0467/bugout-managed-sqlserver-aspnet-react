@@ -243,6 +243,103 @@ function ThreadList({
 }
 
 // ---------------------------------------------------------------------------
+// useSpeechRecognition — returns mic state and toggle function
+// ---------------------------------------------------------------------------
+type SpeechStatus = 'idle' | 'listening' | 'unsupported';
+
+function useSpeechRecognition(onTranscript: (t: string) => void) {
+  const [status, setStatus] = useState<SpeechStatus>(() => {
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    return SR ? 'idle' : 'unsupported';
+  });
+  const recogRef = useRef<any>(null);
+
+  function toggle() {
+    if (status === 'unsupported') return;
+
+    if (status === 'listening') {
+      recogRef.current?.stop();
+      return;
+    }
+
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    const r = new SR();
+    r.continuous = false;
+    r.interimResults = false;
+    r.lang = 'en-US';
+
+    r.onresult = (e: any) => {
+      const transcript = Array.from(e.results as any[])
+        .map((res: any) => res[0].transcript)
+        .join('');
+      onTranscript(transcript);
+    };
+
+    r.onstart = () => setStatus('listening');
+    r.onend   = () => setStatus('idle');
+    r.onerror = () => setStatus('idle');
+
+    recogRef.current = r;
+    r.start();
+  }
+
+  return { status, toggle };
+}
+
+// ---------------------------------------------------------------------------
+// MicButton
+// ---------------------------------------------------------------------------
+function MicButton({ status, onToggle, multiline }: { status: SpeechStatus; onToggle: () => void; multiline: boolean }) {
+  const isListening   = status === 'listening';
+  const isUnsupported = status === 'unsupported';
+
+  const btnStyle: React.CSSProperties = {
+    flexShrink: 0,
+    background: 'none',
+    border: 'none',
+    borderRadius: 8,
+    padding: multiline ? '6px' : '5px',
+    cursor: isUnsupported ? 'not-allowed' : 'pointer',
+    opacity: isUnsupported ? 0.35 : 1,
+    fontSize: 18,
+    lineHeight: 1,
+    alignSelf: multiline ? 'flex-end' : 'center',
+    color: isListening ? '#ef4444' : '#64748b',
+    transition: 'color 150ms',
+    animation: isListening ? 'bugout-mic-pulse 900ms ease-in-out infinite alternate' : 'none',
+    outline: 'none',
+  };
+
+  return (
+    <>
+      {/* Keyframe injected once into the document head */}
+      <style>{`
+        @keyframes bugout-mic-pulse {
+          from { opacity: 1; }
+          to   { opacity: 0.35; }
+        }
+      `}</style>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={isUnsupported}
+        title={
+          isUnsupported
+            ? 'Voice input not supported in this browser'
+            : isListening
+            ? 'Stop recording'
+            : 'Speak to fill the reply box'
+        }
+        style={btnStyle}
+        aria-label={isListening ? 'Stop recording' : 'Start voice input'}
+      >
+        🎤
+      </button>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ReplyBar
 // ---------------------------------------------------------------------------
 function ReplyBar({
@@ -258,6 +355,12 @@ function ReplyBar({
 }) {
   const [text, setText] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  const { status: micStatus, toggle: toggleMic } = useSpeechRecognition((transcript) => {
+    setText(prev => (prev ? prev + ' ' + transcript : transcript));
+    // Focus the textarea so the user can see the appended text
+    taRef.current?.focus();
+  });
 
   function submit() {
     if (!text.trim() || sending) return;
@@ -275,7 +378,6 @@ function ReplyBar({
   const border = isDark ? '#1e293b' : '#e2e8f0';
   const inputBg = isDark ? '#0f172a' : '#f8fafc';
   const inputColor = isDark ? '#e2e8f0' : '#1e293b';
-  const placeholder = isDark ? '#475569' : '#94a3b8';
 
   return (
     <div
@@ -288,6 +390,7 @@ function ReplyBar({
         background: isDark ? '#0f172a' : '#fff',
       }}
     >
+      <MicButton status={micStatus} onToggle={toggleMic} multiline={multiline} />
       <textarea
         ref={taRef}
         value={text}

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +14,12 @@ namespace BugsManaged.Api.Controllers;
 public class TicketNoteController : ControllerBase
 {
     private readonly BugsManagedDbContext _db;
+    private readonly ITicketNotificationService _notify;
 
-    public TicketNoteController(BugsManagedDbContext db)
+    public TicketNoteController(BugsManagedDbContext db, ITicketNotificationService notify)
     {
-        _db = db;
+        _db     = db;
+        _notify = notify;
     }
 
     [HttpGet]
@@ -53,6 +56,13 @@ public class TicketNoteController : ControllerBase
 
         _db.TicketNotes.Add(note);
         await _db.SaveChangesAsync();
+
+        // Notify the reporter when a developer leaves a comment.
+        // Skip for EMAIL-sourced notes to avoid a reply-loop with the Comms webhook.
+        if (note.NoteType == "COMMENT" && note.Source != "EMAIL")
+        {
+            _ = _notify.NotifyReporterNoteAddedAsync(ticket, note.Content, note.AuthorName ?? userEmail);
+        }
 
         return CreatedAtAction(nameof(GetNotes), new { ticketId }, note);
     }

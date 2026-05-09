@@ -109,6 +109,17 @@ public class CommsManagedNotificationService : ITicketNotificationService
                      $"— {_opts.TeamName}",
             ct: ct);
 
+    public Task NotifyReporterNoteAddedAsync(Ticket ticket, string noteContent, string authorName, CancellationToken ct = default)
+        => SendAsync(
+            to:      ticket.SubmittedBy,
+            ticket:  ticket,
+            subject: $"[#{ticket.Id}] New comment on your {ticket.TicketType.ToLowerInvariant().Replace('_', ' ')} report",
+            body:    $"{authorName} left a comment on your {ticket.TicketType.ToLowerInvariant().Replace('_', ' ')} request \"{ticket.Title}\":\n\n" +
+                     $"{noteContent}\n\n" +
+                     $"Reply to this message to respond, or view the full ticket at " +
+                     $"https://bugout.managedplatform.com/tickets/{ticket.Id}",
+            ct: ct);
+
     // -------------------------------------------------------------------------
     // Core send — calls POST /api/v1/messages/send on Comms
     // -------------------------------------------------------------------------
@@ -171,6 +182,7 @@ public interface ITicketNotificationService
     Task NotifyReporterInProgressAsync(Ticket ticket, CancellationToken ct = default);
     Task NotifyReporterResolvedAsync(Ticket ticket, CancellationToken ct = default);
     Task NotifyAssigneeChangesRequestedAsync(Ticket ticket, string reason, CancellationToken ct = default);
+    Task NotifyReporterNoteAddedAsync(Ticket ticket, string noteContent, string authorName, CancellationToken ct = default);
 }
 
 // ---------------------------------------------------------------------------
