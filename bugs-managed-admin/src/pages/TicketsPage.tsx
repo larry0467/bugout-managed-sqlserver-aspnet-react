@@ -336,6 +336,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [attachmentsByNote, setAttachmentsByNote] = useState<Record<number, { id: number; fileName: string }[]>>({});
   const [attachmentUrlCache, setAttachmentUrlCache] = useState<Record<number, string>>({});
 
+  // Modal-mode ticket detail. Board view clicks open this rather than
+  // switching to the table — the user wants to stay on the board and
+  // work the ticket in a popup.
+  const [modalTicket, setModalTicket] = useState<Ticket | null>(null);
+
   const currentUser: AuthUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
 
   // Drag-to-reorder state for the tickets grid columns. Initial value is
@@ -1139,6 +1144,265 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     saveColumnOrder(currentUser?.email ?? null, fullOrder);
   };
 
+  // Ticket detail surface — used both by the table's expanded row (inline)
+  // and by the Board card popup (modal). One source of truth so chat,
+  // checklist, activity, and Claude tabs behave identically in both
+  // contexts.
+  const renderTicketDetail = (record: Ticket) => {
+    const detailsContent = (
+      <div>
+        {record.description && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>Description:</Text>
+            <p>{record.description}</p>
+          </div>
+        )}
+        {record.transcript && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>Voice Transcript:</Text>
+            <p style={{ fontStyle: 'italic' }}>{record.transcript}</p>
+          </div>
+        )}
+        {(record.tenantId || record.databaseName || record.applicationVersion || record.environment) && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>Application Context:</Text>
+            <div style={{ marginTop: 4 }}>
+              {record.tenantId && <Tag>Tenant ID: {record.tenantId}</Tag>}
+              {record.tenantName && <Tag>Tenant: {record.tenantName}</Tag>}
+              {record.databaseName && <Tag icon={<DatabaseOutlined />}>DB: {record.databaseName}</Tag>}
+              {record.applicationVersion && <Tag>v{record.applicationVersion}</Tag>}
+              {record.environment && <Tag icon={<CloudOutlined />}>{record.environment}</Tag>}
+            </div>
+          </div>
+        )}
+        {record.consoleErrors && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong style={{ color: '#e53935' }}><WarningOutlined /> Console Errors:</Text>
+            <div style={{ marginTop: 4 }}>{renderConsoleErrors(record.consoleErrors)}</div>
+          </div>
+        )}
+        {record.networkErrors && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong style={{ color: '#ff9800' }}><ApiOutlined /> Network Errors:</Text>
+            <div style={{ marginTop: 4 }}>{renderNetworkErrors(record.networkErrors)}</div>
+          </div>
+        )}
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          {record.currentPageUrl && <Text type="secondary">Page: {record.currentPageUrl}</Text>}
+          {record.browserInfo && <Text type="secondary">Browser: {record.browserInfo?.slice(0, 80)}...</Text>}
+          {record.screenWidth && <Text type="secondary">Screen: {record.screenWidth}x{record.screenHeight}</Text>}
+          {record.resolution && <Text type="success">Resolution: {record.resolution}</Text>}
+          {record.videoUrl && (
+            <Text type="secondary"><PlayCircleOutlined /> Screen recording attached — open the Video action on this ticket to play it.</Text>
+          )}
+        </Space>
+      </div>
+    );
+
+    const chatContent = (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Text strong><CommentOutlined /> Chat <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>synced with Slack</Text></Text>
+          {!notesMap[record.id] && (
+            <Button size="small" onClick={() => loadNotes(record.id)} loading={notesLoading[record.id]}>
+              Load Chat
+            </Button>
+          )}
+        </div>
+
+        {notesMap[record.id] && (
+          <>
+            {notesMap[record.id].length === 0 ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>No messages yet. Messages posted here will also appear in Slack.</Text>
+            ) : (
+              <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+                {notesMap[record.id].map((note: TicketNote) => {
+                  const isSlack = note.source === 'SLACK';
+                  return (
+                    <div key={note.id} style={{
+                      display: 'flex',
+                      gap: 8,
+                      padding: '8px 10px',
+                      marginBottom: 4,
+                      background: isSlack ? '#1a1a2e' : '#0d1117',
+                      borderRadius: 8,
+                      borderLeft: `3px solid ${isSlack ? '#4A154B' : noteTypeColors[note.noteType] || '#4caf50'}`,
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                          {isSlack && (
+                            <Tag color="#4A154B" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>Slack</Tag>
+                          )}
+                          <Tag
+                            color={noteTypeColors[note.noteType]}
+                            icon={noteTypeIcons[note.noteType]}
+                            style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}
+                          >
+                            {note.noteType}
+                          </Tag>
+                          <Text strong style={{ fontSize: 12 }}>{note.authorName || note.authorEmail}</Text>
+                          <Text type="secondary" style={{ fontSize: 10 }}>
+                            {new Date(note.createdAt).toLocaleString()}
+                          </Text>
+                        </div>
+                        <Text style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{note.content}</Text>
+                        {(attachmentsByNote[note.id] || []).length > 0 && (
+                          <div style={{ marginTop: 6 }}>
+                            {(attachmentsByNote[note.id] || []).map((a) => (
+                              <Tag
+                                key={a.id}
+                                color="purple"
+                                onClick={() => handleAttachmentClick(record.id, a.id)}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <PaperClipOutlined /> {a.fileName}
+                              </Tag>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {!isSlack && (
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleDeleteNote(record.id, note.id)}
+                          style={{ alignSelf: 'flex-start' }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add note form */}
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <Select
+                value={noteType[record.id] || 'COMMENT'}
+                onChange={(val) => setNoteType(prev => ({ ...prev, [record.id]: val }))}
+                size="small"
+                style={{ width: 120 }}
+                options={[
+                  { label: 'Comment', value: 'COMMENT' },
+                  { label: 'Question', value: 'QUESTION' },
+                  { label: 'Internal', value: 'INTERNAL' },
+                ]}
+              />
+              <Upload.Dragger
+                accept="*/*"
+                showUploadList={false}
+                openFileDialogOnClick={false}
+                beforeUpload={(file) => {
+                  setChatScreenshots(prev => ({ ...prev, [record.id]: [...(prev[record.id] || []), file as File] }));
+                  return false;
+                }}
+                multiple
+                style={{ flex: 1, padding: 0 }}
+              >
+                <TextArea
+                  value={noteInput[record.id] || ''}
+                  onChange={(e) => setNoteInput(prev => ({ ...prev, [record.id]: e.target.value }))}
+                  onPaste={(e) => handleChatPaste(record.id, e)}
+                  placeholder="Add a note... (type @name to mention, paste or drop a file to attach)"
+                  rows={1}
+                  autoSize={{ minRows: 1, maxRows: 4 }}
+                  style={{ flex: 1 }}
+                  size="small"
+                />
+              </Upload.Dragger>
+              <Upload
+                accept="*/*"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  setChatScreenshots(prev => ({ ...prev, [record.id]: [...(prev[record.id] || []), file as File] }));
+                  return false;
+                }}
+                multiple
+              >
+                <Button size="small" icon={<PaperClipOutlined />} title="Attach file" />
+              </Upload>
+              <Button
+                type="primary"
+                size="small"
+                icon={<SendOutlined />}
+                onClick={() => handleAddNote(record.id)}
+                disabled={!noteInput[record.id]?.trim() && (chatScreenshots[record.id]?.length ?? 0) === 0}
+              >
+                Add
+              </Button>
+            </div>
+            {(chatScreenshots[record.id]?.length ?? 0) > 0 && (
+              <div style={{ marginTop: 6 }}>
+                {(chatScreenshots[record.id] || []).map((f, i) => (
+                  <Tag
+                    key={i}
+                    color="purple"
+                    closable
+                    onClose={() => setChatScreenshots(prev => ({
+                      ...prev,
+                      [record.id]: (prev[record.id] || []).filter((_, idx) => idx !== i),
+                    }))}
+                  >
+                    <PaperClipOutlined /> {f.name || 'file'}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+
+    const activeTab = activeTabByTicket[record.id] || 'details';
+
+    return (
+      <Card size="small" style={{ background: '#141414' }}>
+        <EscalationPanel
+          ticket={record}
+          currentUser={currentUser}
+          onChanged={() => refreshTicket(record.id)}
+          onAssignedToClaude={() =>
+            setActiveTabByTicket((prev) => ({ ...prev, [record.id]: 'claude' }))
+          }
+        />
+        <Divider style={{ margin: '8px 0 12px' }} />
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => setActiveTabByTicket((prev) => ({ ...prev, [record.id]: key }))}
+          size="small"
+          items={[
+            { key: 'details', label: 'Details', children: detailsContent },
+            { key: 'chat', label: 'Chat', children: chatContent },
+            {
+              key: 'checklist',
+              label: (<span><CheckSquareOutlined /> Checklist</span>),
+              children: (
+                <ChecklistPanel
+                  ticketId={record.id}
+                  onProgressChange={(done, total) =>
+                    setChecklistByTicket((prev) => ({ ...prev, [record.id]: { done, total } }))
+                  }
+                />
+              ),
+            },
+            {
+              key: 'activity',
+              label: (<span><HistoryOutlined /> Activity</span>),
+              children: <TicketActivityTab ticketId={record.id} active={activeTab === 'activity'} />,
+            },
+            {
+              key: 'claude',
+              label: (<span><RobotOutlined /> Claude Activity</span>),
+              children: <ClaudeActivityTab ticketId={record.id} active={activeTab === 'claude'} />,
+            },
+          ]}
+        />
+      </Card>
+    );
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -1199,7 +1463,15 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           labelsByTicket={labelsByTicket}
           checklistByTicket={checklistByTicket}
           projectMap={projectMap}
-          onCardClick={() => { /* expand-in-place is table-only; clicking a card scrolls the user back to table */ setViewMode('table'); }}
+          onCardClick={(ticket) => {
+            // Open the same detail surface the table's expanded row uses,
+            // but in a modal so the user can keep the Board view behind it.
+            if (!notesMap[ticket.id]) {
+              loadNotes(ticket.id);
+              loadNoteAttachments(ticket.id);
+            }
+            setModalTicket(ticket);
+          }}
           onStatusChange={async (ticketId, status) => {
             await handleStatusChange(ticketId, status);
           }}
@@ -1209,7 +1481,13 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       {viewMode === 'calendar' && (
         <CalendarView
           tickets={visibleTickets}
-          onCardClick={() => setViewMode('table')}
+          onCardClick={(ticket) => {
+            if (!notesMap[ticket.id]) {
+              loadNotes(ticket.id);
+              loadNoteAttachments(ticket.id);
+            }
+            setModalTicket(ticket);
+          }}
         />
       )}
 
@@ -1249,260 +1527,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           },
         }}
         expandable={{
-          expandedRowRender: (record) => {
-            const detailsContent = (
-              <div>
-              {/* Description */}
-              {record.description && (
-                <div style={{ marginBottom: 12 }}>
-                  <Text strong>Description:</Text>
-                  <p>{record.description}</p>
-                </div>
-              )}
-
-              {/* Voice Transcript */}
-              {record.transcript && (
-                <div style={{ marginBottom: 12 }}>
-                  <Text strong>Voice Transcript:</Text>
-                  <p style={{ fontStyle: 'italic' }}>{record.transcript}</p>
-                </div>
-              )}
-
-              {/* Tenant Context */}
-              {(record.tenantId || record.databaseName || record.applicationVersion || record.environment) && (
-                <div style={{ marginBottom: 12 }}>
-                  <Text strong>Application Context:</Text>
-                  <div style={{ marginTop: 4 }}>
-                    {record.tenantId && <Tag>Tenant ID: {record.tenantId}</Tag>}
-                    {record.tenantName && <Tag>Tenant: {record.tenantName}</Tag>}
-                    {record.databaseName && <Tag icon={<DatabaseOutlined />}>DB: {record.databaseName}</Tag>}
-                    {record.applicationVersion && <Tag>v{record.applicationVersion}</Tag>}
-                    {record.environment && <Tag icon={<CloudOutlined />}>{record.environment}</Tag>}
-                  </div>
-                </div>
-              )}
-
-              {/* Console Errors */}
-              {record.consoleErrors && (
-                <div style={{ marginBottom: 12 }}>
-                  <Text strong style={{ color: '#e53935' }}><WarningOutlined /> Console Errors:</Text>
-                  <div style={{ marginTop: 4 }}>{renderConsoleErrors(record.consoleErrors)}</div>
-                </div>
-              )}
-
-              {/* Network Errors */}
-              {record.networkErrors && (
-                <div style={{ marginBottom: 12 }}>
-                  <Text strong style={{ color: '#ff9800' }}><ApiOutlined /> Network Errors:</Text>
-                  <div style={{ marginTop: 4 }}>{renderNetworkErrors(record.networkErrors)}</div>
-                </div>
-              )}
-
-              {/* Browser / Page Context */}
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                {record.currentPageUrl && <Text type="secondary">Page: {record.currentPageUrl}</Text>}
-                {record.browserInfo && <Text type="secondary">Browser: {record.browserInfo?.slice(0, 80)}...</Text>}
-                {record.screenWidth && <Text type="secondary">Screen: {record.screenWidth}x{record.screenHeight}</Text>}
-                {record.resolution && <Text type="success">Resolution: {record.resolution}</Text>}
-                {record.videoUrl && (
-                  <Text type="secondary"><PlayCircleOutlined /> Screen recording attached — click Video in the actions column to play.</Text>
-                )}
-              </Space>
-              </div>
-            );
-
-            const chatContent = (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text strong><CommentOutlined /> Chat <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>synced with Slack</Text></Text>
-                  {!notesMap[record.id] && (
-                    <Button size="small" onClick={() => loadNotes(record.id)} loading={notesLoading[record.id]}>
-                      Load Chat
-                    </Button>
-                  )}
-                </div>
-
-                {notesMap[record.id] && (
-                  <>
-                    {notesMap[record.id].length === 0 ? (
-                      <Text type="secondary" style={{ fontSize: 12 }}>No messages yet. Messages posted here will also appear in Slack.</Text>
-                    ) : (
-                      <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
-                        {notesMap[record.id].map((note: TicketNote) => {
-                          const isSlack = note.source === 'SLACK';
-                          return (
-                            <div key={note.id} style={{
-                              display: 'flex',
-                              gap: 8,
-                              padding: '8px 10px',
-                              marginBottom: 4,
-                              background: isSlack ? '#1a1a2e' : '#0d1117',
-                              borderRadius: 8,
-                              borderLeft: `3px solid ${isSlack ? '#4A154B' : noteTypeColors[note.noteType] || '#4caf50'}`,
-                            }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                  {isSlack && (
-                                    <Tag color="#4A154B" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>Slack</Tag>
-                                  )}
-                                  <Tag
-                                    color={noteTypeColors[note.noteType]}
-                                    icon={noteTypeIcons[note.noteType]}
-                                    style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}
-                                  >
-                                    {note.noteType}
-                                  </Tag>
-                                  <Text strong style={{ fontSize: 12 }}>{note.authorName || note.authorEmail}</Text>
-                                  <Text type="secondary" style={{ fontSize: 10 }}>
-                                    {new Date(note.createdAt).toLocaleString()}
-                                  </Text>
-                                </div>
-                                <Text style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{note.content}</Text>
-                                {(attachmentsByNote[note.id] || []).length > 0 && (
-                                  <div style={{ marginTop: 6 }}>
-                                    {(attachmentsByNote[note.id] || []).map((a) => (
-                                      <Tag
-                                        key={a.id}
-                                        color="purple"
-                                        onClick={() => handleAttachmentClick(record.id, a.id)}
-                                        style={{ cursor: 'pointer' }}
-                                      >
-                                        <PictureOutlined /> {a.fileName}
-                                      </Tag>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              {!isSlack && (
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={() => handleDeleteNote(record.id, note.id)}
-                                  style={{ alignSelf: 'flex-start' }}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Add note form */}
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <Select
-                        value={noteType[record.id] || 'COMMENT'}
-                        onChange={(val) => setNoteType(prev => ({ ...prev, [record.id]: val }))}
-                        size="small"
-                        style={{ width: 120 }}
-                        options={[
-                          { label: 'Comment', value: 'COMMENT' },
-                          { label: 'Question', value: 'QUESTION' },
-                          { label: 'Internal', value: 'INTERNAL' },
-                        ]}
-                      />
-                      <TextArea
-                        value={noteInput[record.id] || ''}
-                        onChange={(e) => setNoteInput(prev => ({ ...prev, [record.id]: e.target.value }))}
-                        onPaste={(e) => handleChatPaste(record.id, e)}
-                        placeholder="Add a note... (tip: type @name to mention, paste an image to attach)"
-                        rows={1}
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        style={{ flex: 1 }}
-                        size="small"
-                      />
-                      <Upload
-                        accept="image/*"
-                        showUploadList={false}
-                        beforeUpload={(file) => {
-                          setChatScreenshots(prev => ({ ...prev, [record.id]: [...(prev[record.id] || []), file as File] }));
-                          return false;
-                        }}
-                        multiple
-                      >
-                        <Button size="small" icon={<PictureOutlined />} title="Attach screenshot" />
-                      </Upload>
-                      <Button
-                        type="primary"
-                        size="small"
-                        icon={<SendOutlined />}
-                        onClick={() => handleAddNote(record.id)}
-                        disabled={!noteInput[record.id]?.trim() && (chatScreenshots[record.id]?.length ?? 0) === 0}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    {/* Queued screenshots preview */}
-                    {(chatScreenshots[record.id]?.length ?? 0) > 0 && (
-                      <div style={{ marginTop: 6 }}>
-                        {(chatScreenshots[record.id] || []).map((f, i) => (
-                          <Tag
-                            key={i}
-                            color="purple"
-                            closable
-                            onClose={() => setChatScreenshots(prev => ({
-                              ...prev,
-                              [record.id]: (prev[record.id] || []).filter((_, idx) => idx !== i),
-                            }))}
-                          >
-                            <PaperClipOutlined /> {f.name || 'screenshot.png'}
-                          </Tag>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-
-            const activeTab = activeTabByTicket[record.id] || 'details';
-
-            return (
-              <Card size="small" style={{ background: '#141414' }}>
-                <EscalationPanel
-                  ticket={record}
-                  currentUser={currentUser}
-                  onChanged={() => refreshTicket(record.id)}
-                  onAssignedToClaude={() =>
-                    setActiveTabByTicket((prev) => ({ ...prev, [record.id]: 'claude' }))
-                  }
-                />
-                <Divider style={{ margin: '8px 0 12px' }} />
-                <Tabs
-                  activeKey={activeTab}
-                  onChange={(key) => setActiveTabByTicket((prev) => ({ ...prev, [record.id]: key }))}
-                  size="small"
-                  items={[
-                    { key: 'details', label: 'Details', children: detailsContent },
-                    { key: 'chat', label: 'Chat', children: chatContent },
-                    {
-                      key: 'checklist',
-                      label: (<span><CheckSquareOutlined /> Checklist</span>),
-                      children: (
-                        <ChecklistPanel
-                          ticketId={record.id}
-                          onProgressChange={(done, total) =>
-                            setChecklistByTicket((prev) => ({ ...prev, [record.id]: { done, total } }))
-                          }
-                        />
-                      ),
-                    },
-                    {
-                      key: 'activity',
-                      label: (<span><HistoryOutlined /> Activity</span>),
-                      children: <TicketActivityTab ticketId={record.id} active={activeTab === 'activity'} />,
-                    },
-                    {
-                      key: 'claude',
-                      label: (<span><RobotOutlined /> Claude Activity</span>),
-                      children: <ClaudeActivityTab ticketId={record.id} active={activeTab === 'claude'} />,
-                    },
-                  ]}
-                />
-              </Card>
-            );
-          },
+          expandedRowRender: (record) => renderTicketDetail(record),
           onExpand: (expanded, record) => {
             if (expanded && !notesMap[record.id]) {
               loadNotes(record.id);
@@ -1516,6 +1541,20 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       </DndContext>
       </ResizeContext.Provider>
       )}
+
+      {/* Ticket detail modal — opened from Board / Calendar card clicks.
+          Same content as the table's expanded row, just rendered above
+          the board instead of switching views. */}
+      <Modal
+        open={modalTicket !== null}
+        onCancel={() => setModalTicket(null)}
+        footer={null}
+        width={1040}
+        destroyOnClose
+        title={modalTicket ? `Ticket #${modalTicket.id} — ${modalTicket.title}` : ''}
+      >
+        {modalTicket && renderTicketDetail(modalTicket)}
+      </Modal>
 
       {/* Video Modal */}
       <Modal

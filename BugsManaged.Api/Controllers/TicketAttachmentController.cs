@@ -37,10 +37,17 @@ public class TicketAttachmentController : ControllerBase
         _log = log;
     }
 
-    // 10 MB cap per image. Bigger payloads almost always mean a video taken
-    // by mistake — the recording flow is the right path for that.
-    private const long MaxImageBytes = 10L * 1024 * 1024;
-    private static readonly string[] AllowedExtensions = new[] { ".png", ".jpg", ".jpeg", ".webp", ".gif" };
+    // Generic file attachments: 25 MB cap covers screenshots, .har dumps,
+    // logs, CSVs, mock-ups. Bigger payloads should go through the video
+    // upload path (which has its own 50 MB ceiling). Extension allow-list
+    // blocks obvious executable/script types so a malicious upload can't
+    // be served back as the wrong content type from the blob.
+    private const long MaxFileBytes = 25L * 1024 * 1024;
+    private static readonly HashSet<string> BlockedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".js", ".jar",
+        ".com", ".scr", ".vbs", ".php", ".aspx", ".cgi",
+    };
 
     [HttpPost("widget")]
     [AllowAnonymous]
@@ -102,12 +109,13 @@ public class TicketAttachmentController : ControllerBase
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
-        if (file.Length > MaxImageBytes)
-            return BadRequest(new { message = $"Image exceeds {MaxImageBytes / (1024 * 1024)} MB limit" });
+        if (file.Length > MaxFileBytes)
+            return BadRequest(new { message = $"File exceeds {MaxFileBytes / (1024 * 1024)} MB limit" });
 
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (string.IsNullOrEmpty(extension) || !AllowedExtensions.Contains(extension))
-            return BadRequest(new { message = "Unsupported image format" });
+        if (BlockedExtensions.Contains(extension))
+            return BadRequest(new { message = $"File type '{extension}' is not permitted" });
+        if (string.IsNullOrEmpty(extension)) extension = ".bin";
 
         await using var stream = file.OpenReadStream();
         string blobUri;

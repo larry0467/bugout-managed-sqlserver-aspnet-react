@@ -61,23 +61,42 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
           boxShadow: overdue ? '0 0 0 1px rgba(239,68,68,0.25), 0 0 8px rgba(239,68,68,0.35)' : undefined,
         }}
       >
-        {/* Label strip across the top */}
+        {/* Label chips across the top — full text + color (was just colored
+            strips, but users couldn't tell which labels were attached
+            without hovering). */}
         {labels.length > 0 && (
-          <div style={{ marginBottom: 6, lineHeight: 1 }}>
-            {labels.map((l) => (
-              <span
-                key={l.id}
-                style={{
-                  display: 'inline-block',
-                  width: 28,
-                  height: 6,
-                  borderRadius: 3,
-                  background: l.color,
-                  marginRight: 4,
-                }}
-                title={l.name}
-              />
-            ))}
+          <div style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            {labels.map((l) => {
+              // Same contrast logic as LabelChips: pick light/dark text
+              // based on chip luminance so a yellow chip doesn't render
+              // white-on-yellow.
+              const hex = (l.color || '#888').replace('#', '');
+              const r = parseInt(hex.slice(0, 2), 16);
+              const g = parseInt(hex.slice(2, 4), 16);
+              const b = parseInt(hex.slice(4, 6), 16);
+              const fg = (r * 299 + g * 587 + b * 114) / 1000 >= 140 ? '#000' : '#fff';
+              return (
+                <span
+                  key={l.id}
+                  style={{
+                    display: 'inline-block',
+                    background: l.color,
+                    color: fg,
+                    borderRadius: 4,
+                    padding: '1px 6px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    lineHeight: '14px',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {l.name}
+                </span>
+              );
+            })}
           </div>
         )}
 

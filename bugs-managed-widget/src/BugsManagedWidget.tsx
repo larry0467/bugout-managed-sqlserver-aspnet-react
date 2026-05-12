@@ -134,13 +134,19 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   // Screenshots collected from drop / paste / file picker. Uploaded after
   // ticket creation succeeds (parallel to the video upload path).
+  // Generic file attachments. Started as image-only ("screenshots") but
+  // widened to any file type so reporters can drop logs, .har exports,
+  // CSVs, mock-ups, etc. We only render an <img> preview for image MIME
+  // types; everything else shows as a generic file chip.
   const [screenshots, setScreenshots] = useState<File[]>([]);
-  const [screenshotPreviews, setScreenshotPreviews] = useState<string[]>([]);
+  const [screenshotPreviews, setScreenshotPreviews] = useState<(string | null)[]>([]);
   const addScreenshots = useCallback((files: File[]) => {
-    const valid = files.filter((f) => f.type.startsWith('image/'));
-    if (valid.length === 0) return;
-    setScreenshots((prev) => [...prev, ...valid]);
-    setScreenshotPreviews((prev) => [...prev, ...valid.map((f) => URL.createObjectURL(f))]);
+    if (files.length === 0) return;
+    setScreenshots((prev) => [...prev, ...files]);
+    setScreenshotPreviews((prev) => [
+      ...prev,
+      ...files.map((f) => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null)),
+    ]);
   }, []);
   const removeScreenshot = useCallback((idx: number) => {
     setScreenshots((prev) => prev.filter((_, i) => i !== idx));
@@ -586,7 +592,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setUploadFile(null);
     setScreenshots([]);
-    setScreenshotPreviews((prev) => { prev.forEach((u) => URL.revokeObjectURL(u)); return []; });
+    setScreenshotPreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
     setError('');
     setSubmitted(false);
     setIsRecovered(false);
@@ -1082,10 +1088,10 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                   />
                 </div>
 
-                {/* Screenshots */}
+                {/* Files */}
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }}>
-                    Screenshots
+                    Files
                   </label>
                   <div
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -1097,18 +1103,20 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                     style={{
                       border: `1px dashed ${borderColor}`,
                       borderRadius: 6,
-                      padding: 10,
+                      padding: 14,
                       background: inputBg,
                       fontSize: 12,
                       opacity: 0.95,
+                      textAlign: 'center',
+                      minHeight: 70,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
                       <label style={{ ...btnStyle, background: '#444', color: '#fff', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                        Choose images
+                        Choose files
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="*/*"
                           multiple
                           onChange={(e) => {
                             const files = Array.from(e.target.files || []);
@@ -1118,41 +1126,73 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                           style={{ display: 'none' }}
                         />
                       </label>
-                      <span style={{ opacity: 0.7 }}>or paste / drop here</span>
+                      <span style={{ opacity: 0.7 }}>or drag &amp; drop / paste images here — any file type</span>
                     </div>
-                    {screenshotPreviews.length > 0 && (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                        {screenshotPreviews.map((url, i) => (
-                          <div key={i} style={{ position: 'relative' }}>
-                            <img
-                              src={url}
-                              alt={`screenshot-${i + 1}`}
-                              style={{
-                                width: 64, height: 64,
-                                objectFit: 'cover',
-                                borderRadius: 4,
-                                border: `1px solid ${borderColor}`,
-                              }}
-                            />
-                            <div
-                              onClick={() => removeScreenshot(i)}
-                              style={{
-                                position: 'absolute',
-                                top: -6, right: -6,
-                                width: 18, height: 18,
-                                borderRadius: 9,
-                                background: '#e53935',
-                                color: '#fff',
-                                fontSize: 12,
-                                lineHeight: '18px',
-                                textAlign: 'center',
-                                cursor: 'pointer',
-                                userSelect: 'none',
-                              }}
-                              title="Remove"
-                            >×</div>
-                          </div>
-                        ))}
+                    {screenshots.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {screenshots.map((f, i) => {
+                          const preview = screenshotPreviews[i];
+                          return (
+                            <div key={i} style={{ position: 'relative' }}>
+                              {preview ? (
+                                <img
+                                  src={preview}
+                                  alt={f.name || `file-${i + 1}`}
+                                  title={f.name}
+                                  style={{
+                                    width: 64, height: 64,
+                                    objectFit: 'cover',
+                                    borderRadius: 4,
+                                    border: `1px solid ${borderColor}`,
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  title={f.name}
+                                  style={{
+                                    width: 90, height: 64,
+                                    borderRadius: 4,
+                                    border: `1px solid ${borderColor}`,
+                                    background: '#0d1117',
+                                    color: '#9ca3af',
+                                    display: 'flex', flexDirection: 'column',
+                                    alignItems: 'center', justifyContent: 'center',
+                                    padding: '0 4px',
+                                    fontSize: 10,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  <div style={{ fontSize: 18, lineHeight: 1 }}>📎</div>
+                                  <div style={{
+                                    maxWidth: 78,
+                                    overflow: 'hidden',
+                                    whiteSpace: 'nowrap',
+                                    textOverflow: 'ellipsis',
+                                    marginTop: 4,
+                                  }}>{f.name || 'file'}</div>
+                                </div>
+                              )}
+                              <div
+                                onClick={() => removeScreenshot(i)}
+                                style={{
+                                  position: 'absolute',
+                                  top: -6, right: -6,
+                                  width: 18, height: 18,
+                                  borderRadius: 9,
+                                  background: '#e53935',
+                                  color: '#fff',
+                                  fontSize: 12,
+                                  lineHeight: '18px',
+                                  textAlign: 'center',
+                                  cursor: 'pointer',
+                                  userSelect: 'none',
+                                }}
+                                title="Remove"
+                              >×</div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
