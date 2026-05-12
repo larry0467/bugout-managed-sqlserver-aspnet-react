@@ -299,6 +299,19 @@ public class TicketController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        // Notify the submitter when a status change lands them in a
+        // terminal state (RESOLVED / CLOSED) from anywhere — direct
+        // dropdown pick, Kanban drag, etc. The Approve endpoint also
+        // fires this; the if() above guarantees we only ping once even
+        // if the same ticket is closed via multiple paths in quick
+        // succession (fromStatus check skips repeated CLOSED→CLOSED).
+        if (fromStatus != ticket.Status
+            && (ticket.Status == "RESOLVED" || ticket.Status == "CLOSED"))
+        {
+            _ = _notify.NotifyReporterResolvedAsync(ticket);
+        }
+
         return Ok(ticket);
     }
 
@@ -374,10 +387,20 @@ public class TicketController : ControllerBase
         var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
+        var wasAlreadyTerminal = ticket.Status == "RESOLVED" || ticket.Status == "CLOSED";
         ticket.Resolution = request.Resolution;
         ticket.Status = "RESOLVED";
         ticket.ResolvedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+
+        // Only ping the submitter the first time a ticket closes — guards
+        // against a repeated "resolved" email if someone re-clicks Resolve
+        // on an already-resolved ticket to attach a follow-up resolution.
+        if (!wasAlreadyTerminal)
+        {
+            _ = _notify.NotifyReporterResolvedAsync(ticket);
+        }
+
         return Ok(ticket);
     }
 

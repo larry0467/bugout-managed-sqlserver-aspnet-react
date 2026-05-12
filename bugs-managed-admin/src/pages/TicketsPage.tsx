@@ -1469,7 +1469,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             onChange={(v) => setStatusFilter(v as string[])}
             style={{ minWidth: 220, maxWidth: 360 }}
             placeholder="All Statuses"
-            maxTagCount="responsive"
+            maxTagCount={2}
             options={orgStatuses.map((s) => ({ label: s.displayName, value: s.key }))}
           />
           <Select
@@ -1479,7 +1479,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             onChange={(v) => setTypeFilter(v as string[])}
             style={{ minWidth: 180, maxWidth: 280 }}
             placeholder="All Types"
-            maxTagCount="responsive"
+            maxTagCount={2}
             options={types.map((t) => ({ label: t.replace('_', ' '), value: t }))}
           />
           <Select
@@ -1489,7 +1489,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             onChange={(v) => setStageFilter(v as EscalationStage[])}
             style={{ minWidth: 240, maxWidth: 380 }}
             placeholder="All Escalation Stages"
-            maxTagCount="responsive"
+            maxTagCount={2}
             options={escalationStages.map((s) => ({ label: s.label, value: s.value }))}
           />
           <Select
@@ -1499,7 +1499,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             onChange={(v) => setAssigneeFilter(v as string[])}
             style={{ minWidth: 220, maxWidth: 360 }}
             placeholder="All Developers"
-            maxTagCount="responsive"
+            maxTagCount={2}
             showSearch
             optionFilterProp="label"
             options={[
@@ -1516,7 +1516,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             onChange={(v) => setLabelFilter(v as number[])}
             style={{ minWidth: 200, maxWidth: 360 }}
             placeholder="All Labels"
-            maxTagCount="responsive"
+            maxTagCount={2}
             showSearch
             optionFilterProp="label"
             options={orgLabels.map((l) => ({
