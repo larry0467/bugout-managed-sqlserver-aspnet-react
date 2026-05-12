@@ -83,6 +83,7 @@ public class ProjectController : ControllerBase
 
         if (request.WebhookUrl != null) project.WebhookUrl = request.WebhookUrl;
         if (request.SlackWebhookUrl != null) project.SlackWebhookUrl = request.SlackWebhookUrl;
+        if (request.GoogleChatWebhookUrl != null) project.GoogleChatWebhookUrl = request.GoogleChatWebhookUrl;
         if (request.NotificationEmail != null) project.NotificationEmail = request.NotificationEmail;
 
         await _db.SaveChangesAsync();
@@ -104,6 +105,6 @@ public class ProjectController : ControllerBase
     }
 
     public record CreateProjectRequest(string Name);
-    public record UpdateWebhooksRequest(string? WebhookUrl, string? SlackWebhookUrl, string? NotificationEmail);
+    public record UpdateWebhooksRequest(string? WebhookUrl, string? SlackWebhookUrl, string? GoogleChatWebhookUrl, string? NotificationEmail);
     public record UpdateSlackRequest(string? SlackWebhookUrl, string? SlackChannel, string? SlackBotToken);
 }

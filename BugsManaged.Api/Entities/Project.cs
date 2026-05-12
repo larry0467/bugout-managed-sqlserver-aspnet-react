@@ -33,6 +33,12 @@ public class Project
     [MaxLength(500)]
     public string? SlackBotToken { get; set; }
 
+    // Google Chat incoming-webhook URL. Same model as Slack: paste the
+    // chat.googleapis.com URL the space owner generated and we'll post
+    // `{ "text": "..." }` to it for ticket notifications + @-mentions.
+    [MaxLength(700)]
+    public string? GoogleChatWebhookUrl { get; set; }
+
     [MaxLength(255)]
     public string? NotificationEmail { get; set; }
 

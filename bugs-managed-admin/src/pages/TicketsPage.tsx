@@ -43,7 +43,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
 import LabelChips from '../components/LabelChips';
@@ -323,6 +323,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // ticket list comes back so cards and rows render label chips + progress
   // without a per-card round trip.
   const [orgLabels, setOrgLabels] = useState<TicketLabel[]>([]);
+  // Per-org status dictionary. Drives the Status select on rows and the
+  // Kanban columns, replacing the hardcoded list. Auto-seeded server-side
+  // on first read.
+  const [orgStatuses, setOrgStatuses] = useState<TicketStatusDef[]>([]);
   const [labelsByTicket, setLabelsByTicket] = useState<Record<number, TicketLabel[]>>({});
   const [checklistByTicket, setChecklistByTicket] = useState<Record<number, { done: number; total: number }>>({});
 
@@ -393,7 +397,15 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // menus have something to choose from.
   useEffect(() => {
     labelApi.list().then(setOrgLabels).catch(() => {});
+    statusApi.list().then(setOrgStatuses).catch(() => {});
   }, []);
+
+  // Closed-like keys: derived from the dictionary so a renamed/added
+  // terminal status (e.g. "WONT_FIX") still hides under "Show closed".
+  const closedLikeKeys = useMemo(
+    () => new Set(orgStatuses.filter((s) => s.isClosedLike).map((s) => s.key)),
+    [orgStatuses],
+  );
 
   // After tickets land, hydrate label + checklist summaries in parallel.
   // Fire-and-forget — failures degrade gracefully (chips just don't render).
@@ -440,10 +452,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // (see ticketApi.list); stage + showClosed run here because they need
   // a re-derived list when the user toggles them without refetching.
   const visibleTickets = useMemo(() => {
-    let rows = showClosed ? tickets : tickets.filter((t) => t.status !== 'CLOSED');
+    let rows = showClosed ? tickets : tickets.filter((t) => !closedLikeKeys.has(t.status));
     if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
     return rows;
-  }, [tickets, showClosed, stageFilter]);
+  }, [tickets, showClosed, stageFilter, closedLikeKeys]);
 
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
@@ -747,9 +759,9 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         <Select
           value={v}
           size="small"
-          style={{ width: 144 }}
+          style={{ width: 160 }}
           onChange={(val) => handleStatusChange(record.id, val)}
-          options={statuses.map((s) => ({ label: s.replace(/_/g, ' '), value: s }))}
+          options={orgStatuses.map((s) => ({ label: s.displayName, value: s.key }))}
         />
       ),
     },
@@ -1156,7 +1168,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             style={{ width: 160 }}
             placeholder="All Statuses"
             allowClear
-            options={statuses.map((s) => ({ label: s.replace(/_/g, ' '), value: s }))}
+            options={orgStatuses.map((s) => ({ label: s.displayName, value: s.key }))}
           />
           <Select
             value={typeFilter}
@@ -1183,6 +1195,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       {viewMode === 'board' && (
         <KanbanBoard
           tickets={visibleTickets}
+          statuses={orgStatuses}
           labelsByTicket={labelsByTicket}
           checklistByTicket={checklistByTicket}
           projectMap={projectMap}

@@ -160,6 +160,11 @@ public class TicketNoteController : ControllerBase
                         var slackPayload = $"{{\"text\":\"<@{user.Email}> mentioned by {actorEmail} on ticket #{ticket.Id}: {ticket.Title.Replace("\"", "\\\"")}\"}}";
                         await _rawNotify.SendSlackAsync(project.SlackWebhookUrl, slackPayload);
                     }
+                    if (!string.IsNullOrWhiteSpace(project?.GoogleChatWebhookUrl))
+                    {
+                        var gchatText = $"{user.FullName ?? user.Email} mentioned by {actorEmail} on ticket #{ticket.Id}: {ticket.Title}";
+                        await _rawNotify.SendGoogleChatAsync(project.GoogleChatWebhookUrl, gchatText);
+                    }
                 }
                 catch
                 {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps } from 'antd';
-import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined } from '@ant-design/icons';
-import { projectApi, type Project } from '../api';
+import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker } from 'antd';
+import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { projectApi, statusApi, type Project, type TicketStatusDef } from '../api';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -9,7 +9,19 @@ const SettingsPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [slackForm] = Form.useForm();
+  const [gchatForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [gchatSaving, setGchatSaving] = useState(false);
+
+  const [statuses, setStatuses] = useState<TicketStatusDef[]>([]);
+  const [newStatusKey, setNewStatusKey] = useState('');
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('#888888');
+  const [newStatusClosed, setNewStatusClosed] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const loadStatuses = () => statusApi.list().then(setStatuses).catch(() => {});
+  useEffect(() => { loadStatuses(); }, []);
 
   useEffect(() => {
     projectApi.list().then((data) => {
@@ -25,8 +37,86 @@ const SettingsPage: React.FC = () => {
         slackChannel: selectedProject.slackChannel || '',
         slackBotToken: selectedProject.slackBotToken || '',
       });
+      gchatForm.setFieldsValue({
+        googleChatWebhookUrl: selectedProject.googleChatWebhookUrl || '',
+      });
     }
-  }, [selectedProject, slackForm]);
+  }, [selectedProject, slackForm, gchatForm]);
+
+  const handleSaveGoogleChat = async () => {
+    if (!selectedProject) return;
+    setGchatSaving(true);
+    try {
+      const values = await gchatForm.validateFields();
+      const updated = await projectApi.updateWebhooks(selectedProject.id, {
+        googleChatWebhookUrl: values.googleChatWebhookUrl || '',
+      });
+      setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+      setSelectedProject(updated);
+      message.success('Google Chat webhook saved');
+    } catch {
+      message.error('Failed to save Google Chat webhook');
+    } finally {
+      setGchatSaving(false);
+    }
+  };
+
+  const handleAddStatus = async () => {
+    if (!newStatusKey.trim() || !newStatusLabel.trim()) return;
+    setStatusSaving(true);
+    try {
+      await statusApi.create({
+        key: newStatusKey.trim(),
+        displayName: newStatusLabel.trim(),
+        color: newStatusColor,
+        isClosedLike: newStatusClosed,
+      });
+      setNewStatusKey(''); setNewStatusLabel(''); setNewStatusColor('#888888'); setNewStatusClosed(false);
+      await loadStatuses();
+      message.success('Status added');
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to add status');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: number, data: Partial<TicketStatusDef>) => {
+    try {
+      await statusApi.update(id, {
+        displayName: data.displayName,
+        color: data.color,
+        isClosedLike: data.isClosedLike,
+        sortOrder: data.sortOrder,
+      });
+      await loadStatuses();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to update');
+    }
+  };
+
+  const handleRemoveStatus = async (id: number) => {
+    try {
+      await statusApi.remove(id);
+      await loadStatuses();
+      message.success('Status removed');
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to remove');
+    }
+  };
+
+  const moveStatus = async (id: number, direction: -1 | 1) => {
+    const sorted = [...statuses].sort((a, b) => a.sortOrder - b.sortOrder);
+    const idx = sorted.findIndex((s) => s.id === id);
+    const swapIdx = idx + direction;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const a = sorted[idx], b = sorted[swapIdx];
+    await Promise.all([
+      statusApi.update(a.id, { sortOrder: b.sortOrder }),
+      statusApi.update(b.id, { sortOrder: a.sortOrder }),
+    ]);
+    await loadStatuses();
+  };
 
   const handleSaveSlack = async () => {
     if (!selectedProject) return;
@@ -45,6 +135,7 @@ const SettingsPage: React.FC = () => {
   };
 
   const slackConnected = selectedProject?.slackWebhookUrl && selectedProject.slackWebhookUrl.length > 0;
+  const gchatConnected = selectedProject?.googleChatWebhookUrl && selectedProject.googleChatWebhookUrl.length > 0;
 
   return (
     <div>
@@ -143,6 +234,152 @@ const SettingsPage: React.FC = () => {
                 ]}
               />
             </div>
+          </div>
+        </Card>
+
+        {/* Google Chat Integration */}
+        <Card
+          title={
+            <Space>
+              <GoogleOutlined style={{ color: '#1a73e8' }} />
+              <span>Google Chat Integration</span>
+              {gchatConnected && <Tag color="success" icon={<CheckCircleOutlined />}>Connected</Tag>}
+            </Space>
+          }
+        >
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            Posts @-mention notifications (and future ticket events) into a Google Chat space via an incoming webhook.
+            In your Chat space, click the space name → <Text code>Apps & integrations</Text> → <Text code>Add webhooks</Text> →
+            name it "Bug Out Managed" → copy the URL it generates.
+          </Paragraph>
+          <Form form={gchatForm} layout="vertical">
+            <Form.Item
+              name="googleChatWebhookUrl"
+              label="Google Chat Incoming Webhook URL"
+              extra="Looks like https://chat.googleapis.com/v1/spaces/AAAA.../messages?key=...&token=..."
+            >
+              <Input placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=..." />
+            </Form.Item>
+            <Button type="primary" onClick={handleSaveGoogleChat} loading={gchatSaving}>
+              Save Google Chat Configuration
+            </Button>
+          </Form>
+        </Card>
+
+        {/* Ticket Statuses */}
+        <Card title={<><OrderedListOutlined /> Ticket Statuses</>}>
+          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            These are the status values tickets can move through. They drive the Status dropdown and the columns on the Board view.
+            <Text strong> "Closed-like"</Text> statuses are treated as terminal — hidden by the "Show closed" toggle on the Tickets page.
+            You can't delete a status that's currently in use; move those tickets first.
+          </Paragraph>
+
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={false}
+            dataSource={[...statuses].sort((a, b) => a.sortOrder - b.sortOrder)}
+            columns={[
+              {
+                title: 'Order',
+                key: 'order',
+                width: 90,
+                render: (_, record, idx) => (
+                  <Space size={2}>
+                    <Button size="small" disabled={idx === 0} onClick={() => moveStatus(record.id, -1)}>↑</Button>
+                    <Button size="small" disabled={idx === statuses.length - 1} onClick={() => moveStatus(record.id, 1)}>↓</Button>
+                  </Space>
+                ),
+              },
+              {
+                title: 'Key',
+                dataIndex: 'key',
+                width: 200,
+                render: (v: string) => <Text code>{v}</Text>,
+              },
+              {
+                title: 'Display name',
+                dataIndex: 'displayName',
+                render: (v: string, record: TicketStatusDef) => (
+                  <Input
+                    size="small"
+                    defaultValue={v}
+                    onBlur={(e) => {
+                      if (e.target.value && e.target.value !== v) {
+                        handleUpdateStatus(record.id, { displayName: e.target.value });
+                      }
+                    }}
+                  />
+                ),
+              },
+              {
+                title: 'Color',
+                dataIndex: 'color',
+                width: 130,
+                render: (v: string, record: TicketStatusDef) => (
+                  <ColorPicker
+                    value={v}
+                    onChangeComplete={(c) => handleUpdateStatus(record.id, { color: c.toHexString() })}
+                    showText
+                  />
+                ),
+              },
+              {
+                title: 'Closed-like',
+                dataIndex: 'isClosedLike',
+                width: 110,
+                render: (v: boolean, record: TicketStatusDef) => (
+                  <Switch checked={v} onChange={(checked) => handleUpdateStatus(record.id, { isClosedLike: checked })} />
+                ),
+              },
+              {
+                title: '',
+                width: 60,
+                render: (_, record: TicketStatusDef) => (
+                  <Popconfirm title={`Delete status "${record.displayName}"?`} onConfirm={() => handleRemoveStatus(record.id)}>
+                    <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                ),
+              },
+            ]}
+          />
+
+          <Divider />
+
+          <div>
+            <Text strong>Add a new status</Text>
+            <Space wrap style={{ marginTop: 8 }}>
+              <Input
+                placeholder="KEY (e.g. WONT_FIX)"
+                value={newStatusKey}
+                onChange={(e) => setNewStatusKey(e.target.value.toUpperCase().replace(/ /g, '_'))}
+                style={{ width: 200 }}
+              />
+              <Input
+                placeholder="Display name"
+                value={newStatusLabel}
+                onChange={(e) => setNewStatusLabel(e.target.value)}
+                style={{ width: 200 }}
+              />
+              <ColorPicker
+                value={newStatusColor}
+                onChangeComplete={(c) => setNewStatusColor(c.toHexString())}
+                showText
+              />
+              <Space>
+                <Text type="secondary">Closed-like</Text>
+                <Switch checked={newStatusClosed} onChange={setNewStatusClosed} />
+              </Space>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleAddStatus}
+                loading={statusSaving}
+                disabled={!newStatusKey.trim() || !newStatusLabel.trim()}
+              >
+                Add
+              </Button>
+            </Space>
           </div>
         </Card>
 

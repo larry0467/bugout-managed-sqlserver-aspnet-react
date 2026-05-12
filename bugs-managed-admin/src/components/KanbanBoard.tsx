@@ -11,20 +11,15 @@ import {
   useDroppable,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import type { Ticket, TicketLabel } from '../api';
+import type { Ticket, TicketLabel, TicketStatusDef } from '../api';
 
 const { Text } = Typography;
 
-// Status columns shown in the board. Keep tight — too many columns and the
-// board feels sparse; common workflow is OPEN → IN_PROGRESS → IN_REVIEW → DONE.
-// VERIFIED/READY_FOR_TESTING/CLOSED hide under "DONE" via render-mapping so
-// drag-to-DONE picks RESOLVED as the default landing status.
-const COLUMNS: Array<{ key: string; title: string; statuses: string[]; landing: string; color: string }> = [
-  { key: 'OPEN', title: 'Open', statuses: ['OPEN'], landing: 'OPEN', color: '#fbbf24' },
-  { key: 'IN_PROGRESS', title: 'In Progress', statuses: ['IN_PROGRESS'], landing: 'IN_PROGRESS', color: '#3b82f6' },
-  { key: 'IN_REVIEW', title: 'In Review', statuses: ['IN_REVIEW', 'READY_FOR_TESTING', 'VERIFIED'], landing: 'IN_REVIEW', color: '#a855f7' },
-  { key: 'DONE', title: 'Done', statuses: ['RESOLVED', 'CLOSED'], landing: 'RESOLVED', color: '#22c55e' },
-];
+// Columns are derived from the per-org status dictionary at runtime — see
+// TicketsPage which fetches statusApi.list() and passes them in. One
+// column per status so every state has a landing spot (an earlier version
+// collapsed several into a single column, which made some statuses
+// effectively invisible on the board).
 
 const priorityColors: Record<string, string> = {
   CRITICAL: 'red', HIGH: 'orange', MEDIUM: 'blue', LOW: 'default',
@@ -159,6 +154,7 @@ const BoardColumn: React.FC<{
 
 interface KanbanBoardProps {
   tickets: Ticket[];
+  statuses: TicketStatusDef[];
   labelsByTicket: Record<number, TicketLabel[]>;
   checklistByTicket: Record<number, { done: number; total: number }>;
   projectMap: Record<number, string>;
@@ -169,6 +165,7 @@ interface KanbanBoardProps {
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({
   tickets,
+  statuses,
   labelsByTicket,
   checklistByTicket,
   projectMap,
@@ -178,42 +175,50 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 }) => {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  const columns = useMemo(() =>
+    [...statuses].sort((a, b) => a.sortOrder - b.sortOrder)
+  , [statuses]);
+
   const grouped = useMemo(() => {
     const map: Record<string, Ticket[]> = {};
-    for (const col of COLUMNS) map[col.key] = [];
+    for (const c of columns) map[c.key] = [];
+    // Bucket "orphan" tickets whose status isn't in the dictionary into a
+    // synthetic column so they don't silently disappear. Shouldn't happen
+    // in practice but a UI that hides data is worse than one with a typo.
+    const orphans: Ticket[] = [];
     for (const t of tickets) {
-      const col = COLUMNS.find((c) => c.statuses.includes(t.status));
-      if (col) map[col.key].push(t);
+      if (map[t.status] !== undefined) map[t.status].push(t);
+      else orphans.push(t);
     }
+    if (orphans.length > 0) map['__orphans__'] = orphans;
     return map;
-  }, [tickets]);
+  }, [tickets, columns]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
     const ticketId = Number(String(active.id).replace('ticket-', ''));
     const colKey = String(over.id).replace('col-', '');
-    const col = COLUMNS.find((c) => c.key === colKey);
+    const col = columns.find((c) => c.key === colKey);
     if (!col) return;
     const ticket = tickets.find((t) => t.id === ticketId);
     if (!ticket) return;
-    // Skip no-ops: card dropped on its own column.
-    if (col.statuses.includes(ticket.status)) return;
-    await onStatusChange(ticketId, col.landing);
+    if (ticket.status === col.key) return; // no-op drop
+    await onStatusChange(ticketId, col.key);
   };
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {COLUMNS.map((col) => (
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 8 }}>
+        {columns.map((col) => (
           <BoardColumn
             key={col.key}
             columnKey={col.key}
-            title={col.title}
+            title={col.displayName}
             color={col.color}
-            count={grouped[col.key].length}
+            count={grouped[col.key]?.length ?? 0}
           >
-            {grouped[col.key].map((t) => (
+            {(grouped[col.key] || []).map((t) => (
               <BoardCard
                 key={t.id}
                 ticket={t}
@@ -227,6 +232,22 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
             ))}
           </BoardColumn>
         ))}
+        {grouped['__orphans__'] && (
+          <BoardColumn columnKey="__orphans__" title="(Unmapped status)" color="#9ca3af" count={grouped['__orphans__'].length}>
+            {grouped['__orphans__'].map((t) => (
+              <BoardCard
+                key={t.id}
+                ticket={t}
+                labels={labelsByTicket[t.id] || []}
+                checklistTotal={(checklistByTicket[t.id]?.total) || 0}
+                checklistDone={(checklistByTicket[t.id]?.done) || 0}
+                projectName={projectMap[t.projectId]}
+                hasClaude={hasClaudeByTicket?.[t.id]}
+                onClick={() => onCardClick(t)}
+              />
+            ))}
+          </BoardColumn>
+        )}
       </div>
     </DndContext>
   );

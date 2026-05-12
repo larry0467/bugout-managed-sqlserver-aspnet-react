@@ -93,6 +93,7 @@ export interface Project {
   slackWebhookUrl?: string;
   slackChannel?: string;
   slackBotToken?: string;
+  googleChatWebhookUrl?: string;
   notificationEmail?: string;
   createdAt: string;
   updatedAt: string;
@@ -179,6 +180,15 @@ export interface TicketActivity {
   createdAt: string;
 }
 
+export interface TicketStatusDef {
+  id: number;
+  key: string;
+  displayName: string;
+  color: string;
+  sortOrder: number;
+  isClosedLike: boolean;
+}
+
 export interface TicketAttachment {
   id: number;
   ticketId: number;
@@ -256,7 +266,7 @@ export const projectApi = {
   list: () => api.get<Project[]>('/projects').then(r => r.data),
   get: (id: number) => api.get<Project>(`/projects/${id}`).then(r => r.data),
   create: (name: string) => api.post<Project>('/projects', { name }).then(r => r.data),
-  updateWebhooks: (id: number, data: { webhookUrl?: string; slackWebhookUrl?: string; notificationEmail?: string }) =>
+  updateWebhooks: (id: number, data: { webhookUrl?: string; slackWebhookUrl?: string; googleChatWebhookUrl?: string; notificationEmail?: string }) =>
     api.put<Project>(`/projects/${id}/webhooks`, data).then(r => r.data),
   updateSlack: (id: number, data: { slackWebhookUrl?: string; slackChannel?: string; slackBotToken?: string }) =>
     api.put<Project>(`/projects/${id}/slack`, data).then(r => r.data),
@@ -343,6 +353,16 @@ export const checklistApi = {
 export const activityApi = {
   list: (ticketId: number) =>
     api.get<TicketActivity[]>(`/tickets/${ticketId}/activity`).then(r => r.data),
+};
+
+// Ticket status dictionary (per-org)
+export const statusApi = {
+  list: () => api.get<TicketStatusDef[]>('/statuses').then(r => r.data),
+  create: (data: { key: string; displayName: string; color: string; isClosedLike: boolean }) =>
+    api.post<TicketStatusDef>('/statuses', data).then(r => r.data),
+  update: (id: number, data: { displayName?: string; color?: string; isClosedLike?: boolean; sortOrder?: number }) =>
+    api.put<TicketStatusDef>(`/statuses/${id}`, data).then(r => r.data),
+  remove: (id: number) => api.delete(`/statuses/${id}`).then(r => r.data),
 };
 
 // Attachments (screenshots on tickets and chat notes)

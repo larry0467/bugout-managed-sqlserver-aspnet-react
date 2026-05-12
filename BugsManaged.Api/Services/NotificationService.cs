@@ -46,6 +46,32 @@ public class NotificationService
         }
     }
 
+    // Google Chat incoming webhook. Accepts the same simple {"text": "..."}
+    // payload Slack uses, but rejects markdown — Chat renders the text as-is.
+    // Caller passes the plain message; we JSON-encode here so the caller
+    // can't accidentally break the payload.
+    public async Task SendGoogleChatAsync(string? webhookUrl, string text)
+    {
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+        {
+            _logger.LogWarning("SendGoogleChat called with null/empty webhookUrl");
+            return;
+        }
+
+        try
+        {
+            var escaped = text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+            var payload = $"{{\"text\":\"{escaped}\"}}";
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync(webhookUrl, content);
+            _logger.LogInformation("Google Chat webhook response: {StatusCode}", response.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send Google Chat notification to {Url}", webhookUrl);
+        }
+    }
+
     public async Task SendWebhookAsync(string? url, string jsonPayload)
     {
         if (string.IsNullOrWhiteSpace(url))

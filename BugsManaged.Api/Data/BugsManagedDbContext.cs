@@ -27,6 +27,7 @@ public class BugsManagedDbContext : DbContext
     public DbSet<TicketChecklistItem> TicketChecklistItems => Set<TicketChecklistItem>();
     public DbSet<TicketActivity> TicketActivities => Set<TicketActivity>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
+    public DbSet<TicketStatusDef> TicketStatusDefs => Set<TicketStatusDef>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -103,6 +104,10 @@ public class BugsManagedDbContext : DbContext
         modelBuilder.Entity<TicketAttachment>().HasIndex(a => a.NoteId);
         modelBuilder.Entity<TicketAttachment>().HasIndex(a => a.OrganizationId);
 
+        modelBuilder.Entity<TicketStatusDef>()
+            .HasIndex(s => new { s.OrganizationId, s.Key }).IsUnique();
+        modelBuilder.Entity<TicketStatusDef>().HasIndex(s => s.OrganizationId);
+
         // Global query filters — every org-scoped query auto-filters by the
         // current org resolved by OrgResolutionMiddleware. Use
         // .IgnoreQueryFilters() when you genuinely need to read across orgs
@@ -149,6 +154,9 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketAttachment>()
             .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketStatusDef>()
+            .HasQueryFilter(s => _orgContext.CurrentOrganizationId != null && s.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()
