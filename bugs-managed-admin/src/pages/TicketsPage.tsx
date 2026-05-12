@@ -298,10 +298,17 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [selectedProject, setSelectedProject] = useState<number | null | 'all'>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  // Filter selects are multi-select. Empty array = no filter on that
+  // axis (i.e. all values pass). Lets the user say "show me everything
+  // except RESOLVED and CLOSED" by checking the 5 statuses they want.
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [showClosed, setShowClosed] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<string | undefined>();
-  const [stageFilter, setStageFilter] = useState<EscalationStage | undefined>();
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<EscalationStage[]>([]);
+  // Assigned-developer multi-select. Empty = no filter. "__unassigned__"
+  // is a sentinel that picks tickets with no assignee — surfaces the
+  // tickets waiting for someone to be put on them.
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
   const [videoModal, setVideoModal] = useState<number | null>(null);
   const [videoSasUrl, setVideoSasUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
@@ -391,7 +398,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const loadTickets = () => {
     setLoading(true);
     const projectId = selectedProject === 'all' ? undefined : (selectedProject as number);
-    ticketApi.list(projectId || undefined, statusFilter, typeFilter)
+    // Server accepts comma-separated lists. An empty array means "no
+    // filter on this axis" so we send undefined in that case.
+    const statusCsv = statusFilter.length > 0 ? statusFilter.join(',') : undefined;
+    const typeCsv = typeFilter.length > 0 ? typeFilter.join(',') : undefined;
+    ticketApi.list(projectId || undefined, statusCsv, typeCsv)
       .then(setTickets)
       .finally(() => setLoading(false));
   };
@@ -458,9 +469,19 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // a re-derived list when the user toggles them without refetching.
   const visibleTickets = useMemo(() => {
     let rows = showClosed ? tickets : tickets.filter((t) => !closedLikeKeys.has(t.status));
-    if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
+    if (stageFilter.length > 0) {
+      const set = new Set(stageFilter);
+      rows = rows.filter((t) => set.has((t.escalationStage || 'NONE') as EscalationStage));
+    }
+    if (assigneeFilter.length > 0) {
+      const set = new Set(assigneeFilter);
+      rows = rows.filter((t) => {
+        if (!t.assignedTo) return set.has('__unassigned__');
+        return set.has(t.assignedTo);
+      });
+    }
     return rows;
-  }, [tickets, showClosed, stageFilter, closedLikeKeys]);
+  }, [tickets, showClosed, stageFilter, assigneeFilter, closedLikeKeys]);
 
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
@@ -1426,29 +1447,56 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             placeholder="Application"
             options={projectOptions}
           />
+          {/* Multi-select filters. Empty selection = "all"; the user
+              picks which values they want to see and deselects the
+              rest. Lets them say "everything except RESOLVED + CLOSED"
+              by leaving those two unchecked. */}
           <Select
-            value={statusFilter}
-            onChange={setStatusFilter}
-            style={{ width: 160 }}
-            placeholder="All Statuses"
+            mode="multiple"
             allowClear
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as string[])}
+            style={{ minWidth: 220, maxWidth: 360 }}
+            placeholder="All Statuses"
+            maxTagCount="responsive"
             options={orgStatuses.map((s) => ({ label: s.displayName, value: s.key }))}
           />
           <Select
-            value={typeFilter}
-            onChange={setTypeFilter}
-            style={{ width: 160 }}
-            placeholder="All Types"
+            mode="multiple"
             allowClear
+            value={typeFilter}
+            onChange={(v) => setTypeFilter(v as string[])}
+            style={{ minWidth: 180, maxWidth: 280 }}
+            placeholder="All Types"
+            maxTagCount="responsive"
             options={types.map((t) => ({ label: t.replace('_', ' '), value: t }))}
           />
           <Select
-            value={stageFilter}
-            onChange={(v) => setStageFilter(v as EscalationStage | undefined)}
-            style={{ width: 200 }}
-            placeholder="All Escalation Stages"
+            mode="multiple"
             allowClear
+            value={stageFilter}
+            onChange={(v) => setStageFilter(v as EscalationStage[])}
+            style={{ minWidth: 240, maxWidth: 380 }}
+            placeholder="All Escalation Stages"
+            maxTagCount="responsive"
             options={escalationStages.map((s) => ({ label: s.label, value: s.value }))}
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            value={assigneeFilter}
+            onChange={(v) => setAssigneeFilter(v as string[])}
+            style={{ minWidth: 220, maxWidth: 360 }}
+            placeholder="All Developers"
+            maxTagCount="responsive"
+            showSearch
+            optionFilterProp="label"
+            options={[
+              { label: '(Unassigned)', value: '__unassigned__' },
+              ...teamMembers
+                .filter((m) => m.role === 'DEVELOPER' || m.role === 'PLATFORM_OWNER' || m.role === 'SUPER_ADMIN')
+                .map((m) => ({ label: `${m.fullName} <${m.email}>`, value: m.email })),
+            ]}
           />
           <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>
             Show closed
@@ -1459,7 +1507,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       {viewMode === 'board' && (
         <KanbanBoard
           tickets={visibleTickets}
-          statuses={orgStatuses}
+          statuses={showClosed ? orgStatuses : orgStatuses.filter((s) => !s.isClosedLike)}
           labelsByTicket={labelsByTicket}
           checklistByTicket={checklistByTicket}
           projectMap={projectMap}

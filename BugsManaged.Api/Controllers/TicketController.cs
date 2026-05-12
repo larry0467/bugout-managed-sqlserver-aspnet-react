@@ -233,13 +233,20 @@ public class TicketController : ControllerBase
         if (projectId.HasValue)
             query = query.Where(t => t.ProjectId == projectId.Value);
 
-        // Status + type filters from the toolbar selects. Sent by the admin
-        // page; previously dropped on the floor here, which made the
-        // toolbar appear broken (the rows came back unfiltered).
+        // Status + type filters from the toolbar selects. Accept either a
+        // single value (?status=OPEN) or a comma-separated list
+        // (?status=OPEN,IN_PROGRESS) so the multi-select on the client
+        // can send the user's pick set. Empty / missing = no filter.
         if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(t => t.Status == status);
+        {
+            var keys = status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (keys.Length > 0) query = query.Where(t => keys.Contains(t.Status));
+        }
         if (!string.IsNullOrWhiteSpace(type))
-            query = query.Where(t => t.TicketType == type);
+        {
+            var types = type.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (types.Length > 0) query = query.Where(t => types.Contains(t.TicketType));
+        }
 
         // Auto-scope non-admin callers to their own assignments. PLATFORM_OWNER
         // and SUPER_ADMIN bypass; everyone else (DEVELOPER, VIEWER, future
