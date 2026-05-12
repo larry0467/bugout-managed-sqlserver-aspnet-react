@@ -22,6 +22,11 @@ public class BugsManagedDbContext : DbContext
     public DbSet<TicketStageHistory> TicketStageHistory => Set<TicketStageHistory>();
     public DbSet<SandboxResetLog> SandboxResetLogs => Set<SandboxResetLog>();
     public DbSet<UserProjectAssignment> UserProjectAssignments => Set<UserProjectAssignment>();
+    public DbSet<TicketLabel> TicketLabels => Set<TicketLabel>();
+    public DbSet<TicketLabelAssignment> TicketLabelAssignments => Set<TicketLabelAssignment>();
+    public DbSet<TicketChecklistItem> TicketChecklistItems => Set<TicketChecklistItem>();
+    public DbSet<TicketActivity> TicketActivities => Set<TicketActivity>();
+    public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +85,24 @@ public class BugsManagedDbContext : DbContext
             .HasIndex(x => new { x.UserId, x.ProjectId })
             .IsUnique();
 
+        modelBuilder.Entity<TicketLabel>()
+            .HasIndex(l => new { l.OrganizationId, l.Name }).IsUnique();
+
+        modelBuilder.Entity<TicketLabelAssignment>()
+            .HasIndex(a => new { a.TicketId, a.LabelId }).IsUnique();
+
+        modelBuilder.Entity<TicketLabelAssignment>().HasIndex(a => a.OrganizationId);
+
+        modelBuilder.Entity<TicketChecklistItem>().HasIndex(c => c.TicketId);
+        modelBuilder.Entity<TicketChecklistItem>().HasIndex(c => c.OrganizationId);
+
+        modelBuilder.Entity<TicketActivity>().HasIndex(a => a.TicketId);
+        modelBuilder.Entity<TicketActivity>().HasIndex(a => a.OrganizationId);
+
+        modelBuilder.Entity<TicketAttachment>().HasIndex(a => a.TicketId);
+        modelBuilder.Entity<TicketAttachment>().HasIndex(a => a.NoteId);
+        modelBuilder.Entity<TicketAttachment>().HasIndex(a => a.OrganizationId);
+
         // Global query filters — every org-scoped query auto-filters by the
         // current org resolved by OrgResolutionMiddleware. Use
         // .IgnoreQueryFilters() when you genuinely need to read across orgs
@@ -111,6 +134,21 @@ public class BugsManagedDbContext : DbContext
         // is maintained and EF's global-filter/required-nav warning is resolved.
         modelBuilder.Entity<UserProjectAssignment>()
             .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.User.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketLabel>()
+            .HasQueryFilter(l => _orgContext.CurrentOrganizationId != null && l.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketLabelAssignment>()
+            .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketChecklistItem>()
+            .HasQueryFilter(c => _orgContext.CurrentOrganizationId != null && c.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketActivity>()
+            .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketAttachment>()
+            .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()

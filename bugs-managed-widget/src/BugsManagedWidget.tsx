@@ -132,6 +132,24 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [error, setError] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  // Screenshots collected from drop / paste / file picker. Uploaded after
+  // ticket creation succeeds (parallel to the video upload path).
+  const [screenshots, setScreenshots] = useState<File[]>([]);
+  const [screenshotPreviews, setScreenshotPreviews] = useState<string[]>([]);
+  const addScreenshots = useCallback((files: File[]) => {
+    const valid = files.filter((f) => f.type.startsWith('image/'));
+    if (valid.length === 0) return;
+    setScreenshots((prev) => [...prev, ...valid]);
+    setScreenshotPreviews((prev) => [...prev, ...valid.map((f) => URL.createObjectURL(f))]);
+  }, []);
+  const removeScreenshot = useCallback((idx: number) => {
+    setScreenshots((prev) => prev.filter((_, i) => i !== idx));
+    setScreenshotPreviews((prev) => {
+      const url = prev[idx];
+      if (url) URL.revokeObjectURL(url);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }, []);
 
   // Mini-controller floating position. Defaults to top-right; user can
   // drag it anywhere. Persisted only for the lifetime of one recording.
@@ -567,6 +585,8 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setRecordedBlob(null);
     setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setUploadFile(null);
+    setScreenshots([]);
+    setScreenshotPreviews((prev) => { prev.forEach((u) => URL.revokeObjectURL(u)); return []; });
     setError('');
     setSubmitted(false);
     setIsRecovered(false);
@@ -622,6 +642,30 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
       if (!res.ok) throw new Error('Failed to submit ticket');
       const ticket = await res.json();
+
+      // Upload screenshots first — small/fast, and rolling into the same
+      // try block as the ticket POST means a network drop here surfaces in
+      // the same submitter-visible error path. Independent of video upload
+      // below so a video failure doesn't lose already-stored screenshots
+      // (and vice versa).
+      if (screenshots.length > 0 && ticket.id) {
+        for (const file of screenshots) {
+          try {
+            const fd = new FormData();
+            fd.append('file', file, file.name || 'screenshot.png');
+            const ssRes = await fetch(`${apiUrl}/tickets/${ticket.id}/attachments/widget`, {
+              method: 'POST',
+              headers: { 'X-BOM-API-Key': apiKey },
+              body: fd,
+            });
+            if (!ssRes.ok) {
+              console.warn(`[Bug Out] Screenshot upload failed (${ssRes.status}) for ticket ${ticket.id}`);
+            }
+          } catch (ssErr) {
+            console.warn('[Bug Out] Screenshot upload network error:', ssErr);
+          }
+        }
+      }
 
       // Upload video if recorded or file selected. Runs independently of ticket
       // creation so a storage failure doesn't un-submit an already-saved ticket.
@@ -1006,7 +1050,21 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe the issue in detail..."
+                    onPaste={(e) => {
+                      // Paste-an-image-from-clipboard support. Treats any
+                      // image item in the clipboard as a screenshot
+                      // attachment; text paste falls through to the default.
+                      const items = Array.from(e.clipboardData?.items || []);
+                      const imgs = items
+                        .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+                        .map((it) => it.getAsFile())
+                        .filter((f): f is File => f != null);
+                      if (imgs.length > 0) {
+                        e.preventDefault();
+                        addScreenshots(imgs);
+                      }
+                    }}
+                    placeholder="Describe the issue in detail... (you can paste a screenshot here)"
                     rows={3}
                     style={{
                       width: '100%',
@@ -1022,6 +1080,82 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                       fontFamily: 'inherit',
                     }}
                   />
+                </div>
+
+                {/* Screenshots */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }}>
+                    Screenshots
+                  </label>
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const files = Array.from(e.dataTransfer?.files || []);
+                      if (files.length) addScreenshots(files);
+                    }}
+                    style={{
+                      border: `1px dashed ${borderColor}`,
+                      borderRadius: 6,
+                      padding: 10,
+                      background: inputBg,
+                      fontSize: 12,
+                      opacity: 0.95,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <label style={{ ...btnStyle, background: '#444', color: '#fff', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+                        Choose images
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length) addScreenshots(files);
+                            (e.target as HTMLInputElement).value = '';
+                          }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      <span style={{ opacity: 0.7 }}>or paste / drop here</span>
+                    </div>
+                    {screenshotPreviews.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                        {screenshotPreviews.map((url, i) => (
+                          <div key={i} style={{ position: 'relative' }}>
+                            <img
+                              src={url}
+                              alt={`screenshot-${i + 1}`}
+                              style={{
+                                width: 64, height: 64,
+                                objectFit: 'cover',
+                                borderRadius: 4,
+                                border: `1px solid ${borderColor}`,
+                              }}
+                            />
+                            <div
+                              onClick={() => removeScreenshot(i)}
+                              style={{
+                                position: 'absolute',
+                                top: -6, right: -6,
+                                width: 18, height: 18,
+                                borderRadius: 9,
+                                background: '#e53935',
+                                color: '#fff',
+                                fontSize: 12,
+                                lineHeight: '18px',
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                userSelect: 'none',
+                              }}
+                              title="Remove"
+                            >×</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Screen Recording */}

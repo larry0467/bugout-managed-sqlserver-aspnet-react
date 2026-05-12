@@ -146,6 +146,49 @@ export interface Ticket {
   databaseName?: string;
   applicationVersion?: string;
   environment?: 'PRODUCTION' | 'STAGING' | 'DEVELOPMENT';
+  // Trello-style fields
+  dueDate?: string | null;
+}
+
+export interface TicketLabel {
+  id: number;
+  name: string;
+  color: string;
+}
+
+export interface ChecklistItem {
+  id: number;
+  ticketId: number;
+  text: string;
+  isDone: boolean;
+  sortOrder: number;
+  createdBy?: string;
+  createdAt: string;
+  doneBy?: string | null;
+  doneAt?: string | null;
+}
+
+export interface TicketActivity {
+  id: number;
+  ticketId: number;
+  actorEmail?: string;
+  actorName?: string;
+  kind: string;
+  message: string;
+  payloadJson?: string;
+  createdAt: string;
+}
+
+export interface TicketAttachment {
+  id: number;
+  ticketId: number;
+  noteId?: number | null;
+  blobUrl: string;
+  fileName: string;
+  contentType?: string;
+  sizeBytes: number;
+  uploadedBy?: string;
+  createdAt: string;
 }
 
 export interface TicketNote {
@@ -264,6 +307,58 @@ export const ticketApi = {
   requestChanges: (id: number, reason: string) =>
     api.post<Ticket>(`/tickets/${id}/request-changes`, { reason }).then(r => r.data),
   getVideoUrl: (id: number) => api.get<{ url: string }>(`/tickets/${id}/video-url`).then(r => r.data.url),
+  setDueDate: (id: number, dueDate: string | null) =>
+    api.put<Ticket>(`/tickets/${id}/due-date`, { dueDate }).then(r => r.data),
+};
+
+// Labels (org dictionary + per-ticket assignment)
+export const labelApi = {
+  list: () => api.get<TicketLabel[]>('/labels').then(r => r.data),
+  create: (name: string, color: string) =>
+    api.post<TicketLabel>('/labels', { name, color }).then(r => r.data),
+  update: (id: number, data: { name?: string; color?: string }) =>
+    api.put<TicketLabel>(`/labels/${id}`, data).then(r => r.data),
+  remove: (id: number) => api.delete(`/labels/${id}`).then(r => r.data),
+  listForTicket: (ticketId: number) =>
+    api.get<TicketLabel[]>(`/tickets/${ticketId}/labels`).then(r => r.data),
+  attach: (ticketId: number, labelId: number) =>
+    api.post<{ ok: boolean }>(`/tickets/${ticketId}/labels`, { labelId }).then(r => r.data),
+  detach: (ticketId: number, labelId: number) =>
+    api.delete(`/tickets/${ticketId}/labels/${labelId}`).then(r => r.data),
+};
+
+// Checklist
+export const checklistApi = {
+  list: (ticketId: number) =>
+    api.get<ChecklistItem[]>(`/tickets/${ticketId}/checklist`).then(r => r.data),
+  add: (ticketId: number, text: string) =>
+    api.post<ChecklistItem>(`/tickets/${ticketId}/checklist`, { text }).then(r => r.data),
+  update: (ticketId: number, itemId: number, data: { text?: string; isDone?: boolean }) =>
+    api.put<ChecklistItem>(`/tickets/${ticketId}/checklist/${itemId}`, data).then(r => r.data),
+  remove: (ticketId: number, itemId: number) =>
+    api.delete(`/tickets/${ticketId}/checklist/${itemId}`).then(r => r.data),
+};
+
+// Activity feed
+export const activityApi = {
+  list: (ticketId: number) =>
+    api.get<TicketActivity[]>(`/tickets/${ticketId}/activity`).then(r => r.data),
+};
+
+// Attachments (screenshots on tickets and chat notes)
+export const attachmentApi = {
+  list: (ticketId: number) =>
+    api.get<TicketAttachment[]>(`/tickets/${ticketId}/attachments`).then(r => r.data),
+  upload: (ticketId: number, file: File, noteId?: number) => {
+    const formData = new FormData();
+    formData.append('file', file, file.name || 'screenshot.png');
+    const params = noteId ? `?noteId=${noteId}` : '';
+    return api.post<TicketAttachment>(`/tickets/${ticketId}/attachments${params}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
+  getUrl: (ticketId: number, attachmentId: number) =>
+    api.get<{ url: string }>(`/tickets/${ticketId}/attachments/${attachmentId}/url`).then(r => r.data.url),
 };
 
 // Performance Dashboard
