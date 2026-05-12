@@ -309,6 +309,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // is a sentinel that picks tickets with no assignee — surfaces the
   // tickets waiting for someone to be put on them.
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  // Labels filter. Multi-select of label IDs; a ticket passes when it
+  // has at least one of the picked labels attached (OR semantics — most
+  // useful for "show me everything tagged 'regression' OR 'customer-blocked'").
+  const [labelFilter, setLabelFilter] = useState<number[]>([]);
   const [videoModal, setVideoModal] = useState<number | null>(null);
   const [videoSasUrl, setVideoSasUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
@@ -480,8 +484,15 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         return set.has(t.assignedTo);
       });
     }
+    if (labelFilter.length > 0) {
+      const set = new Set(labelFilter);
+      rows = rows.filter((t) => {
+        const attached = labelsByTicket[t.id] || [];
+        return attached.some((l) => set.has(l.id));
+      });
+    }
     return rows;
-  }, [tickets, showClosed, stageFilter, assigneeFilter, closedLikeKeys]);
+  }, [tickets, showClosed, stageFilter, assigneeFilter, labelFilter, labelsByTicket, closedLikeKeys]);
 
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
@@ -1497,6 +1508,40 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                 .filter((m) => m.role === 'DEVELOPER' || m.role === 'PLATFORM_OWNER' || m.role === 'SUPER_ADMIN')
                 .map((m) => ({ label: `${m.fullName} <${m.email}>`, value: m.email })),
             ]}
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            value={labelFilter}
+            onChange={(v) => setLabelFilter(v as number[])}
+            style={{ minWidth: 200, maxWidth: 360 }}
+            placeholder="All Labels"
+            maxTagCount="responsive"
+            showSearch
+            optionFilterProp="label"
+            options={orgLabels.map((l) => ({
+              label: l.name,
+              value: l.id,
+            }))}
+            tagRender={({ value, closable, onClose }) => {
+              const l = orgLabels.find((x) => x.id === value);
+              if (!l) return <span />;
+              const hex = (l.color || '#888').replace('#', '');
+              const r = parseInt(hex.slice(0, 2), 16);
+              const g = parseInt(hex.slice(2, 4), 16);
+              const b = parseInt(hex.slice(4, 6), 16);
+              const fg = (r * 299 + g * 587 + b * 114) / 1000 >= 140 ? '#000' : '#fff';
+              return (
+                <Tag
+                  closable={closable}
+                  onClose={onClose}
+                  color={l.color}
+                  style={{ color: fg, marginInlineEnd: 4 }}
+                >
+                  {l.name}
+                </Tag>
+              );
+            }}
           />
           <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>
             Show closed
