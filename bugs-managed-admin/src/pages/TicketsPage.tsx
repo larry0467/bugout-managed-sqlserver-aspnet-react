@@ -1378,6 +1378,62 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         />
         <Divider style={{ margin: '8px 0 12px' }} />
 
+        {/* Action row — video controls + Resolve button. Same actions
+            the table's Actions column has; only Video/Download/Share
+            render when a recording is attached. Mounted at the top of
+            the detail panel so the Board/Calendar modal isn't missing
+            primary actions the table had. */}
+        <Space size="small" wrap style={{ marginBottom: 12 }}>
+          {record.videoUrl && (
+            <Button
+              size="small"
+              icon={<PlayCircleOutlined />}
+              loading={videoLoading && videoModal === record.id}
+              onClick={async () => {
+                setVideoModal(record.id);
+                setVideoSasUrl(null);
+                setVideoLoading(true);
+                try {
+                  const url = await ticketApi.getVideoUrl(record.id);
+                  setVideoSasUrl(url);
+                } finally {
+                  setVideoLoading(false);
+                }
+              }}
+            >
+              Video
+            </Button>
+          )}
+          {record.videoUrl && (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={downloadLoading === record.id}
+              onClick={() => handleVideoDownload(record.id)}
+            >
+              Download
+            </Button>
+          )}
+          {record.videoUrl && (
+            <Button
+              size="small"
+              icon={<ShareAltOutlined />}
+              loading={shareLoading === record.id}
+              onClick={() => handleVideoShare(record.id)}
+            >
+              Share
+            </Button>
+          )}
+          <Button
+            size="small"
+            type="primary"
+            icon={<CheckCircleOutlined />}
+            onClick={() => setResolveModal(record)}
+          >
+            Resolve
+          </Button>
+        </Space>
+
         {/* Edit bar — same fields the table exposes as columns, but
             usable from the Board / Calendar modal (where there's no
             row to surface them). Filtering the assignee list mirrors
