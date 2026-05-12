@@ -1384,45 +1384,51 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             the detail panel so the Board/Calendar modal isn't missing
             primary actions the table had. */}
         <Space size="small" wrap style={{ marginBottom: 12 }}>
-          {record.videoUrl && (
-            <Button
-              size="small"
-              icon={<PlayCircleOutlined />}
-              loading={videoLoading && videoModal === record.id}
-              onClick={async () => {
-                setVideoModal(record.id);
-                setVideoSasUrl(null);
-                setVideoLoading(true);
-                try {
-                  const url = await ticketApi.getVideoUrl(record.id);
-                  setVideoSasUrl(url);
-                } finally {
-                  setVideoLoading(false);
-                }
-              }}
-            >
-              Video
-            </Button>
-          )}
-          {record.videoUrl && (
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              loading={downloadLoading === record.id}
-              onClick={() => handleVideoDownload(record.id)}
-            >
-              Download
-            </Button>
-          )}
-          {record.videoUrl && (
-            <Button
-              size="small"
-              icon={<ShareAltOutlined />}
-              loading={shareLoading === record.id}
-              onClick={() => handleVideoShare(record.id)}
-            >
-              Share
-            </Button>
+          {record.videoUrl ? (
+            <>
+              <Button
+                size="small"
+                icon={<PlayCircleOutlined />}
+                loading={videoLoading && videoModal === record.id}
+                onClick={async () => {
+                  setVideoModal(record.id);
+                  setVideoSasUrl(null);
+                  setVideoLoading(true);
+                  try {
+                    const url = await ticketApi.getVideoUrl(record.id);
+                    setVideoSasUrl(url);
+                  } finally {
+                    setVideoLoading(false);
+                  }
+                }}
+              >
+                Video
+              </Button>
+              <Button
+                size="small"
+                icon={<DownloadOutlined />}
+                loading={downloadLoading === record.id}
+                onClick={() => handleVideoDownload(record.id)}
+              >
+                Download
+              </Button>
+              <Button
+                size="small"
+                icon={<ShareAltOutlined />}
+                loading={shareLoading === record.id}
+                onClick={() => handleVideoShare(record.id)}
+              >
+                Share
+              </Button>
+            </>
+          ) : (
+            // Explicit "no recording" chip so the user doesn't wonder
+            // whether the buttons are missing or just hidden behind a
+            // load. Was previously rendering nothing when videoUrl was
+            // null, which read as "where's the video?".
+            <Tag color="default" style={{ fontSize: 11 }}>
+              <PlayCircleOutlined /> NO VIDEO UPLOADED
+            </Tag>
           )}
           <Button
             size="small"
