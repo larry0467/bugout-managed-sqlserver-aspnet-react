@@ -435,6 +435,16 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     } catch {}
   };
 
+  // Single client-side filter pipeline so Table, Board and Calendar all
+  // honour the same toolbar selects. Status + type happen server-side
+  // (see ticketApi.list); stage + showClosed run here because they need
+  // a re-derived list when the user toggles them without refetching.
+  const visibleTickets = useMemo(() => {
+    let rows = showClosed ? tickets : tickets.filter((t) => t.status !== 'CLOSED');
+    if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
+    return rows;
+  }, [tickets, showClosed, stageFilter]);
+
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
       await ticketApi.setDueDate(ticketId, date ? date.toISOString() : null);
@@ -1172,11 +1182,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
 
       {viewMode === 'board' && (
         <KanbanBoard
-          tickets={(() => {
-            let rows = showClosed ? tickets : tickets.filter((t) => t.status !== 'CLOSED');
-            if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
-            return rows;
-          })()}
+          tickets={visibleTickets}
           labelsByTicket={labelsByTicket}
           checklistByTicket={checklistByTicket}
           projectMap={projectMap}
@@ -1189,7 +1195,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
 
       {viewMode === 'calendar' && (
         <CalendarView
-          tickets={tickets}
+          tickets={visibleTickets}
           onCardClick={() => setViewMode('table')}
         />
       )}
@@ -1203,11 +1209,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       >
         <SortableContext items={draggableKeys} strategy={horizontalListSortingStrategy}>
       <Table
-        dataSource={(() => {
-          let rows = showClosed ? tickets : tickets.filter((t) => t.status !== 'CLOSED');
-          if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
-          return rows;
-        })()}
+        dataSource={visibleTickets}
         // onHeaderCell only attaches the column key as a string data
         // attr — width and resize handler come from ResizeContext so we
         // never put functions on DOM nodes (antd's column validator

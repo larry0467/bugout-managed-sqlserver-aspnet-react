@@ -227,11 +227,19 @@ public class TicketController : ControllerBase
 
     [HttpGet]
     [Authorize]
-    public async Task<IActionResult> GetAll([FromQuery] long? projectId)
+    public async Task<IActionResult> GetAll([FromQuery] long? projectId, [FromQuery] string? status, [FromQuery] string? type)
     {
         var query = _db.Tickets.AsQueryable();
         if (projectId.HasValue)
             query = query.Where(t => t.ProjectId == projectId.Value);
+
+        // Status + type filters from the toolbar selects. Sent by the admin
+        // page; previously dropped on the floor here, which made the
+        // toolbar appear broken (the rows came back unfiltered).
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(t => t.Status == status);
+        if (!string.IsNullOrWhiteSpace(type))
+            query = query.Where(t => t.TicketType == type);
 
         // Auto-scope non-admin callers to their own assignments. PLATFORM_OWNER
         // and SUPER_ADMIN bypass; everyone else (DEVELOPER, VIEWER, future
