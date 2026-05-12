@@ -171,6 +171,13 @@ public class TicketController : ControllerBase
     [HttpPost("{id}/video")]
     [AllowAnonymous]
     [EnableCors("WidgetPolicy")]
+    // Per-endpoint Kestrel + form-size override. Kestrel defaults to a
+    // 30 MB request body and antiforgery/multipart default to 128 MB —
+    // without these attributes a 30+ MB recording gets killed by Kestrel
+    // before the controller even runs, which is what was silently
+    // dropping screen recordings while leaving the transcript intact.
+    [RequestSizeLimit(200L * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 200L * 1024 * 1024)]
     public async Task<IActionResult> UploadVideo(long id, IFormFile file)
     {
         if (_org.CurrentProjectId == null)
@@ -182,9 +189,12 @@ public class TicketController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided" });
 
-        const long MaxVideoBytes = 50L * 1024 * 1024;
+        // 200 MB cap — covers ~30 min of webm screen recording at the
+        // widget's default bitrate. Anything bigger almost always means
+        // the user forgot to stop the recording.
+        const long MaxVideoBytes = 200L * 1024 * 1024;
         if (file.Length > MaxVideoBytes)
-            return BadRequest(new { message = "Video exceeds 50 MB limit" });
+            return BadRequest(new { message = $"Video exceeds {MaxVideoBytes / (1024 * 1024)} MB limit" });
 
         var allowedExtensions = new[] { ".webm", ".mp4", ".mov" };
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();

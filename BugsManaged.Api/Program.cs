@@ -14,6 +14,21 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Kestrel default request body limit is 30 MB — too small for our
+// screen recordings (a 10-minute capture is easily 50 MB). Bump to
+// 200 MB app-wide so the per-endpoint [RequestSizeLimit] on the video
+// upload action actually takes effect even when traffic comes through
+// Container Apps' ingress (which sometimes proxies in ways that
+// require both layers to agree).
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 200L * 1024 * 1024;
+});
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 200L * 1024 * 1024;
+});
+
 // Database
 builder.Services.AddDbContext<BugsManagedDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));

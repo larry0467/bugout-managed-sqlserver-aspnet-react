@@ -132,6 +132,12 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [error, setError] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  // Video-upload state — distinct from the general `error` slot because
+  // ticket creation can succeed while the video upload fails, and we
+  // need to keep the panel open in that case so the user can retry.
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
+  const [createdTicketId, setCreatedTicketId] = useState<number | null>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
   // Screenshots collected from drop / paste / file picker. Uploaded after
   // ticket creation succeeds (parallel to the video upload path).
   // Generic file attachments. Started as image-only ("screenshots") but
@@ -595,6 +601,9 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setScreenshotPreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
     setError('');
     setSubmitted(false);
+    setVideoUploadError(null);
+    setCreatedTicketId(null);
+    setVideoUploading(false);
     setIsRecovered(false);
     setShowRecoveryPill(false);
     setNoAudioWarning(false);
@@ -673,23 +682,21 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
         }
       }
 
-      // Upload video if recorded or file selected. Runs independently of ticket
-      // creation so a storage failure doesn't un-submit an already-saved ticket.
+      // Upload video if recorded or file selected. Retried with backoff
+      // because the server cap + network blips were silently dropping
+      // recordings (the ticket creates fine, video falls through). Keep
+      // createdTicketId so the user can retry from the post-submit panel
+      // if all attempts fail.
       const videoToUpload = recordedBlob || uploadFile;
+      setCreatedTicketId(ticket.id);
       if (videoToUpload && ticket.id) {
-        try {
-          const formData = new FormData();
-          formData.append('file', videoToUpload, 'recording.webm');
-          const videoRes = await fetch(`${apiUrl}/tickets/${ticket.id}/video`, {
-            method: 'POST',
-            headers: { 'X-BOM-API-Key': apiKey },
-            body: formData,
-          });
-          if (!videoRes.ok) {
-            console.warn(`[Bug Out] Video upload failed (${videoRes.status}) for ticket ${ticket.id}`);
-          }
-        } catch (videoErr) {
-          console.warn('[Bug Out] Video upload network error:', videoErr);
+        const uploadErr = await uploadVideoWithRetry(ticket.id, videoToUpload);
+        if (uploadErr) {
+          // Ticket exists, video doesn't — keep the panel open so the
+          // user can retry. resetForm is intentionally NOT called.
+          setVideoUploadError(uploadErr);
+          setSubmitting(false);
+          return;
         }
       }
 
@@ -702,6 +709,64 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       setError(err.message || 'Failed to submit');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Server caps individual video uploads at 200 MB. Anything bigger is
+  // a permanent failure — no point retrying. Everything else is retried
+  // up to 3 times with exponential backoff (1s, 2s, 4s).
+  const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+  const uploadVideoWithRetry = async (ticketId: number, blob: Blob): Promise<string | null> => {
+    if (blob.size > MAX_VIDEO_BYTES) {
+      return `Recording is ${(blob.size / 1024 / 1024).toFixed(1)} MB — exceeds the ${MAX_VIDEO_BYTES / 1024 / 1024} MB upload limit. Stop the recording sooner next time.`;
+    }
+    setVideoUploading(true);
+    let lastErr: string | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const formData = new FormData();
+        formData.append('file', blob, 'recording.webm');
+        const res = await fetch(`${apiUrl}/tickets/${ticketId}/video`, {
+          method: 'POST',
+          headers: { 'X-BOM-API-Key': apiKey },
+          body: formData,
+        });
+        if (res.ok) {
+          setVideoUploading(false);
+          return null;
+        }
+        // 4xx is a client-side problem — no point retrying.
+        if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+          const body = await res.text().catch(() => '');
+          lastErr = `Server rejected upload (${res.status}): ${body || res.statusText}`;
+          break;
+        }
+        lastErr = `Upload failed (${res.status}). Retrying…`;
+      } catch (e: any) {
+        lastErr = e?.message
+          ? `Network error: ${e.message}. Retrying…`
+          : 'Network error. Retrying…';
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    }
+    setVideoUploading(false);
+    return lastErr || 'Video upload failed after 3 attempts.';
+  };
+
+  const retryVideoUpload = async () => {
+    if (!createdTicketId) return;
+    const videoToUpload = recordedBlob || uploadFile;
+    if (!videoToUpload) return;
+    setVideoUploadError(null);
+    const err = await uploadVideoWithRetry(createdTicketId, videoToUpload);
+    if (err) {
+      setVideoUploadError(err);
+    } else {
+      setSubmitted(true);
+      setTimeout(() => {
+        setIsOpen(false);
+        resetForm();
+      }, 2000);
     }
   };
 
@@ -1344,6 +1409,60 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                 {/* Error */}
                 {error && (
                   <div style={{ color: '#e53935', fontSize: 13, marginBottom: 10 }}>{error}</div>
+                )}
+
+                {/* Video upload error — ticket already created; offer
+                    a retry so the recording isn't lost. Distinct from
+                    the general error slot above so the user can see the
+                    ticket landed even though the video didn't. */}
+                {videoUploadError && createdTicketId && (
+                  <div style={{
+                    background: 'rgba(229, 57, 53, 0.12)',
+                    border: '1px solid rgba(229, 57, 53, 0.45)',
+                    color: '#ffb4ad',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    marginBottom: 10,
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4, color: '#ff6b66' }}>
+                      Ticket #{createdTicketId} was saved — but the video upload failed.
+                    </div>
+                    <div style={{ marginBottom: 8 }}>{videoUploadError}</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div
+                        onClick={videoUploading ? undefined : retryVideoUpload}
+                        style={{
+                          ...btnStyle,
+                          background: videoUploading ? '#666' : `linear-gradient(135deg, ${orbColors[0]}, ${orbColors[1]})`,
+                          color: '#fff',
+                          padding: '5px 12px',
+                          fontSize: 12,
+                          opacity: videoUploading ? 0.6 : 1,
+                          cursor: videoUploading ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {videoUploading ? 'Retrying…' : 'Retry video upload'}
+                      </div>
+                      <div
+                        onClick={() => {
+                          setVideoUploadError(null);
+                          setIsOpen(false);
+                          resetForm();
+                        }}
+                        style={{
+                          ...btnStyle,
+                          background: 'transparent',
+                          color: fg,
+                          border: `1px solid ${borderColor}`,
+                          padding: '5px 12px',
+                          fontSize: 12,
+                        }}
+                      >
+                        Skip & close
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* Actions */}
