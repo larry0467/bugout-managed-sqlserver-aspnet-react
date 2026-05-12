@@ -46,18 +46,19 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
     marginBottom: 8,
   };
 
-  // Mirror the table's Assigned Developer eligibility: developers /
-  // platform owners / super admins, project-scoped, and matching the
-  // ticket's developer category if one is set.
-  const cat = ticket.developerCategory;
+  // Any DEVELOPER / PLATFORM_OWNER / SUPER_ADMIN is assignable from the
+  // board. Earlier versions also gated by ticket.developerCategory vs
+  // member.specialty (e.g. UI ticket -> only frontend specialists) — that
+  // was too aggressive and hid every developer whose specialty didn't
+  // exactly line up, leaving only owners/admins in the dropdown. Project
+  // scoping stays: a member with explicit projectIds is hidden from
+  // tickets outside that scope.
   const eligible = teamMembers.filter((m) => {
     if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
     if (m.projectIds && m.projectIds.length > 0 && ticket.projectId) {
       if (!m.projectIds.includes(ticket.projectId)) return false;
     }
-    if (!cat || cat === 'FULLSTACK') return true;
-    if (!m.specialty || m.specialty === 'FULLSTACK') return true;
-    return m.specialty === cat;
+    return true;
   });
 
   // Resolve the email to a display name. Falls back to the email's local

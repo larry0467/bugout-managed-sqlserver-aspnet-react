@@ -951,60 +951,30 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       filters: distinct('assignedTo'),
       onFilter: (value: any, record: Ticket) => record.assignedTo === value,
       render: (v: string, record: Ticket) => {
-        const cat = record.developerCategory;
+        // All DEVELOPER / PLATFORM_OWNER / SUPER_ADMIN users in the org
+        // are assignable. The previous specialty-vs-category match was
+        // too aggressive and routinely left users with only owners/
+        // admins in the list. Project-scope filter stays: a member with
+        // explicit projectIds is hidden from tickets outside that scope.
         const eligible = teamMembers.filter((m) => {
           if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
-          // Project filter: empty projectIds = all projects; otherwise must include this ticket's project
           const projectId = record.projectId;
           if (m.projectIds && m.projectIds.length > 0 && projectId) {
             if (!m.projectIds.includes(projectId)) return false;
           }
-          if (!cat || cat === 'FULLSTACK') return true;
-          if (!m.specialty || m.specialty === 'FULLSTACK') return true; // PLATFORM_OWNER with no specialty qualifies for all
-          return m.specialty === cat;
+          return true;
         });
-
-        const placeholder = !cat
-          ? 'Triage needed'
-          : eligible.length === 0
-            ? `No ${cat.toLowerCase()} devs`
-            : 'Unassigned';
-
-        // No eligible devs → render a compact warning Tag (was a disabled
-        // Select with near-invisible placeholder text). Wrapped in a
-        // 190px box with overflow:hidden so it can't bleed into the next
-        // column.
-        if (eligible.length === 0 && cat) {
-          return (
-            <div style={{ maxWidth: 190, overflow: 'hidden' }}>
-              <Tag
-                color="warning"
-                style={{
-                  fontSize: 12,
-                  margin: 0,
-                  maxWidth: '100%',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  display: 'inline-block',
-                }}
-              >
-                No {cat.toLowerCase()} devs
-              </Tag>
-            </div>
-          );
-        }
 
         return (
           <Select
             value={v || undefined}
             size="small"
             style={{ width: 190 }}
-            placeholder={placeholder}
+            placeholder={eligible.length === 0 ? 'No developers in project' : 'Unassigned'}
             allowClear
             onChange={(val) => handleAssign(record.id, val || '')}
             options={eligible.map((m) => ({
-              label: `${m.fullName}${m.specialty === 'FULLSTACK' ? ' (FS)' : ''}`,
+              label: `${m.fullName}${m.specialty ? ` · ${m.specialty}` : ''}`,
               value: m.email,
             }))}
             showSearch
@@ -1423,15 +1393,16 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             PLATFORM_OWNER / SUPER_ADMIN, scoped to this project, and
             matching the dev category if one is set. */}
         {(() => {
-          const cat = record.developerCategory;
+          // Match the Board card's eligibility: every dev / owner /
+          // super-admin in the org (project-scoped if they have explicit
+          // projectIds), regardless of specialty vs ticket category.
+          // The specialty-match was too aggressive and hid most devs.
           const eligible = teamMembers.filter((m) => {
             if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
             if (m.projectIds && m.projectIds.length > 0 && record.projectId) {
               if (!m.projectIds.includes(record.projectId)) return false;
             }
-            if (!cat || cat === 'FULLSTACK') return true;
-            if (!m.specialty || m.specialty === 'FULLSTACK') return true;
-            return m.specialty === cat;
+            return true;
           });
           return (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
@@ -1470,7 +1441,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                       size="small"
                       value={record.assignedTo || undefined}
                       style={{ width: 240 }}
-                      placeholder={!cat ? 'Triage needed' : eligible.length === 0 ? `No ${cat.toLowerCase()} devs` : 'Unassigned'}
+                      placeholder={eligible.length === 0 ? 'No developers in this project' : 'Unassigned'}
                       allowClear
                       showSearch
                       optionFilterProp="label"
