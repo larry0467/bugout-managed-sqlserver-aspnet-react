@@ -132,16 +132,38 @@ public class CommsManagedNotificationService : ITicketNotificationService
             return;
         }
 
+        // Fail fast on the unconfigured-prod case (Terraform creates KV slots
+        // with literal "placeholder-..." strings; if `az keyvault secret set`
+        // was never run they reach us as those placeholders). Without this
+        // we'd POST garbage workspace/sender guids and get a generic 400.
+        if (!Guid.TryParse(_opts.WorkspaceId, out var workspaceGuid) || workspaceGuid == Guid.Empty)
+        {
+            _log.LogError(
+                "CommsBridge: WorkspaceId is not a valid GUID (value='{Val}'). Set the comms-managed-workspace-id KV secret to the Comms workspace GUID and restart the API.",
+                _opts.WorkspaceId);
+            return;
+        }
+        if (!Guid.TryParse(_opts.SystemSenderUserId, out var senderGuid) || senderGuid == Guid.Empty)
+        {
+            _log.LogError(
+                "CommsBridge: SystemSenderUserId is not a valid GUID (value='{Val}'). Set the comms-managed-system-sender-user-id KV secret to a Comms user GUID and restart the API.",
+                _opts.SystemSenderUserId);
+            return;
+        }
+
+        // Comms expects entityId as Guid? — null is fine. Sending the Bug Out
+        // ticket id as a string ("23") failed FluentValidation here and
+        // dropped every notification on the floor. Threading by entity will
+        // need a Comms-side entity row keyed by something other than ticket
+        // id (or a separate Bug Out → Comms entity mapping table).
         var payload = new
         {
-            workspaceId  = _opts.WorkspaceId,
-            senderUserId = _opts.SystemSenderUserId,
+            workspaceId  = workspaceGuid,
+            senderUserId = senderGuid,
             channel      = "email",
             to,
             body         = $"Subject: {subject}\n\n{body}",
-            entityId     = ticket.Id.ToString(),
-            entityRef    = $"ticket:{ticket.Id}",
-            entityTitle  = ticket.Title,
+            entityId     = (Guid?)null,
             visibility   = "shared",
         };
 
@@ -154,6 +176,12 @@ public class CommsManagedNotificationService : ITicketNotificationService
                 _log.LogError(
                     "CommsBridge: send failed for ticket {Id} → {Status}: {Body}",
                     ticket.Id, (int)resp.StatusCode, err);
+            }
+            else
+            {
+                _log.LogInformation(
+                    "CommsBridge: sent {Subject} for ticket {Id} to {To}",
+                    subject, ticket.Id, to);
             }
         }
         catch (Exception ex)
