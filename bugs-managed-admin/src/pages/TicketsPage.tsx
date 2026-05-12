@@ -1400,6 +1400,81 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           }
         />
         <Divider style={{ margin: '8px 0 12px' }} />
+
+        {/* Edit bar — same fields the table exposes as columns, but
+            usable from the Board / Calendar modal (where there's no
+            row to surface them). Filtering the assignee list mirrors
+            the Assigned Developer column: only DEVELOPER /
+            PLATFORM_OWNER / SUPER_ADMIN, scoped to this project, and
+            matching the dev category if one is set. */}
+        {(() => {
+          const cat = record.developerCategory;
+          const eligible = teamMembers.filter((m) => {
+            if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
+            if (m.projectIds && m.projectIds.length > 0 && record.projectId) {
+              if (!m.projectIds.includes(record.projectId)) return false;
+            }
+            if (!cat || cat === 'FULLSTACK') return true;
+            if (!m.specialty || m.specialty === 'FULLSTACK') return true;
+            return m.specialty === cat;
+          });
+          return (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Status</Text>
+                <Select
+                  size="small"
+                  value={record.status}
+                  style={{ width: 180 }}
+                  onChange={(val) => handleStatusChange(record.id, val)}
+                  options={orgStatuses.map((s) => ({ label: s.displayName, value: s.key }))}
+                />
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Assignee</Text>
+                <Select
+                  size="small"
+                  value={record.assignedTo || undefined}
+                  style={{ width: 240 }}
+                  placeholder={!cat ? 'Triage needed' : eligible.length === 0 ? `No ${cat.toLowerCase()} devs` : 'Unassigned'}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  onChange={(val) => handleAssign(record.id, val || '')}
+                  options={eligible.map((m) => ({
+                    label: `${m.fullName}${m.specialty === 'FULLSTACK' ? ' (FS)' : ''}`,
+                    value: m.email,
+                  }))}
+                />
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Due date</Text>
+                <DatePicker
+                  size="small"
+                  value={record.dueDate ? dayjs(record.dueDate) : null}
+                  onChange={(d) => handleDueDateChange(record.id, d)}
+                  allowClear
+                  placeholder="No due date"
+                  style={{ width: 160 }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Labels</Text>
+                <LabelChips
+                  ticketId={record.id}
+                  attached={labelsByTicket[record.id] || []}
+                  available={orgLabels}
+                  allowCreate
+                  onChange={() => {
+                    reloadLabelsForTicket(record.id);
+                    labelApi.list().then(setOrgLabels).catch(() => {});
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
         <Tabs
           activeKey={activeTab}
           onChange={(key) => setActiveTabByTicket((prev) => ({ ...prev, [record.id]: key }))}
