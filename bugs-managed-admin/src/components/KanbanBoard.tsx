@@ -46,15 +46,16 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
     marginBottom: 8,
   };
 
-  // Any DEVELOPER / PLATFORM_OWNER / SUPER_ADMIN is assignable from the
-  // board. Earlier versions also gated by ticket.developerCategory vs
-  // member.specialty (e.g. UI ticket -> only frontend specialists) — that
-  // was too aggressive and hid every developer whose specialty didn't
-  // exactly line up, leaving only owners/admins in the dropdown. Project
-  // scoping stays: a member with explicit projectIds is hidden from
-  // tickets outside that scope.
+  // Anyone in the team list is assignable. Two earlier filters dropped
+  // users who should have shown up:
+  //   1. specialty-vs-developerCategory match — relaxed previously
+  //   2. role == DEVELOPER/PLATFORM_OWNER/SUPER_ADMIN — relaxed now
+  //      because VIEWER users were invisible in the dropdown. Role
+  //      gates *authorization* (who can do what); assignment is just
+  //      "who is responsible for this ticket", which is broader.
+  // Project scoping stays: a member with explicit projectIds is hidden
+  // from tickets outside that scope.
   const eligible = teamMembers.filter((m) => {
-    if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
     if (m.projectIds && m.projectIds.length > 0 && ticket.projectId) {
       if (!m.projectIds.includes(ticket.projectId)) return false;
     }

@@ -951,13 +951,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       filters: distinct('assignedTo'),
       onFilter: (value: any, record: Ticket) => record.assignedTo === value,
       render: (v: string, record: Ticket) => {
-        // All DEVELOPER / PLATFORM_OWNER / SUPER_ADMIN users in the org
-        // are assignable. The previous specialty-vs-category match was
-        // too aggressive and routinely left users with only owners/
-        // admins in the list. Project-scope filter stays: a member with
-        // explicit projectIds is hidden from tickets outside that scope.
+        // Anyone on the team is assignable, project-scoped only.
+        // Role-gating was eliminating VIEWER users that the platform
+        // owner actually wanted to put work on; role is about
+        // *authorization*, not "who is responsible for this ticket".
         const eligible = teamMembers.filter((m) => {
-          if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
           const projectId = record.projectId;
           if (m.projectIds && m.projectIds.length > 0 && projectId) {
             if (!m.projectIds.includes(projectId)) return false;
@@ -1393,12 +1391,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             PLATFORM_OWNER / SUPER_ADMIN, scoped to this project, and
             matching the dev category if one is set. */}
         {(() => {
-          // Match the Board card's eligibility: every dev / owner /
-          // super-admin in the org (project-scoped if they have explicit
-          // projectIds), regardless of specialty vs ticket category.
-          // The specialty-match was too aggressive and hid most devs.
+          // Anyone on the team is assignable, project-scoped only.
+          // Was previously gated by role+specialty which left users
+          // staring at a dropdown of just owners/admins.
           const eligible = teamMembers.filter((m) => {
-            if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
             if (m.projectIds && m.projectIds.length > 0 && record.projectId) {
               if (!m.projectIds.includes(record.projectId)) return false;
             }
@@ -1583,9 +1579,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             optionFilterProp="label"
             options={[
               { label: '(Unassigned)', value: '__unassigned__' },
-              ...teamMembers
-                .filter((m) => m.role === 'DEVELOPER' || m.role === 'PLATFORM_OWNER' || m.role === 'SUPER_ADMIN')
-                .map((m) => ({ label: `${m.fullName} <${m.email}>`, value: m.email })),
+              ...teamMembers.map((m) => ({ label: `${m.fullName} <${m.email}>`, value: m.email })),
             ]}
           />
           <Select
