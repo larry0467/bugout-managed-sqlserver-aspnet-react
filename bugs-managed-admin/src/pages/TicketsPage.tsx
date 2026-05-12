@@ -1432,20 +1432,38 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Assignee</Text>
-                <Select
-                  size="small"
-                  value={record.assignedTo || undefined}
-                  style={{ width: 240 }}
-                  placeholder={!cat ? 'Triage needed' : eligible.length === 0 ? `No ${cat.toLowerCase()} devs` : 'Unassigned'}
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  onChange={(val) => handleAssign(record.id, val || '')}
-                  options={eligible.map((m) => ({
+                {(() => {
+                  // Build options from eligible devs, but if the ticket is
+                  // currently assigned to someone outside that filter (e.g.
+                  // dev-category changed after assignment, or claude
+                  // pseudo-user), prepend a synthetic option so the Select
+                  // displays their name rather than the raw email.
+                  const baseOptions = eligible.map((m) => ({
                     label: `${m.fullName}${m.specialty === 'FULLSTACK' ? ' (FS)' : ''}`,
                     value: m.email,
-                  }))}
-                />
+                  }));
+                  const currentInOptions = !!record.assignedTo
+                    && baseOptions.some((o) => o.value === record.assignedTo);
+                  let options = baseOptions;
+                  if (record.assignedTo && !currentInOptions) {
+                    const member = teamMembers.find((m) => m.email === record.assignedTo);
+                    const label = member?.fullName ?? record.assignedTo.split('@')[0];
+                    options = [{ label, value: record.assignedTo }, ...baseOptions];
+                  }
+                  return (
+                    <Select
+                      size="small"
+                      value={record.assignedTo || undefined}
+                      style={{ width: 240 }}
+                      placeholder={!cat ? 'Triage needed' : eligible.length === 0 ? `No ${cat.toLowerCase()} devs` : 'Unassigned'}
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      onChange={(val) => handleAssign(record.id, val || '')}
+                      options={options}
+                    />
+                  );
+                })()}
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Due date</Text>
@@ -1631,6 +1649,8 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           labelsByTicket={labelsByTicket}
           checklistByTicket={checklistByTicket}
           projectMap={projectMap}
+          teamMembers={teamMembers}
+          onAssign={(ticketId, email) => handleAssign(ticketId, email)}
           onCardClick={(ticket) => {
             // Open the same detail surface the table's expanded row uses,
             // but in a modal so the user can keep the Board view behind it.

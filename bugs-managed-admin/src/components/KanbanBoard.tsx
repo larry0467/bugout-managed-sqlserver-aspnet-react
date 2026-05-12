@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Card, Tag, Typography, Tooltip, Space } from 'antd';
-import { CalendarOutlined, AppstoreOutlined, RobotOutlined } from '@ant-design/icons';
+import { Card, Tag, Typography, Tooltip, Space, Select } from 'antd';
+import { CalendarOutlined, AppstoreOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons';
 import {
   DndContext,
   PointerSensor,
@@ -11,7 +11,7 @@ import {
   useDroppable,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import type { Ticket, TicketLabel, TicketStatusDef } from '../api';
+import type { Ticket, TicketLabel, TicketStatusDef, TeamMember } from '../api';
 
 const { Text } = Typography;
 
@@ -32,10 +32,12 @@ interface BoardCardProps {
   checklistDone: number;
   hasClaude?: boolean;
   projectName?: string;
+  teamMembers: TeamMember[];
   onClick: () => void;
+  onAssign: (ticketId: number, email: string) => void;
 }
 
-const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, checklistDone, hasClaude, projectName, onClick }) => {
+const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, checklistDone, hasClaude, projectName, teamMembers, onClick, onAssign }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `ticket-${ticket.id}` });
   const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
@@ -43,6 +45,27 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
     cursor: 'grab',
     marginBottom: 8,
   };
+
+  // Mirror the table's Assigned Developer eligibility: developers /
+  // platform owners / super admins, project-scoped, and matching the
+  // ticket's developer category if one is set.
+  const cat = ticket.developerCategory;
+  const eligible = teamMembers.filter((m) => {
+    if (m.role !== 'DEVELOPER' && m.role !== 'PLATFORM_OWNER' && m.role !== 'SUPER_ADMIN') return false;
+    if (m.projectIds && m.projectIds.length > 0 && ticket.projectId) {
+      if (!m.projectIds.includes(ticket.projectId)) return false;
+    }
+    if (!cat || cat === 'FULLSTACK') return true;
+    if (!m.specialty || m.specialty === 'FULLSTACK') return true;
+    return m.specialty === cat;
+  });
+
+  // Resolve the email to a display name. Falls back to the email's local
+  // part if the assignee isn't in teamMembers (former employee, claude
+  // pseudo-user, etc.), so the card never shows the full domain.
+  const assigneeMember = ticket.assignedTo ? teamMembers.find((m) => m.email === ticket.assignedTo) : undefined;
+  const assigneeDisplay = assigneeMember?.fullName
+    ?? (ticket.assignedTo ? ticket.assignedTo.split('@')[0] : undefined);
 
   // Overdue glow: red box-shadow when DueDate is past and ticket isn't resolved/closed.
   const overdue = ticket.dueDate
@@ -128,11 +151,47 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
           )}
         </Space>
 
-        {ticket.assignedTo && (
-          <div style={{ marginTop: 6 }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>{ticket.assignedTo}</Text>
-          </div>
-        )}
+        {/* Inline assignee Select — always rendered, shows "Unassigned"
+            when there's no value so the card itself is the assign control.
+            Wrapped in a stopPropagation div + dnd-listeners-stripped block
+            so clicking the dropdown doesn't (a) open the modal or (b) drag
+            the card. The Select renders its dropdown in a portal so
+            menu clicks never bubble back through this card.
+        */}
+        <div
+          style={{ marginTop: 6 }}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <Select
+            size="small"
+            value={ticket.assignedTo || undefined}
+            placeholder={(
+              <span style={{ fontSize: 11 }}>
+                <UserOutlined style={{ marginRight: 4 }} />Unassigned
+              </span>
+            )}
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            style={{ width: '100%' }}
+            variant="borderless"
+            // Render the selected value as just the name (no email) so
+            // the card stays compact and email domains don't dominate.
+            optionLabelProp="label"
+            labelRender={(opt) => (
+              <span style={{ fontSize: 11 }}>
+                <UserOutlined style={{ marginRight: 4 }} />
+                {String(opt.label ?? assigneeDisplay ?? '')}
+              </span>
+            )}
+            onChange={(val) => onAssign(ticket.id, val || '')}
+            options={eligible.map((m) => ({
+              label: `${m.fullName}${m.specialty === 'FULLSTACK' ? ' (FS)' : ''}`,
+              value: m.email,
+            }))}
+          />
+        </div>
       </Card>
     </div>
   );
@@ -178,8 +237,10 @@ interface KanbanBoardProps {
   checklistByTicket: Record<number, { done: number; total: number }>;
   projectMap: Record<number, string>;
   hasClaudeByTicket?: Record<number, boolean>;
+  teamMembers: TeamMember[];
   onCardClick: (ticket: Ticket) => void;
   onStatusChange: (ticketId: number, status: string) => Promise<void> | void;
+  onAssign: (ticketId: number, email: string) => Promise<void> | void;
 }
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({
@@ -189,8 +250,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   checklistByTicket,
   projectMap,
   hasClaudeByTicket,
+  teamMembers,
   onCardClick,
   onStatusChange,
+  onAssign,
 }) => {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -246,7 +309,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 checklistDone={(checklistByTicket[t.id]?.done) || 0}
                 projectName={projectMap[t.projectId]}
                 hasClaude={hasClaudeByTicket?.[t.id]}
+                teamMembers={teamMembers}
                 onClick={() => onCardClick(t)}
+                onAssign={onAssign}
               />
             ))}
           </BoardColumn>
@@ -262,7 +327,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 checklistDone={(checklistByTicket[t.id]?.done) || 0}
                 projectName={projectMap[t.projectId]}
                 hasClaude={hasClaudeByTicket?.[t.id]}
+                teamMembers={teamMembers}
                 onClick={() => onCardClick(t)}
+                onAssign={onAssign}
               />
             ))}
           </BoardColumn>
