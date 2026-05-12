@@ -1781,11 +1781,21 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         {modalTicket && renderTicketDetail(modalTicket)}
       </Modal>
 
-      {/* Video Modal */}
+      {/* Video Modal — destroyOnClose forces the <video> to unmount when
+          the modal closes. Without it antd just hides the modal with CSS
+          and the video keeps playing audio in the background. */}
       <Modal
         title="Screen Recording"
         open={videoModal !== null}
-        onCancel={() => { setVideoModal(null); setVideoSasUrl(null); }}
+        destroyOnClose
+        onCancel={() => {
+          // Belt-and-suspenders pause before the unmount kicks in, in case
+          // a browser holds the <video> element open during the close
+          // animation.
+          document.querySelectorAll('video').forEach((v) => { try { v.pause(); } catch {} });
+          setVideoModal(null);
+          setVideoSasUrl(null);
+        }}
         footer={videoSasUrl && videoModal !== null ? (
           <Space>
             <Button
