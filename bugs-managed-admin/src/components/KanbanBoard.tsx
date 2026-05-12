@@ -119,7 +119,10 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
           </div>
         )}
 
-        <Text strong style={{ fontSize: 13 }}>{ticket.title}</Text>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>#{ticket.id}</Text>
+          <Text strong style={{ fontSize: 13 }}>{ticket.title}</Text>
+        </div>
 
         <Space size={4} style={{ marginTop: 6, width: '100%' }} wrap>
           <Tag color={priorityColors[ticket.priority]} style={{ fontSize: 10, margin: 0 }}>{ticket.priority}</Tag>

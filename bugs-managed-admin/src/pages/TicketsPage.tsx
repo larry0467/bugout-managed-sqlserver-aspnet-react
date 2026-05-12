@@ -353,6 +353,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // uploaded after the note POST succeeds, then attached to that note.
   const [chatScreenshots, setChatScreenshots] = useState<Record<number, File[]>>({});
   const [attachmentsByNote, setAttachmentsByNote] = useState<Record<number, { id: number; fileName: string }[]>>({});
+  // All attachments on a ticket (note-attached + widget-direct). Used by
+  // the detail panel's "Attachments" section so the user sees every file
+  // at a glance instead of hunting through chat.
+  const [allAttachments, setAllAttachments] = useState<Record<number, { id: number; fileName: string; noteId: number | null }[]>>({});
   const [attachmentUrlCache, setAttachmentUrlCache] = useState<Record<number, string>>({});
 
   // Modal-mode ticket detail. Board view clicks open this rather than
@@ -522,11 +526,14 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     try {
       const all = await attachmentApi.list(ticketId);
       const byNote: Record<number, { id: number; fileName: string }[]> = {};
+      const flat: { id: number; fileName: string; noteId: number | null }[] = [];
       for (const a of all) {
+        flat.push({ id: a.id, fileName: a.fileName, noteId: a.noteId ?? null });
         if (a.noteId == null) continue;
         (byNote[a.noteId] ??= []).push({ id: a.id, fileName: a.fileName });
       }
       setAttachmentsByNote(byNote);
+      setAllAttachments((prev) => ({ ...prev, [ticketId]: flat }));
     } catch {}
   };
 
@@ -1439,6 +1446,31 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             Resolve
           </Button>
         </Space>
+
+        {/* Attachments — all files attached to this ticket (widget bug
+            report uploads + every chat-note attachment). Surfaced here
+            so devs working from the modal don't have to scroll the
+            chat log to find a screenshot or log file. */}
+        {(allAttachments[record.id]?.length ?? 0) > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              Attachments ({allAttachments[record.id].length})
+            </Text>
+            <Space wrap size={6}>
+              {allAttachments[record.id].map((a) => (
+                <Tag
+                  key={a.id}
+                  color={a.noteId ? 'purple' : 'cyan'}
+                  onClick={() => handleAttachmentClick(record.id, a.id)}
+                  style={{ cursor: 'pointer' }}
+                  title={a.noteId ? 'From chat' : 'From bug report'}
+                >
+                  <PaperClipOutlined /> {a.fileName}
+                </Tag>
+              ))}
+            </Space>
+          </div>
+        )}
 
         {/* Edit bar — same fields the table exposes as columns, but
             usable from the Board / Calendar modal (where there's no
