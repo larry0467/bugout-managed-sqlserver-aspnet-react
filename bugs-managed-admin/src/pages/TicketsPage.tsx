@@ -313,6 +313,14 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // has at least one of the picked labels attached (OR semantics — most
   // useful for "show me everything tagged 'regression' OR 'customer-blocked'").
   const [labelFilter, setLabelFilter] = useState<number[]>([]);
+  // Sort applied to the unified ticket list before it hits Table / Board /
+  // Calendar. Table users can still click a column header to override this,
+  // but Board + Calendar respect it as their only ordering signal.
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>(() => {
+    const saved = localStorage.getItem('bom-tickets-sort');
+    return (saved === 'oldest' ? 'oldest' : 'newest');
+  });
+  useEffect(() => { localStorage.setItem('bom-tickets-sort', sortOrder); }, [sortOrder]);
   const [videoModal, setVideoModal] = useState<number | null>(null);
   const [videoSasUrl, setVideoSasUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
@@ -491,8 +499,15 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         return attached.some((l) => set.has(l.id));
       });
     }
+    // Sort by submitted (= createdAt) date. Copy first — `.sort` mutates,
+    // and `rows` may still alias `tickets` if no filter trimmed it.
+    rows = [...rows].sort((a, b) => {
+      const av = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bv = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return sortOrder === 'newest' ? bv - av : av - bv;
+    });
     return rows;
-  }, [tickets, showClosed, stageFilter, assigneeFilter, labelFilter, labelsByTicket, closedLikeKeys]);
+  }, [tickets, showClosed, stageFilter, assigneeFilter, labelFilter, labelsByTicket, closedLikeKeys, sortOrder]);
 
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
@@ -1635,6 +1650,18 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                 </Tag>
               );
             }}
+          />
+          {/* Sort by submitted (createdAt) date. Applies to Board + Calendar
+              always; Table uses it as the initial order but lets the user
+              click a column header to re-sort. */}
+          <Select
+            value={sortOrder}
+            onChange={(v) => setSortOrder(v)}
+            style={{ width: 200 }}
+            options={[
+              { label: 'Newest submitted first', value: 'newest' },
+              { label: 'Oldest submitted first', value: 'oldest' },
+            ]}
           />
           <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>
             Show closed
