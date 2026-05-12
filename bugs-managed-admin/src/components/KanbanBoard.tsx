@@ -46,21 +46,15 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
     marginBottom: 8,
   };
 
-  // Anyone in the team list is assignable. Two earlier filters dropped
-  // users who should have shown up:
-  //   1. specialty-vs-developerCategory match — relaxed previously
-  //   2. role == DEVELOPER/PLATFORM_OWNER/SUPER_ADMIN — relaxed now
-  //      because VIEWER users were invisible in the dropdown. Role
-  //      gates *authorization* (who can do what); assignment is just
-  //      "who is responsible for this ticket", which is broader.
-  // Project scoping stays: a member with explicit projectIds is hidden
-  // from tickets outside that scope.
-  const eligible = teamMembers.filter((m) => {
-    if (m.projectIds && m.projectIds.length > 0 && ticket.projectId) {
-      if (!m.projectIds.includes(ticket.projectId)) return false;
-    }
-    return true;
-  });
+  // Anyone in the team list is assignable. Three earlier filters
+  // dropped users who should have shown up — all three are gone now:
+  //   1. specialty-vs-developerCategory match (too strict)
+  //   2. role == DEVELOPER/PLATFORM_OWNER/SUPER_ADMIN (hid VIEWERs)
+  //   3. project-scope on m.projectIds (hid devs whose project list
+  //      didn't include this ticket's project). Result: a card could
+  //      already DISPLAY an assignee whose name didn't even appear in
+  //      its own dropdown. Now: any team member can be picked.
+  const eligible = teamMembers;
 
   // Resolve the email to a display name. Falls back to the email's local
   // part if the assignee isn't in teamMembers (former employee, claude

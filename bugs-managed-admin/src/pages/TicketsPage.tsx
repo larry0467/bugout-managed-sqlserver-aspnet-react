@@ -951,17 +951,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       filters: distinct('assignedTo'),
       onFilter: (value: any, record: Ticket) => record.assignedTo === value,
       render: (v: string, record: Ticket) => {
-        // Anyone on the team is assignable, project-scoped only.
-        // Role-gating was eliminating VIEWER users that the platform
-        // owner actually wanted to put work on; role is about
-        // *authorization*, not "who is responsible for this ticket".
-        const eligible = teamMembers.filter((m) => {
-          const projectId = record.projectId;
-          if (m.projectIds && m.projectIds.length > 0 && projectId) {
-            if (!m.projectIds.includes(projectId)) return false;
-          }
-          return true;
-        });
+        // Anyone on the team is assignable. See KanbanBoard.tsx for the
+        // history of filters we dropped — short version: role, specialty,
+        // and project-scope all turned out to hide users that the
+        // platform owner actually wanted to assign.
+        const eligible = teamMembers;
 
         return (
           <Select
@@ -1391,15 +1385,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             PLATFORM_OWNER / SUPER_ADMIN, scoped to this project, and
             matching the dev category if one is set. */}
         {(() => {
-          // Anyone on the team is assignable, project-scoped only.
-          // Was previously gated by role+specialty which left users
-          // staring at a dropdown of just owners/admins.
-          const eligible = teamMembers.filter((m) => {
-            if (m.projectIds && m.projectIds.length > 0 && record.projectId) {
-              if (!m.projectIds.includes(record.projectId)) return false;
-            }
-            return true;
-          });
+          // Anyone on the team is assignable. Earlier role + specialty
+          // + project-scope filters were aggressively hiding eligible
+          // people, including devs whose names appeared on already-
+          // assigned cards but couldn't be found in the dropdown.
+          const eligible = teamMembers;
           return (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
               <div>
