@@ -1559,18 +1559,17 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Space>
-          <Title level={3} style={{ margin: 0 }}>Tickets</Title>
-          <Segmented
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'table' | 'board' | 'calendar')}
-            options={[
-              { label: 'Table', value: 'table', icon: <TableOutlined /> },
-              { label: 'Board', value: 'board', icon: <AppstoreAddOutlined /> },
-              { label: 'Calendar', value: 'calendar', icon: <CalendarOutlined /> },
-            ]}
-          />
-        </Space>
+        {/* No page title — the active nav item already says "Tickets" in
+            green. Just the view-mode toggle here. */}
+        <Segmented
+          value={viewMode}
+          onChange={(v) => setViewMode(v as 'table' | 'board' | 'calendar')}
+          options={[
+            { label: 'Table', value: 'table', icon: <TableOutlined /> },
+            { label: 'Board', value: 'board', icon: <AppstoreAddOutlined /> },
+            { label: 'Calendar', value: 'calendar', icon: <CalendarOutlined /> },
+          ]}
+        />
         <Space wrap>
           <Select
             value={selectedProject}
