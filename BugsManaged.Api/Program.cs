@@ -68,6 +68,8 @@ builder.Services.AddScoped<SandboxSeeder>();
 builder.Services.AddScoped<SandboxResetJob>();
 builder.Services.Configure<SandboxOptions>(builder.Configuration.GetSection("Sandbox"));
 builder.Services.AddSingleton<IVideoBlobService, VideoBlobService>();
+builder.Services.AddSingleton<IScreenshotBlobService, ScreenshotBlobService>();
+builder.Services.AddScoped<ITicketActivityLogger, TicketActivityLogger>();
 // Comms Managed notification bridge — replaces the no-op NotificationService.
 var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
     ?? new CommsManagedOptions();

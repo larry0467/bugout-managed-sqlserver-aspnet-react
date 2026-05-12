@@ -132,6 +132,10 @@ public class Ticket
     // developer's revision rate.
     public int RevisionCount { get; set; } = 0;
 
+    // Optional target date for the ticket. Drives the calendar view and the
+    // "overdue glow" on the Kanban card. Null = no due date.
+    public DateTime? DueDate { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

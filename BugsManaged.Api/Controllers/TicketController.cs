@@ -21,10 +21,11 @@ public class TicketController : ControllerBase
     private readonly IClaudeAgentClient _sidecar;
     private readonly IVideoBlobService _blobs;
     private readonly BillingService _billing;
+    private readonly ITicketActivityLogger _activity;
     private readonly ILogger<TicketController> _log;
     private readonly ITicketNotificationService _notify;
 
-    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ILogger<TicketController> log, ITicketNotificationService notify)
+    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ITicketActivityLogger activity, ILogger<TicketController> log, ITicketNotificationService notify)
     {
         _db = db;
         _classifier = classifier;
@@ -33,9 +34,17 @@ public class TicketController : ControllerBase
         _sidecar = sidecar;
         _blobs = blobs;
         _billing = billing;
+        _activity = activity;
         _log = log;
         _notify = notify;
     }
+
+    // Roles that can see every ticket in the org. Anyone else is auto-scoped
+    // to tickets they're personally assigned to via GetAll. Centralised here
+    // so a future "PROJECT_LEAD" role is a one-line change.
+    private static readonly string[] SeesAllTicketsRoles = new[] { "PLATFORM_OWNER", "SUPER_ADMIN" };
+    private bool CallerSeesAllTickets() =>
+        User.Identity?.IsAuthenticated == true && SeesAllTicketsRoles.Any(r => User.IsInRole(r));
 
     // Looks up a ticket by id but only inside the caller's current org.
     // Every new escalation/assignment endpoint must go through this so a
@@ -224,6 +233,16 @@ public class TicketController : ControllerBase
         if (projectId.HasValue)
             query = query.Where(t => t.ProjectId == projectId.Value);
 
+        // Auto-scope non-admin callers to their own assignments. PLATFORM_OWNER
+        // and SUPER_ADMIN bypass; everyone else (DEVELOPER, VIEWER, future
+        // roles) only sees tickets where AssignedTo matches their email.
+        // Enforced server-side so it's authorization, not a UI hint.
+        if (!CallerSeesAllTickets())
+        {
+            var email = CallerEmail();
+            query = query.Where(t => t.AssignedTo == email);
+        }
+
         var tickets = await query
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
@@ -246,12 +265,49 @@ public class TicketController : ControllerBase
         var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
+        var fromStatus = ticket.Status;
         ticket.Status = request.Status;
         if (!string.IsNullOrEmpty(request.AssignedTo))
             ticket.AssignedTo = request.AssignedTo;
 
         if (request.Status == "RESOLVED" || request.Status == "CLOSED")
             ticket.ResolvedAt = DateTime.UtcNow;
+
+        if (fromStatus != ticket.Status)
+        {
+            var email = CallerEmail();
+            var name = User.FindFirstValue("fullName");
+            _activity.Log(ticket, "STATUS_CHANGED",
+                $"{name ?? email} moved status {fromStatus} → {ticket.Status}",
+                email, name,
+                payload: new { fromStatus, toStatus = ticket.Status });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(ticket);
+    }
+
+    public record UpdateDueDateRequest(DateTime? DueDate);
+
+    [HttpPut("{id}/due-date")]
+    [Authorize]
+    public async Task<IActionResult> UpdateDueDate(long id, [FromBody] UpdateDueDateRequest request)
+    {
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found" });
+
+        var before = ticket.DueDate;
+        ticket.DueDate = request.DueDate;
+
+        var email = CallerEmail();
+        var name = User.FindFirstValue("fullName");
+        var message = request.DueDate.HasValue
+            ? (before.HasValue
+                ? $"{name ?? email} moved due date to {request.DueDate:yyyy-MM-dd}"
+                : $"{name ?? email} set due date to {request.DueDate:yyyy-MM-dd}")
+            : $"{name ?? email} cleared the due date";
+        _activity.Log(ticket, "DUE_DATE_SET", message, email, name,
+            payload: new { before, after = request.DueDate });
 
         await _db.SaveChangesAsync();
         return Ok(ticket);
@@ -276,9 +332,21 @@ public class TicketController : ControllerBase
         var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found" });
 
+        var before = ticket.AssignedTo;
         ticket.AssignedTo = request.AssignedTo;
         if (ticket.Status == "OPEN")
             ticket.Status = "IN_PROGRESS";
+
+        if (before != ticket.AssignedTo)
+        {
+            var email = CallerEmail();
+            var name = User.FindFirstValue("fullName");
+            var msg = string.IsNullOrWhiteSpace(request.AssignedTo)
+                ? $"{name ?? email} unassigned the ticket"
+                : $"{name ?? email} assigned the ticket to {request.AssignedTo}";
+            _activity.Log(ticket, "ASSIGNED", msg, email, name,
+                payload: new { fromAssignee = before, toAssignee = request.AssignedTo });
+        }
 
         await _db.SaveChangesAsync();
         return Ok(ticket);

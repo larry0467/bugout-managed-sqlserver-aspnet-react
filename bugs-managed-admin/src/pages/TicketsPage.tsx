@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Tabs, Divider, Checkbox } from 'antd';
+import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Tabs, Divider, Checkbox, Segmented, DatePicker, Upload, Image } from 'antd';
+import type { UploadFile } from 'antd';
+import dayjs from 'dayjs';
 import {
   PlayCircleOutlined,
   CheckCircleOutlined,
@@ -16,6 +18,13 @@ import {
   RobotOutlined,
   DownloadOutlined,
   ShareAltOutlined,
+  CalendarOutlined,
+  TableOutlined,
+  AppstoreAddOutlined,
+  PaperClipOutlined,
+  PictureOutlined,
+  HistoryOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -34,9 +43,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
+import LabelChips from '../components/LabelChips';
+import ChecklistPanel from '../components/ChecklistPanel';
+import TicketActivityTab from '../components/TicketActivityTab';
+import KanbanBoard from '../components/KanbanBoard';
+import CalendarView from '../components/CalendarView';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -297,6 +311,27 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [resolution, setResolution] = useState('');
   const [activeTabByTicket, setActiveTabByTicket] = useState<Record<number, string>>({});
 
+  // View mode: classic Table, Trello-style Board, or Calendar by due date.
+  // Persisted per-user so the choice survives reloads.
+  const [viewMode, setViewMode] = useState<'table' | 'board' | 'calendar'>(() => {
+    const saved = localStorage.getItem('bom-tickets-view-mode');
+    return (saved as any) || 'table';
+  });
+  useEffect(() => { localStorage.setItem('bom-tickets-view-mode', viewMode); }, [viewMode]);
+
+  // Per-ticket labels and checklist progress. Loaded in bulk after the
+  // ticket list comes back so cards and rows render label chips + progress
+  // without a per-card round trip.
+  const [orgLabels, setOrgLabels] = useState<TicketLabel[]>([]);
+  const [labelsByTicket, setLabelsByTicket] = useState<Record<number, TicketLabel[]>>({});
+  const [checklistByTicket, setChecklistByTicket] = useState<Record<number, { done: number; total: number }>>({});
+
+  // Chat: pending screenshot upload per ticket. Files queued here are
+  // uploaded after the note POST succeeds, then attached to that note.
+  const [chatScreenshots, setChatScreenshots] = useState<Record<number, File[]>>({});
+  const [attachmentsByNote, setAttachmentsByNote] = useState<Record<number, { id: number; fileName: string }[]>>({});
+  const [attachmentUrlCache, setAttachmentUrlCache] = useState<Record<number, string>>({});
+
   const currentUser: AuthUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
 
   // Drag-to-reorder state for the tickets grid columns. Initial value is
@@ -354,6 +389,87 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
 
   useEffect(() => { if (selectedProject) loadTickets(); }, [selectedProject, statusFilter, typeFilter]);
 
+  // Org-level label dictionary — loaded once for the page so attach/detach
+  // menus have something to choose from.
+  useEffect(() => {
+    labelApi.list().then(setOrgLabels).catch(() => {});
+  }, []);
+
+  // After tickets land, hydrate label + checklist summaries in parallel.
+  // Fire-and-forget — failures degrade gracefully (chips just don't render).
+  useEffect(() => {
+    if (tickets.length === 0) {
+      setLabelsByTicket({});
+      setChecklistByTicket({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(tickets.map((t) =>
+      Promise.all([
+        labelApi.listForTicket(t.id).catch(() => [] as TicketLabel[]),
+        checklistApi.list(t.id).catch(() => []),
+      ]).then(([labels, items]) => ({
+        id: t.id,
+        labels,
+        done: items.filter((i) => i.isDone).length,
+        total: items.length,
+      }))
+    )).then((rows) => {
+      if (cancelled) return;
+      const lbm: Record<number, TicketLabel[]> = {};
+      const ckm: Record<number, { done: number; total: number }> = {};
+      for (const r of rows) {
+        lbm[r.id] = r.labels;
+        ckm[r.id] = { done: r.done, total: r.total };
+      }
+      setLabelsByTicket(lbm);
+      setChecklistByTicket(ckm);
+    });
+    return () => { cancelled = true; };
+  }, [tickets]);
+
+  const reloadLabelsForTicket = async (ticketId: number) => {
+    try {
+      const labels = await labelApi.listForTicket(ticketId);
+      setLabelsByTicket((prev) => ({ ...prev, [ticketId]: labels }));
+    } catch {}
+  };
+
+  const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
+    try {
+      await ticketApi.setDueDate(ticketId, date ? date.toISOString() : null);
+      setTickets((prev) => prev.map((t) => t.id === ticketId ? { ...t, dueDate: date ? date.toISOString() : null } : t));
+    } catch {
+      message.error('Failed to update due date');
+    }
+  };
+
+  const loadNoteAttachments = async (ticketId: number) => {
+    try {
+      const all = await attachmentApi.list(ticketId);
+      const byNote: Record<number, { id: number; fileName: string }[]> = {};
+      for (const a of all) {
+        if (a.noteId == null) continue;
+        (byNote[a.noteId] ??= []).push({ id: a.id, fileName: a.fileName });
+      }
+      setAttachmentsByNote(byNote);
+    } catch {}
+  };
+
+  const handleAttachmentClick = async (ticketId: number, attachmentId: number) => {
+    let url = attachmentUrlCache[attachmentId];
+    if (!url) {
+      try {
+        url = await attachmentApi.getUrl(ticketId, attachmentId);
+        setAttachmentUrlCache((prev) => ({ ...prev, [attachmentId]: url }));
+      } catch {
+        message.error('Failed to load screenshot');
+        return;
+      }
+    }
+    window.open(url, '_blank');
+  };
+
   const handleStatusChange = async (ticketId: number, status: string) => {
     await ticketApi.updateStatus(ticketId, status);
     message.success('Status updated');
@@ -403,12 +519,37 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
 
   const handleAddNote = async (ticketId: number) => {
     const content = noteInput[ticketId]?.trim();
-    if (!content) return;
+    const pending = chatScreenshots[ticketId] || [];
+    if (!content && pending.length === 0) return;
     const type = noteType[ticketId] || 'COMMENT';
-    await noteApi.add(ticketId, content, type);
+    const created = await noteApi.add(ticketId, content || '(screenshot)', type);
+    // Upload any queued screenshots and link them to the new note.
+    for (const file of pending) {
+      try {
+        await attachmentApi.upload(ticketId, file, created.id);
+      } catch {
+        message.warning(`Screenshot ${file.name} failed to upload`);
+      }
+    }
     setNoteInput(prev => ({ ...prev, [ticketId]: '' }));
+    setChatScreenshots(prev => ({ ...prev, [ticketId]: [] }));
     loadNotes(ticketId);
+    loadNoteAttachments(ticketId);
     message.success('Note added');
+  };
+
+  // Clipboard paste handler — pasting an image while focused on the chat
+  // textarea queues it for upload with the next note send.
+  const handleChatPaste = (ticketId: number, e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const images = items
+      .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f != null);
+    if (images.length === 0) return;
+    e.preventDefault();
+    setChatScreenshots(prev => ({ ...prev, [ticketId]: [...(prev[ticketId] || []), ...images] }));
+    message.success(`Queued ${images.length} screenshot(s)`);
   };
 
   const handleDeleteNote = async (ticketId: number, noteId: number) => {
@@ -801,6 +942,54 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       },
     },
     {
+      title: 'Labels',
+      key: 'labels',
+      width: 220,
+      render: (_: any, record: Ticket) => (
+        <LabelChips
+          ticketId={record.id}
+          attached={labelsByTicket[record.id] || []}
+          available={orgLabels}
+          allowCreate
+          compact
+          onChange={() => {
+            reloadLabelsForTicket(record.id);
+            labelApi.list().then(setOrgLabels).catch(() => {});
+          }}
+        />
+      ),
+    },
+    {
+      title: 'Due',
+      dataIndex: 'dueDate',
+      key: 'dueDate',
+      width: 150,
+      sorter: (a: Ticket, b: Ticket) => {
+        const av = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const bv = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        return av - bv;
+      },
+      render: (v: string | null | undefined, record: Ticket) => {
+        const overdue = v
+          && new Date(v).getTime() < Date.now()
+          && record.status !== 'RESOLVED' && record.status !== 'CLOSED';
+        return (
+          <DatePicker
+            size="small"
+            value={v ? dayjs(v) : null}
+            onChange={(d) => handleDueDateChange(record.id, d)}
+            allowClear
+            placeholder="No due date"
+            suffixIcon={<CalendarOutlined style={{ color: overdue ? '#ef4444' : undefined }} />}
+            style={{
+              width: 130,
+              borderColor: overdue ? '#ef4444' : undefined,
+            }}
+          />
+        );
+      },
+    },
+    {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -931,7 +1120,18 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={3} style={{ margin: 0 }}>Tickets</Title>
+        <Space>
+          <Title level={3} style={{ margin: 0 }}>Tickets</Title>
+          <Segmented
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'table' | 'board' | 'calendar')}
+            options={[
+              { label: 'Table', value: 'table', icon: <TableOutlined /> },
+              { label: 'Board', value: 'board', icon: <AppstoreAddOutlined /> },
+              { label: 'Calendar', value: 'calendar', icon: <CalendarOutlined /> },
+            ]}
+          />
+        </Space>
         <Space wrap>
           <Select
             value={selectedProject}
@@ -970,6 +1170,31 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         </Space>
       </div>
 
+      {viewMode === 'board' && (
+        <KanbanBoard
+          tickets={(() => {
+            let rows = showClosed ? tickets : tickets.filter((t) => t.status !== 'CLOSED');
+            if (stageFilter) rows = rows.filter((t) => (t.escalationStage || 'NONE') === stageFilter);
+            return rows;
+          })()}
+          labelsByTicket={labelsByTicket}
+          checklistByTicket={checklistByTicket}
+          projectMap={projectMap}
+          onCardClick={() => { /* expand-in-place is table-only; clicking a card scrolls the user back to table */ setViewMode('table'); }}
+          onStatusChange={async (ticketId, status) => {
+            await handleStatusChange(ticketId, status);
+          }}
+        />
+      )}
+
+      {viewMode === 'calendar' && (
+        <CalendarView
+          tickets={tickets}
+          onCardClick={() => setViewMode('table')}
+        />
+      )}
+
+      {viewMode === 'table' && (
       <ResizeContext.Provider value={{ widths: columnWidths, onResize: handleColumnResize }}>
       <DndContext
         sensors={sensors}
@@ -1118,6 +1343,20 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                                   </Text>
                                 </div>
                                 <Text style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{note.content}</Text>
+                                {(attachmentsByNote[note.id] || []).length > 0 && (
+                                  <div style={{ marginTop: 6 }}>
+                                    {(attachmentsByNote[note.id] || []).map((a) => (
+                                      <Tag
+                                        key={a.id}
+                                        color="purple"
+                                        onClick={() => handleAttachmentClick(record.id, a.id)}
+                                        style={{ cursor: 'pointer' }}
+                                      >
+                                        <PictureOutlined /> {a.fileName}
+                                      </Tag>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               {!isSlack && (
                                 <Button
@@ -1151,22 +1390,52 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                       <TextArea
                         value={noteInput[record.id] || ''}
                         onChange={(e) => setNoteInput(prev => ({ ...prev, [record.id]: e.target.value }))}
-                        placeholder="Add a note..."
+                        onPaste={(e) => handleChatPaste(record.id, e)}
+                        placeholder="Add a note... (tip: type @name to mention, paste an image to attach)"
                         rows={1}
                         autoSize={{ minRows: 1, maxRows: 4 }}
                         style={{ flex: 1 }}
                         size="small"
                       />
+                      <Upload
+                        accept="image/*"
+                        showUploadList={false}
+                        beforeUpload={(file) => {
+                          setChatScreenshots(prev => ({ ...prev, [record.id]: [...(prev[record.id] || []), file as File] }));
+                          return false;
+                        }}
+                        multiple
+                      >
+                        <Button size="small" icon={<PictureOutlined />} title="Attach screenshot" />
+                      </Upload>
                       <Button
                         type="primary"
                         size="small"
                         icon={<SendOutlined />}
                         onClick={() => handleAddNote(record.id)}
-                        disabled={!noteInput[record.id]?.trim()}
+                        disabled={!noteInput[record.id]?.trim() && (chatScreenshots[record.id]?.length ?? 0) === 0}
                       >
                         Add
                       </Button>
                     </div>
+                    {/* Queued screenshots preview */}
+                    {(chatScreenshots[record.id]?.length ?? 0) > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        {(chatScreenshots[record.id] || []).map((f, i) => (
+                          <Tag
+                            key={i}
+                            color="purple"
+                            closable
+                            onClose={() => setChatScreenshots(prev => ({
+                              ...prev,
+                              [record.id]: (prev[record.id] || []).filter((_, idx) => idx !== i),
+                            }))}
+                          >
+                            <PaperClipOutlined /> {f.name || 'screenshot.png'}
+                          </Tag>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1193,6 +1462,23 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                     { key: 'details', label: 'Details', children: detailsContent },
                     { key: 'chat', label: 'Chat', children: chatContent },
                     {
+                      key: 'checklist',
+                      label: (<span><CheckSquareOutlined /> Checklist</span>),
+                      children: (
+                        <ChecklistPanel
+                          ticketId={record.id}
+                          onProgressChange={(done, total) =>
+                            setChecklistByTicket((prev) => ({ ...prev, [record.id]: { done, total } }))
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: 'activity',
+                      label: (<span><HistoryOutlined /> Activity</span>),
+                      children: <TicketActivityTab ticketId={record.id} active={activeTab === 'activity'} />,
+                    },
+                    {
                       key: 'claude',
                       label: (<span><RobotOutlined /> Claude Activity</span>),
                       children: <ClaudeActivityTab ticketId={record.id} active={activeTab === 'claude'} />,
@@ -1205,6 +1491,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           onExpand: (expanded, record) => {
             if (expanded && !notesMap[record.id]) {
               loadNotes(record.id);
+              loadNoteAttachments(record.id);
             }
           },
         }}
@@ -1213,6 +1500,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         </SortableContext>
       </DndContext>
       </ResizeContext.Provider>
+      )}
 
       {/* Video Modal */}
       <Modal
