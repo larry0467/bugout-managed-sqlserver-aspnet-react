@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Tag, Select, Button, Popover, Space, Input, message } from 'antd';
-import { TagOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Tag, Select, Button, Popover, Space, Input, message, Popconfirm, Divider, Typography } from 'antd';
+import { TagOutlined, PlusOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import { labelApi, type TicketLabel } from '../api';
 
 interface LabelChipsProps {
@@ -62,6 +62,18 @@ const LabelChips: React.FC<LabelChipsProps> = ({ ticketId, attached, available, 
     }
   };
 
+  // Deleting from the org dictionary cascades to every ticket using this
+  // label — Popconfirm guards against accidental nukes.
+  const remove = async (label: TicketLabel) => {
+    try {
+      await labelApi.remove(label.id);
+      message.success(`Deleted label "${label.name}"`);
+      onChange();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to delete label');
+    }
+  };
+
   const attachedIds = new Set(attached.map((l) => l.id));
   const selectable = available.filter((l) => !attachedIds.has(l.id));
 
@@ -120,6 +132,42 @@ const LabelChips: React.FC<LabelChipsProps> = ({ ticketId, attached, available, 
             Create + attach
           </Button>
         </div>
+      )}
+      {allowCreate && available.length > 0 && (
+        <>
+          <Divider style={{ margin: '10px 0 6px' }} />
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            Manage labels
+          </Typography.Text>
+          <div style={{ marginTop: 4, maxHeight: 180, overflowY: 'auto' }}>
+            {available.map((l) => (
+              <div
+                key={l.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 6,
+                  padding: '2px 0',
+                }}
+              >
+                <Tag color={l.color} style={{ color: textForBg(l.color), border: 'none', margin: 0 }}>
+                  {l.name}
+                </Tag>
+                <Popconfirm
+                  title={`Delete label "${l.name}"?`}
+                  description="This removes it from every ticket that uses it."
+                  okText="Delete"
+                  okButtonProps={{ danger: true }}
+                  cancelText="Cancel"
+                  onConfirm={() => remove(l)}
+                >
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
