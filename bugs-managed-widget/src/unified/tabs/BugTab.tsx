@@ -143,6 +143,14 @@ export default function BugTab({
   const networkErrorsRef    = useRef<CapturedNetworkError[]>([]);
   const styleRef            = useRef<HTMLStyleElement | null>(null);
 
+  // ── Videos Managed extension bridge ────────────────────────────────────
+  // When the VM chrome extension is installed, recording lives in the
+  // extension's offscreen document — survives a host-page refresh that
+  // would kill an in-page getDisplayMedia stream. We probe on mount;
+  // when absent (the default), the existing in-page recorder is used.
+  const [extPresent, setExtPresent] = useState(false);
+  const extRequestIdRef = useRef<string | null>(null);
+
   // ── Inject keyframes once ────────────────────────────────────────────────
   useEffect(() => {
     setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
@@ -259,6 +267,51 @@ export default function BugTab({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Videos Managed extension: mark widget presence + probe ──────────────
+  // The marker is the origin guard the extension's content script checks
+  // before bridging postMessage commands — without it, no random page can
+  // drive the extension via window.postMessage.
+  useEffect(() => {
+    document.documentElement.setAttribute('data-bugout-widget', '1');
+
+    let resolved = false;
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.source !== window) return;
+      const d = ev.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'VM_EXT_READY') {
+        if (!resolved) { resolved = true; setExtPresent(true); }
+      } else if (d.type === 'VM_BUGOUT_COMPLETE' && d.requestId === extRequestIdRef.current) {
+        // Decode the data URL the extension sent us and feed it into the
+        // existing upload pipeline by setting recordedBlob.
+        fetch(d.dataUrl)
+          .then((r) => r.blob())
+          .then((blob) => {
+            setRecordedBlob(blob);
+            setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
+            setIsRecording(false);
+          })
+          .catch((err) => {
+            console.error('[Bug Out] Failed to decode extension recording:', err);
+            setIsRecording(false);
+          });
+      } else if (d.type === 'VM_BUGOUT_ERROR') {
+        console.warn('[Bug Out] Extension recording error:', d.error);
+        setIsRecording(false);
+      }
+    };
+    window.addEventListener('message', onMessage);
+
+    // Probe. If the extension is loaded, content.js answers with VM_EXT_READY.
+    const requestId = `probe-${Math.random().toString(36).slice(2)}`;
+    window.postMessage({ type: 'VM_BUGOUT_PROBE', requestId }, '*');
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      document.documentElement.removeAttribute('data-bugout-widget');
+    };
+  }, []);
+
   // ── Form helpers ─────────────────────────────────────────────────────────
   const resetForm = () => {
     setTitle(''); setDescription('');
@@ -325,7 +378,51 @@ export default function BugTab({
   };
 
   // ── Recording helpers ────────────────────────────────────────────────────
+  // Extension path: defer the MediaStream to the VM extension so a host-
+  // page refresh cannot kill it. Speech transcription still runs on the
+  // page since that's a page-level Web Speech API.
+  const startRecordingViaExt = useCallback(() => {
+    const requestId = `rec-${Math.random().toString(36).slice(2)}`;
+    extRequestIdRef.current = requestId;
+    window.postMessage({
+      type: 'VM_BUGOUT_START',
+      requestId,
+      options: { quality: 1080, mic: true, systemAudio: true }
+    }, '*');
+    setIsRecording(true);
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition    = new SpeechRecognition();
+      recognition.continuous     = true;
+      recognition.interimResults = true;
+      recognition.lang           = 'en-US';
+      let finalTranscript        = '';
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript + ' ';
+          else interim += event.results[i][0].transcript;
+        }
+        setTranscript(finalTranscript + interim);
+      };
+      recognition.onerror = () => {};
+      recognition.start();
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const stopRecordingViaExt = useCallback(() => {
+    if (extRequestIdRef.current) {
+      window.postMessage({ type: 'VM_BUGOUT_STOP', requestId: extRequestIdRef.current }, '*');
+    }
+    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
+    // setIsRecording(false) happens when VM_BUGOUT_COMPLETE arrives so
+    // the user keeps seeing the "Recording" state until the blob lands.
+  }, []);
+
   const startRecording = useCallback(async () => {
+    if (extPresent) { startRecordingViaExt(); return; }
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'monitor' } as MediaTrackConstraints,
@@ -398,14 +495,15 @@ export default function BugTab({
         recognitionRef.current = recognition;
       }
     } catch (err) { console.error('Failed to start recording:', err); }
-  }, []);
+  }, [extPresent, startRecordingViaExt]);
 
   const stopRecording = useCallback(() => {
+    if (extPresent) { stopRecordingViaExt(); return; }
     if (beforeUnloadRef.current) { window.removeEventListener('beforeunload', beforeUnloadRef.current); beforeUnloadRef.current = null; }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
     if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
     setIsRecording(false);
-  }, []);
+  }, [extPresent, stopRecordingViaExt]);
 
   // ── Shared button style ──────────────────────────────────────────────────
   const btnStyle: React.CSSProperties = {
@@ -543,9 +641,14 @@ export default function BugTab({
             {uploadFile && <span style={{ fontSize: 11, opacity: 0.7 }}>{uploadFile.name}</span>}
           </div>
         ) : isRecording ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'bom-pulse 1.4s ease-out infinite' }} />
             <span style={{ fontSize: 12, color: '#e53935', fontWeight: 600 }}>Recording...</span>
+            {extPresent && (
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: 'linear-gradient(90deg, #6366F1, #2DD4BF)', color: '#fff', letterSpacing: 0.3 }}>
+                via Videos Managed
+              </span>
+            )}
             <button onClick={stopRecording} style={{ ...btnStyle, padding: '6px 14px', fontSize: 12, background: '#e53935', color: '#fff' }}>Stop Recording</button>
           </div>
         ) : recordedBlob ? (
@@ -584,6 +687,11 @@ export default function BugTab({
           <span style={{ opacity: 0.45, fontSize: 14, pointerEvents: 'none' }}>&#9776;</span>
           <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#e53935', animation: 'bom-pulse 1.4s ease-out infinite', pointerEvents: 'none' }} />
           <span style={{ fontWeight: 600, pointerEvents: 'none' }}>Recording</span>
+          {extPresent && (
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 999, background: 'linear-gradient(90deg, #6366F1, #2DD4BF)', color: '#fff', letterSpacing: 0.3, pointerEvents: 'none' }}>
+              via Videos Managed
+            </span>
+          )}
           <div data-bom-stop="true" onClick={stopRecording} style={{ cursor: 'pointer', background: '#e53935', color: '#fff', borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>STOP</div>
         </div>
       )}
