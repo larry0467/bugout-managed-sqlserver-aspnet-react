@@ -51,17 +51,3 @@ declare global {
     }
 }
 
-
-declare global {
-    interface Window {
-        __MANAGED_LAUNCHER_CONFIG__?: UnifiedLauncherConfig;
-        ManagedLauncher?: {
-            mount: (config: UnifiedLauncherConfig) => void;
-            unmount: () => void;
-            open: (tab?: PanelTab) => void;
-            close: () => void;
-            setUser: (email: string, name: string) => void;
-        };
-    }
-}
-
