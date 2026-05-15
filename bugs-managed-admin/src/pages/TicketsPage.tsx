@@ -25,6 +25,8 @@ import {
   PictureOutlined,
   HistoryOutlined,
   CheckSquareOutlined,
+  UserOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -1471,6 +1473,28 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             </Space>
           </div>
         )}
+
+        {/* Provenance strip — who reported it, from which application,
+            and when. Read-only; the data is captured by the widget at
+            submit time but was previously only visible as table columns. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <UserOutlined style={{ opacity: 0.6 }} />
+            <Text type="secondary">Reported by</Text>
+            <Text strong>{record.submittedBy || 'Anonymous'}</Text>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <AppstoreOutlined style={{ opacity: 0.6 }} />
+            <Text type="secondary">Application</Text>
+            <Text strong>{projectMap[record.projectId] || `Project ${record.projectId}`}</Text>
+            {record.tenantName && <Text type="secondary">({record.tenantName})</Text>}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <ClockCircleOutlined style={{ opacity: 0.6 }} />
+            <Text type="secondary">Submitted</Text>
+            <Text strong>{dayjs(record.createdAt).format('MMM D, YYYY h:mm A')}</Text>
+          </span>
+        </div>
 
         {/* Edit bar — same fields the table exposes as columns, but
             usable from the Board / Calendar modal (where there's no
