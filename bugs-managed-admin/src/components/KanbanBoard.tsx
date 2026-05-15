@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Card, Tag, Typography, Tooltip, Space, Select } from 'antd';
-import { CalendarOutlined, AppstoreOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons';
+import { CalendarOutlined, AppstoreOutlined, RobotOutlined, UserOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import {
   DndContext,
   PointerSensor,
@@ -149,6 +149,20 @@ const BoardCard: React.FC<BoardCardProps> = ({ ticket, labels, checklistTotal, c
             </Tooltip>
           )}
         </Space>
+
+        {/* Provenance — who reported it and when. The application is
+            already shown as the cyan tag above. Mirrors the strip in
+            the ticket detail modal so the board carries the same context. */}
+        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 11, opacity: 0.65 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <UserOutlined />
+            {ticket.submittedBy || 'Anonymous'}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <ClockCircleOutlined />
+            {new Date(ticket.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+        </div>
 
         {/* Inline assignee Select — always rendered, shows "Unassigned"
             when there's no value so the card itself is the assign control.
