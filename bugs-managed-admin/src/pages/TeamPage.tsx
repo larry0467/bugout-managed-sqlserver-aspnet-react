@@ -38,6 +38,7 @@ const TeamPage: React.FC = () => {
   const [projectsSaving, setProjectsSaving] = useState<Record<number, boolean>>({});
 
   const currentUser = JSON.parse(localStorage.getItem('bom_user') || '{}');
+  const canManageTeam = currentUser.role === 'PLATFORM_OWNER' || currentUser.role === 'SUPER_ADMIN';
 
   const load = () => {
     setLoading(true);
@@ -132,7 +133,7 @@ const TeamPage: React.FC = () => {
       key: 'role',
       width: 180,
       render: (role: string, record: TeamMember) => {
-        if (record.email === currentUser.email) {
+        if (!canManageTeam || record.email === currentUser.email) {
           return <Tag icon={roleIcons[role]} color={roleColors[role]}>{roleLabels[role]}</Tag>;
         }
         return (
@@ -159,6 +160,10 @@ const TeamPage: React.FC = () => {
       render: (specialty: string | undefined, record: TeamMember) => {
         if (record.role !== 'DEVELOPER' && record.role !== 'PLATFORM_OWNER' && record.role !== 'SUPER_ADMIN')
           return <span style={{ color: '#bbb' }}>—</span>;
+        if (!canManageTeam) {
+          const labels: Record<string, string> = { FRONTEND: 'Frontend', BACKEND: 'Backend', FULLSTACK: 'Full-stack' };
+          return <span>{specialty ? labels[specialty] ?? specialty : '—'}</span>;
+        }
         return (
           <Select
             value={specialty}
@@ -189,6 +194,18 @@ const TeamPage: React.FC = () => {
           record.projectIds && record.projectIds.length > 0
             ? record.projectIds
             : ['all'];
+
+        if (!canManageTeam) {
+          return (
+            <Space size={[4, 4]} wrap>
+              {value.map((v) =>
+                v === 'all'
+                  ? <Tag key="all" color="blue">All</Tag>
+                  : <Tag key={v}>{projectMap[v as number] || `#${v}`}</Tag>
+              )}
+            </Space>
+          );
+        }
 
         const options = [
           { label: 'All Projects', value: 'all' as any },
@@ -252,6 +269,7 @@ const TeamPage: React.FC = () => {
       key: 'actions',
       width: 100,
       render: (_: any, record: TeamMember) => {
+        if (!canManageTeam) return null;
         if (record.email === currentUser.email) return null;
         return (
           <Popconfirm
@@ -274,9 +292,11 @@ const TeamPage: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>Team</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
-          Add Team Member
-        </Button>
+        {canManageTeam && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setInviteOpen(true)}>
+            Add Team Member
+          </Button>
+        )}
       </div>
 
       <Table

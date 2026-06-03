@@ -315,6 +315,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   // has at least one of the picked labels attached (OR semantics — most
   // useful for "show me everything tagged 'regression' OR 'customer-blocked'").
   const [labelFilter, setLabelFilter] = useState<number[]>([]);
+  // Free-text search. Substring-matches across title, description, id,
+  // assignee, type, status display, project name, label names, escalation
+  // stage, page URL, tenant, and submitter. Applies to Table + Board +
+  // Calendar so the count + view stay in sync as the user types.
+  const [searchQuery, setSearchQuery] = useState('');
   // Sort applied to the unified ticket list before it hits Table / Board /
   // Calendar. Table users can still click a column header to override this,
   // but Board + Calendar respect it as their only ordering signal.
@@ -505,6 +510,40 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         return attached.some((l) => set.has(l.id));
       });
     }
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length > 0) {
+      const statusLabel: Record<string, string> = Object.fromEntries(
+        orgStatuses.map((s) => [s.key, s.displayName ?? s.key])
+      );
+      rows = rows.filter((t) => {
+        const labels = (labelsByTicket[t.id] || []).map((l) => l.name).join(' ');
+        const haystack = [
+          String(t.id),
+          `#${t.id}`,
+          t.title,
+          t.description,
+          t.assignedTo,
+          t.submittedBy,
+          t.ticketType,
+          t.status,
+          statusLabel[t.status],
+          t.escalationStage,
+          t.priority,
+          t.developerCategory,
+          t.resolution,
+          t.currentPageUrl,
+          t.currentPageName,
+          t.tenantName,
+          t.environment,
+          projectMap[t.projectId],
+          labels,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
     // Sort by submitted (= createdAt) date. Copy first — `.sort` mutates,
     // and `rows` may still alias `tickets` if no filter trimmed it.
     rows = [...rows].sort((a, b) => {
@@ -513,7 +552,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       return sortOrder === 'newest' ? bv - av : av - bv;
     });
     return rows;
-  }, [tickets, showClosed, stageFilter, assigneeFilter, labelFilter, labelsByTicket, closedLikeKeys, sortOrder]);
+  }, [tickets, showClosed, stageFilter, assigneeFilter, labelFilter, labelsByTicket, closedLikeKeys, sortOrder, searchQuery, orgStatuses, projectMap]);
 
   const handleDueDateChange = async (ticketId: number, date: dayjs.Dayjs | null) => {
     try {
@@ -1633,6 +1672,13 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           ]}
         />
         <Space wrap>
+          <Input.Search
+            allowClear
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search tickets…"
+            style={{ width: 260 }}
+          />
           <Select
             value={selectedProject}
             onChange={setSelectedProject}
