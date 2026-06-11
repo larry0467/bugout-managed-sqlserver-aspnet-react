@@ -322,6 +322,12 @@ public class TicketController : ControllerBase
             _ = _notify.NotifyReporterResolvedAsync(ticket);
         }
 
+        // Tell the reporter when work actually starts. Assignment no longer
+        // flips the status, so this status change is the real "in progress"
+        // moment. Fire only on the transition into IN_PROGRESS.
+        if (fromStatus != ticket.Status && ticket.Status == "IN_PROGRESS")
+            _ = _notify.NotifyReporterInProgressAsync(ticket);
+
         return Ok(ticket);
     }
 
@@ -351,6 +357,57 @@ public class TicketController : ControllerBase
         return Ok(ticket);
     }
 
+    // Edit a ticket's description (and optionally why). Submitters often want
+    // to sharpen or re-emphasize the task after creating it. Allowed for
+    // PLATFORM_OWNER, SUPER_ADMIN, and DEVELOPER (VIEWER is excluded). The
+    // optional reason is captured in the audit stream and appended to the
+    // ticket's stage history so it surfaces in Activity.
+    [HttpPut("{id}/description")]
+    [Authorize(Roles = "PLATFORM_OWNER,SUPER_ADMIN,DEVELOPER")]
+    public async Task<IActionResult> UpdateDescription(long id, [FromBody] UpdateDescriptionRequest request)
+    {
+        if (request == null || request.Description == null)
+            return BadRequest(new { message = "description is required" });
+        if (request.Description.Length > 10000)
+            return BadRequest(new { message = "description must be 10000 chars or fewer" });
+        if (request.Reason != null && request.Reason.Length > 2000)
+            return BadRequest(new { message = "reason must be 2000 chars or fewer" });
+
+        var ticket = await GetTicketForCurrentOrgAsync(id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found" });
+
+        var caller = CallerEmail();
+        var now = DateTime.UtcNow;
+        var previous = ticket.Description;
+        ticket.Description = request.Description;
+        ticket.UpdatedAt = now;
+
+        // Surface the edit (and reason, if any) in the ticket's history so it
+        // shows up in Activity. Reuse the stage-history note column without
+        // moving the stage — FromStage == ToStage marks a non-transition edit.
+        var historyNote = string.IsNullOrWhiteSpace(request.Reason)
+            ? "Description edited"
+            : $"Description edited — {request.Reason}";
+        RecordStageTransition(ticket, ticket.EscalationStage, ticket.EscalationStage, caller, now, historyNote);
+
+        await _db.SaveChangesAsync();
+
+        _audit.Record(
+            action: "ticket.update-description",
+            outcome: "success",
+            actorEmail: caller,
+            organizationId: ticket.OrganizationId,
+            targetTicketId: ticket.Id,
+            extra: new Dictionary<string, object?>
+            {
+                ["reason"] = request.Reason,
+                ["previousLength"] = previous?.Length ?? 0,
+                ["newLength"] = request.Description.Length,
+            });
+
+        return Ok(ticket);
+    }
+
     [HttpPut("{id}/category")]
     [Authorize]
     public async Task<IActionResult> UpdateCategory(long id, [FromBody] UpdateCategoryRequest request)
@@ -372,8 +429,9 @@ public class TicketController : ControllerBase
 
         var before = ticket.AssignedTo;
         ticket.AssignedTo = request.AssignedTo;
-        if (ticket.Status == "OPEN")
-            ticket.Status = "IN_PROGRESS";
+        // Status intentionally left untouched on assignment. The assigned
+        // user moves it OPEN -> IN_PROGRESS themselves when they actually
+        // start working (see issue: auto-flip was misrepresenting progress).
 
         if (before != ticket.AssignedTo)
         {
@@ -478,14 +536,18 @@ public class TicketController : ControllerBase
         ticket.EscalationStage = "ASSIGNED_HUMAN";
         ticket.AssignedAt = now;
         ticket.AssignedBy = caller;
-        if (ticket.Status == "OPEN")
-            ticket.Status = "IN_PROGRESS";
+        // Status intentionally left untouched on assignment. The assigned
+        // developer moves it OPEN -> IN_PROGRESS themselves when they actually
+        // start working — the escalation stage (ASSIGNED_HUMAN) already
+        // reflects that the ticket has been handed off.
         RecordStageTransition(ticket, fromStage, ticket.EscalationStage, caller, now);
 
         await _db.SaveChangesAsync();
-        _ = Task.WhenAll(
-            _notify.NotifyTicketAssignedToDevAsync(ticket, request.DeveloperEmail),
-            _notify.NotifyReporterInProgressAsync(ticket));
+        // Notify the dev they've been assigned. We no longer fire the reporter
+        // "in progress" notification here — the ticket isn't in progress until
+        // the dev moves it there. Wire that to the status change if reporters
+        // should be told when work actually starts.
+        _ = _notify.NotifyTicketAssignedToDevAsync(ticket, request.DeveloperEmail);
         return Ok(ticket);
     }
 
@@ -1068,6 +1130,7 @@ public class TicketController : ControllerBase
     }
 
     public record UpdateStatusRequest(string Status, string? AssignedTo);
+    public record UpdateDescriptionRequest(string Description, string? Reason);
     public record UpdateCategoryRequest(string DeveloperCategory);
     public record AssignRequest(string AssignedTo);
     public record ResolveRequest(string Resolution);

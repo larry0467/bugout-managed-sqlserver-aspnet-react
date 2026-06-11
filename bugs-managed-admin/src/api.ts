@@ -285,6 +285,8 @@ export const ticketApi = {
   get: (id: number) => api.get<Ticket>(`/tickets/${id}`).then(r => r.data),
   updateStatus: (id: number, status: string, assignedTo?: string) =>
     api.put<Ticket>(`/tickets/${id}/status`, { status, assignedTo }).then(r => r.data),
+  updateDescription: (id: number, description: string, reason?: string) =>
+    api.put<Ticket>(`/tickets/${id}/description`, { description, reason }).then(r => r.data),
   resolve: (id: number, resolution: string) =>
     api.put<Ticket>(`/tickets/${id}/resolve`, { resolution }).then(r => r.data),
   escalateToPlatformOwner: (id: number) =>

@@ -27,6 +27,7 @@ import {
   CheckSquareOutlined,
   UserOutlined,
   ClockCircleOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -335,6 +336,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [shareLoading, setShareLoading] = useState<number | null>(null);
   const [resolveModal, setResolveModal] = useState<Ticket | null>(null);
   const [resolution, setResolution] = useState('');
+  // Edit-description modal
+  const [editDescModal, setEditDescModal] = useState<Ticket | null>(null);
+  const [editDescText, setEditDescText] = useState('');
+  const [editDescReason, setEditDescReason] = useState('');
+  const [editDescSaving, setEditDescSaving] = useState(false);
   const [activeTabByTicket, setActiveTabByTicket] = useState<Record<number, string>>({});
 
   // View mode: classic Table, Trello-style Board, or Calendar by due date.
@@ -409,7 +415,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   useEffect(() => {
     projectApi.list().then((data) => {
       setProjects(data);
-      if (isPlatformAdmin && data.length > 1) {
+      // Default to "All Applications" whenever that option is available
+      // (it renders when isPlatformAdmin || data.length > 1 — see
+      // projectOptions below). Users can narrow to a single app after.
+      // Only fall back to a single project when "All" isn't an option.
+      if (isPlatformAdmin || data.length > 1) {
         setSelectedProject('all');
       } else if (data.length > 0) {
         setSelectedProject(data[0].id);
@@ -617,6 +627,41 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     await ticketAssignApi.updateCategory(ticketId, category);
     message.success('Developer category updated');
     loadTickets();
+  };
+
+  // Who may edit a ticket's description: PLATFORM_OWNER, SUPER_ADMIN, and
+  // DEVELOPER (VIEWER excluded). Mirrors the server-side gate on
+  // PUT /tickets/{id}/description.
+  const canEditDescription = (_ticket: Ticket): boolean =>
+    currentUser?.role === 'PLATFORM_OWNER'
+    || currentUser?.role === 'SUPER_ADMIN'
+    || currentUser?.role === 'DEVELOPER';
+
+  const openEditDescription = (ticket: Ticket) => {
+    setEditDescModal(ticket);
+    setEditDescText(ticket.description ?? '');
+    setEditDescReason('');
+  };
+
+  const handleSaveDescription = async () => {
+    if (!editDescModal) return;
+    const text = editDescText.trim();
+    if (!text) {
+      message.warning('Description cannot be empty');
+      return;
+    }
+    setEditDescSaving(true);
+    try {
+      const reason = editDescReason.trim();
+      const updated = await ticketApi.updateDescription(editDescModal.id, text, reason || undefined);
+      setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      message.success('Description updated');
+      setEditDescModal(null);
+    } catch {
+      message.error('Could not update description');
+    } finally {
+      setEditDescSaving(false);
+    }
   };
 
   const refreshTicket = async (ticketId: number) => {
@@ -1208,10 +1253,24 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const renderTicketDetail = (record: Ticket) => {
     const detailsContent = (
       <div>
-        {record.description && (
+        {(record.description || canEditDescription(record)) && (
           <div style={{ marginBottom: 12 }}>
-            <Text strong>Description:</Text>
-            <p>{record.description}</p>
+            <Space size={4}>
+              <Text strong>Description:</Text>
+              {canEditDescription(record) && (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => openEditDescription(record)}
+                >
+                  Edit
+                </Button>
+              )}
+            </Space>
+            {record.description
+              ? <p style={{ marginBottom: 0 }}>{record.description}</p>
+              : <p style={{ marginBottom: 0, fontStyle: 'italic', color: '#888' }}>No description yet.</p>}
           </div>
         )}
         {record.transcript && (
@@ -1335,7 +1394,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             )}
 
             {/* Add note form */}
-            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%' }}>
               <Select
                 value={noteType[record.id] || 'COMMENT'}
                 onChange={(val) => setNoteType(prev => ({ ...prev, [record.id]: val }))}
@@ -1356,17 +1415,16 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
                   return false;
                 }}
                 multiple
-                style={{ flex: 1, padding: 0 }}
+                style={{ flex: 1, minWidth: 520, padding: 0 }}
               >
                 <TextArea
                   value={noteInput[record.id] || ''}
                   onChange={(e) => setNoteInput(prev => ({ ...prev, [record.id]: e.target.value }))}
                   onPaste={(e) => handleChatPaste(record.id, e)}
                   placeholder="Add a note... (type @name to mention, paste or drop a file to attach)"
-                  rows={1}
-                  autoSize={{ minRows: 1, maxRows: 4 }}
-                  style={{ flex: 1 }}
-                  size="small"
+                  rows={3}
+                  autoSize={{ minRows: 3, maxRows: 10 }}
+                  style={{ flex: 1, fontSize: 14, lineHeight: 1.5 }}
                 />
               </Upload.Dragger>
               <Upload
@@ -1948,6 +2006,37 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
           value={resolution}
           onChange={(e) => setResolution(e.target.value)}
           placeholder="Describe how this was resolved..."
+        />
+      </Modal>
+
+      {/* Edit Description Modal */}
+      <Modal
+        title={`Edit Description — Ticket #${editDescModal?.id}`}
+        open={editDescModal !== null}
+        onOk={handleSaveDescription}
+        confirmLoading={editDescSaving}
+        onCancel={() => setEditDescModal(null)}
+        okText="Save"
+        okButtonProps={{ disabled: !editDescText.trim() }}
+      >
+        <Text strong style={{ display: 'block', marginBottom: 4 }}>Description</Text>
+        <TextArea
+          rows={6}
+          value={editDescText}
+          onChange={(e) => setEditDescText(e.target.value)}
+          placeholder="Update the task description..."
+          maxLength={10000}
+          showCount
+        />
+        <Text strong style={{ display: 'block', margin: '12px 0 4px' }}>
+          Reason for change <Text type="secondary" style={{ fontWeight: 400 }}>(optional)</Text>
+        </Text>
+        <TextArea
+          rows={2}
+          value={editDescReason}
+          onChange={(e) => setEditDescReason(e.target.value)}
+          placeholder="e.g. Clarified scope / added emphasis"
+          maxLength={2000}
         />
       </Modal>
     </div>

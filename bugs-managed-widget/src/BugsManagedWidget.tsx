@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import fixWebmDuration from 'fix-webm-duration';
 import type { BugOutManagedConfig } from './types';
 
 // ─── Recording draft persistence (IndexedDB) ────────────────────────────────
@@ -179,6 +180,9 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // Wall-clock ms when the current recording started — used to patch the
+  // WebM Duration so the resulting blob is seekable (MediaRecorder omits it).
+  const recordingStartRef = useRef<number>(0);
   const micStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   const styleRef = useRef<HTMLStyleElement | null>(null);
@@ -508,9 +512,26 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
           dbSaveChunk(e.data); // persist chunk so a page refresh doesn't lose it
         }
       };
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const allChunks = [...recoveredChunksRef.current, ...chunksRef.current];
-        const blob = new Blob(allChunks, { type: 'video/webm' });
+        const rawBlob = new Blob(allChunks, { type: 'video/webm' });
+
+        // MediaRecorder produces WebM with no Duration element, which makes
+        // the file unseekable — no scrubbing, no forward/rewind, no total
+        // time. Patch the measured elapsed duration into the EBML header so
+        // the player gets full transport controls. Best-effort: if patching
+        // fails for any reason, fall back to the raw blob (still playable,
+        // just not seekable) rather than losing the recording.
+        let blob = rawBlob;
+        const elapsedMs = recordingStartRef.current > 0 ? Date.now() - recordingStartRef.current : 0;
+        if (elapsedMs > 0) {
+          try {
+            blob = await fixWebmDuration(rawBlob, elapsedMs, { logger: false });
+          } catch {
+            blob = rawBlob;
+          }
+        }
+
         recoveredChunksRef.current = [];
         dbClearChunks(); // now safe to clear — we have the merged blob
         setRecordedBlob(blob);
@@ -521,6 +542,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
         micStreamRef.current = null;
       };
+      recordingStartRef.current = Date.now();
       mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
 
