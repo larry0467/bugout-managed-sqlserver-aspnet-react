@@ -1988,6 +1988,22 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             src={videoSasUrl}
             controls
             autoPlay
+            // MediaRecorder WebM often reports duration === Infinity until the
+            // browser has scanned to the end, so the player shows the elapsed
+            // time but no total length (and the scrub bar has nothing to size
+            // against). Force it: seek to the far end so the browser computes
+            // the real duration, then snap back to the start. Fires once.
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              if (!isFinite(v.duration)) {
+                const onTimeUpdate = () => {
+                  v.removeEventListener('timeupdate', onTimeUpdate);
+                  v.currentTime = 0;
+                };
+                v.addEventListener('timeupdate', onTimeUpdate);
+                v.currentTime = 1e101;
+              }
+            }}
             style={{ width: '100%', borderRadius: 8 }}
           />
         )}
