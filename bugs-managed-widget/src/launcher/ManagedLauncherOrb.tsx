@@ -1,13 +1,35 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getOrCreateRegistry } from './LauncherRegistry';
 import type { LauncherTool } from './LauncherRegistry';
+import { useHostTheme } from './hostTheme';
 
 interface Props {
   position?: 'bottom-right' | 'bottom-left';
+  /**
+   * Light/dark for the orb menu surface. When omitted, the orb auto-detects the
+   * host app's mode and tracks it live (e.g. host toggles dark→light).
+   */
   theme?: 'dark' | 'light';
+  /**
+   * [core, ring] brand colors for the orb. Host apps may pass these via
+   * window.__BUG_OUT_CONFIG__.orbColors to pin a palette. When omitted, the orb
+   * auto-detects the host app's brand colors so it blends in rather than
+   * standing out, and re-blends when the host changes theme.
+   */
+  orbColors?: [string, string];
 }
 
-const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme = 'dark' }) => {
+const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme, orbColors }) => {
+  // Auto-detect the host palette/mode unless the host pinned both explicitly.
+  const autoColors = !orbColors;
+  const host = useHostTheme(autoColors || theme === undefined);
+
+  const core = orbColors?.[0] ?? host.accent;
+  const ring = orbColors?.[1] ?? host.accentRing;
+  // Halo/glow derived from the core color (~55% alpha) so the drop-shadow bloom
+  // and menu accents track the brand instead of a hardcoded indigo.
+  const glow = `${core}8c`;
+  const glowFaint = `${core}22`;
   const [tools, setTools] = useState<LauncherTool[]>(() => getOrCreateRegistry().getTools());
   const [menuOpen, setMenuOpen] = useState(false);
   const orbIdRef = useRef(`ml-${Math.random().toString(36).slice(2, 8)}`);
@@ -27,14 +49,14 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
         position: relative; display: inline-flex; align-items: center; justify-content: center;
         background: transparent; border: 0; padding: 0; cursor: pointer; outline: none;
       }
-      .ml-btn:focus-visible { box-shadow: 0 0 0 3px #6366f18c; border-radius: 50%; }
+      .ml-btn:focus-visible { box-shadow: 0 0 0 3px var(--ml-glow, #6366f18c); border-radius: 50%; }
       .ml-orb {
         position: relative; width: 100%; height: 100%; border-radius: 50%;
-        filter: drop-shadow(0 0 2px #6366f18c) drop-shadow(0 0 12px #6366f18c) drop-shadow(0 0 28px #6366f18c);
+        filter: drop-shadow(0 0 2px var(--ml-glow, #6366f18c)) drop-shadow(0 0 12px var(--ml-glow, #6366f18c)) drop-shadow(0 0 28px var(--ml-glow, #6366f18c));
         transition: filter 220ms ease-out;
       }
       .ml-btn:hover .ml-orb {
-        filter: drop-shadow(0 0 3px #6366f18c) drop-shadow(0 0 18px #6366f18c) drop-shadow(0 0 36px #6366f18c);
+        filter: drop-shadow(0 0 3px var(--ml-glow, #6366f18c)) drop-shadow(0 0 18px var(--ml-glow, #6366f18c)) drop-shadow(0 0 36px var(--ml-glow, #6366f18c));
       }
       .ml-orb svg { display: block; width: 100%; height: 100%; }
       .ml-halo { animation: ml-halo 4s ease-in-out infinite; transform-origin: 50% 50%; }
@@ -52,10 +74,13 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
   const posStyle: React.CSSProperties =
     position === 'bottom-left' ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 };
 
-  const isDark = theme === 'dark';
-  const bg = isDark ? '#1a1a2e' : '#ffffff';
-  const fg = isDark ? '#e0e0e0' : '#333';
-  const borderColor = isDark ? '#2a2a4a' : '#ddd';
+  // Mode + menu surface follow the host when not pinned, so the orb's dropdown
+  // matches the app's light/dark just like the orb colors do.
+  const mode = theme ?? host.mode;
+  const isDark = mode === 'dark';
+  const bg = theme ? (isDark ? '#1a1a2e' : '#ffffff') : host.surface;
+  const fg = theme ? (isDark ? '#e0e0e0' : '#333') : host.text;
+  const borderColor = theme ? (isDark ? '#2a2a4a' : '#ddd') : host.border;
 
   const PX = 48;
   const id = orbIdRef.current;
@@ -83,7 +108,7 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
             position: 'absolute', ...menuPos,
             background: bg, border: `1px solid ${borderColor}`,
             borderRadius: 12, padding: '6px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.3), 0 0 24px #6366f122',
+            boxShadow: `0 8px 32px rgba(0,0,0,0.3), 0 0 24px ${glowFaint}`,
             display: 'flex', flexDirection: 'column', gap: 2, minWidth: 180,
             animation: 'ml-in 0.15s ease-out',
             fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
@@ -121,27 +146,27 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
         aria-label={tools.length === 1 ? tools[0].label : 'Open Managed Platform tools'}
         title={tools.length === 1 ? tools[0].label : 'Managed Platform'}
         onClick={handleClick}
-        style={{ width: PX, height: PX }}
+        style={{ width: PX, height: PX, ['--ml-glow' as any]: glow } as React.CSSProperties}
       >
         <span className="ml-orb">
           <svg viewBox="0 0 100 100" width={PX} height={PX} aria-hidden>
             <defs>
               <radialGradient id={`${id}-c`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%"   stopColor="#6366f1" stopOpacity="1" />
-                <stop offset="55%"  stopColor="#6366f1" stopOpacity="0.55" />
-                <stop offset="100%" stopColor="#0f0a2e" stopOpacity="0" />
+                <stop offset="0%"   stopColor={core} stopOpacity="1" />
+                <stop offset="55%"  stopColor={core} stopOpacity="0.55" />
+                <stop offset="100%" stopColor={core} stopOpacity="0" />
               </radialGradient>
               <radialGradient id={`${id}-i`} cx="50%" cy="50%" r="50%">
-                <stop offset="0%"   stopColor="#e0e7ff" stopOpacity="0.95" />
-                <stop offset="40%"  stopColor="#6366f1" stopOpacity="0.7" />
-                <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                <stop offset="0%"   stopColor="#ffffff" stopOpacity="0.95" />
+                <stop offset="40%"  stopColor={core}    stopOpacity="0.7" />
+                <stop offset="100%" stopColor={core}    stopOpacity="0" />
               </radialGradient>
             </defs>
 
             <circle cx="50" cy="50" r="48" fill={`url(#${id}-c)`} className="ml-halo" />
 
             <g className="ml-cw">
-              <circle cx="50" cy="50" r="44" fill="none" stroke="#8b5cf6" strokeOpacity="0.55" strokeWidth="0.5" />
+              <circle cx="50" cy="50" r="44" fill="none" stroke={ring} strokeOpacity="0.55" strokeWidth="0.5" />
               {Array.from({ length: 36 }).map((_, i) => {
                 const a = (i * 10 * Math.PI) / 180;
                 const r2 = i % 3 === 0 ? 44 : 43;
@@ -150,14 +175,14 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
                     key={i}
                     x1={50 + Math.cos(a) * 41} y1={50 + Math.sin(a) * 41}
                     x2={50 + Math.cos(a) * r2} y2={50 + Math.sin(a) * r2}
-                    stroke="#8b5cf6" strokeOpacity={i % 3 === 0 ? 0.8 : 0.35} strokeWidth="0.8"
+                    stroke={ring} strokeOpacity={i % 3 === 0 ? 0.8 : 0.35} strokeWidth="0.8"
                   />
                 );
               })}
             </g>
 
             <g className="ml-ccw">
-              <circle cx="50" cy="50" r="36" fill="none" stroke="#8b5cf6" strokeOpacity="0.85"
+              <circle cx="50" cy="50" r="36" fill="none" stroke={ring} strokeOpacity="0.85"
                 strokeWidth="1.4" strokeDasharray="42 30 18 36 24 32" strokeLinecap="round" />
             </g>
 
@@ -165,7 +190,7 @@ const ManagedLauncherOrb: React.FC<Props> = ({ position = 'bottom-right', theme 
 
             {/* 3×3 dot grid — "platform" identity mark */}
             {([ [-6,-6],[0,-6],[6,-6], [-6,0],[0,0],[6,0], [-6,6],[0,6],[6,6] ] as [number,number][]).map(([dx, dy], i) => (
-              <circle key={i} cx={50 + dx} cy={50 + dy} r="1.3" fill="#e0e7ff" fillOpacity="0.7" />
+              <circle key={i} cx={50 + dx} cy={50 + dy} r="1.3" fill="#ffffff" fillOpacity="0.7" />
             ))}
           </svg>
         </span>

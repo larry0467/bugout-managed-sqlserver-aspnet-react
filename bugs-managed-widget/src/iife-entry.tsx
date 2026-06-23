@@ -58,6 +58,9 @@ let launcherRoot: Root | null = null;
 let widgetApi: { open: () => void; close: () => void } | null = null;
 let isLauncherHost = false;
 let currentConfig: BugOutManagedConfig | null = null;
+// Ids of host-provided menu actions we've registered, so we can clear them on
+// re-mount (setUser re-mounts) and on unmount.
+let registeredActionIds: string[] = [];
 
 function getOrCreateContainer(id: string): HTMLDivElement {
   let el = document.getElementById(id) as HTMLDivElement | null;
@@ -88,6 +91,21 @@ function mount(config: BugOutManagedConfig) {
   // Bug Out entry once onApiReady fires below.
   isLauncherHost = registry.claimHost('bugout-managed', tearDownLauncherOrb);
 
+  // Register host-provided menu actions (e.g. "Take a tour of this page") as
+  // launcher tools so they appear in the orb menu next to Bug Out. Clear any
+  // from a previous mount first (setUser re-mounts with the same config).
+  registeredActionIds.forEach(id => registry.unregister(id));
+  registeredActionIds = (config.actions ?? []).map(action => {
+    registry.register({
+      id: action.id,
+      label: action.label,
+      icon: action.icon ?? '✨',
+      open: action.onSelect,
+      close: () => {},
+    });
+    return action.id;
+  });
+
   // Render the modal panel only (the launcher owns the floating button).
   const container = getOrCreateContainer(ROOT_ID);
   if (!root) root = createRoot(container);
@@ -115,6 +133,7 @@ function mount(config: BugOutManagedConfig) {
       React.createElement(ManagedLauncherOrb, {
         position: config.position,
         theme: config.theme,
+        orbColors: config.orbColors,
       })
     );
   }
@@ -123,6 +142,8 @@ function mount(config: BugOutManagedConfig) {
 function unmount() {
   const registry = getOrCreateRegistry();
   registry.unregister('bugout-managed');
+  registeredActionIds.forEach(id => registry.unregister(id));
+  registeredActionIds = [];
 
   if (isLauncherHost) {
     registry.releaseHost('bugout-managed');

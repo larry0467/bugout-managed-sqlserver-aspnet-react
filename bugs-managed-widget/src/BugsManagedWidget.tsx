@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import fixWebmDuration from 'fix-webm-duration';
 import type { BugOutManagedConfig } from './types';
+import { useHostTheme } from './launcher/hostTheme';
 
 // ─── Recording draft persistence (IndexedDB) ────────────────────────────────
 // Chunks are written to IndexedDB as they arrive so a page refresh during
@@ -96,12 +97,8 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     apiUrl,
     userEmail,
     userName,
-    theme = 'dark',
     position = 'bottom-right',
     orbSize = 24,
-    // Bug Out's identity is amber/orange ("we caught a bug" — warm, high contrast).
-    // Hosts can override; if they do, we treat [0]=core, [1]=ring.
-    orbColors = ['#fbbf24', '#fb923c'],
     // Tenant context
     tenantId,
     tenantName,
@@ -448,11 +445,20 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     };
   }, [apiUrl]);
 
-  const isDark = theme === 'dark';
-  const bg = isDark ? '#1a1a2e' : '#ffffff';
-  const fg = isDark ? '#e0e0e0' : '#333333';
-  const borderColor = isDark ? '#333' : '#ddd';
-  const inputBg = isDark ? '#16213e' : '#f5f5f5';
+  // Auto-adopt the host app's palette + light/dark unless the host pinned them.
+  // When a host doesn't pass orbColors/theme, the panel blends into the app and
+  // re-blends live when the host toggles its theme (handled inside useHostTheme).
+  const host = useHostTheme(props.orbColors === undefined || props.theme === undefined);
+  // Bug Out's fallback identity is amber/orange ("we caught a bug"); only used
+  // if a host pins neither colors nor a detectable brand.
+  const orbColors: [string, string] = props.orbColors ?? [host.accent, host.accentRing];
+
+  const mode = props.theme ?? host.mode;
+  const isDark = mode === 'dark';
+  const bg = props.theme ? (isDark ? '#1a1a2e' : '#ffffff') : host.surface;
+  const fg = props.theme ? (isDark ? '#e0e0e0' : '#333333') : host.text;
+  const borderColor = props.theme ? (isDark ? '#333' : '#ddd') : host.border;
+  const inputBg = props.theme ? (isDark ? '#16213e' : '#f5f5f5') : host.inputBg;
 
   const posStyle: React.CSSProperties =
     position === 'bottom-left'
