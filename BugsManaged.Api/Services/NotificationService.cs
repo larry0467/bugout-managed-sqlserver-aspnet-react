@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace BugsManaged.Api.Services;
@@ -50,26 +51,54 @@ public class NotificationService
     // payload Slack uses, but rejects markdown — Chat renders the text as-is.
     // Caller passes the plain message; we JSON-encode here so the caller
     // can't accidentally break the payload.
-    public async Task SendGoogleChatAsync(string? webhookUrl, string text)
+    //
+    // threadKey groups every message we send for a given ticket into a
+    // single Chat thread (Google creates the thread the first time a key is
+    // used, and reuses it on subsequent sends with the same key). We return
+    // the resolved thread resource name from the response so the caller can
+    // persist it — inbound reply events carry that resource name (not our
+    // threadKey), so it's what lets a Chat reply be matched back to a ticket
+    // without the user typing "#123".
+    public async Task<string?> SendGoogleChatAsync(string? webhookUrl, string text, string? threadKey = null)
     {
         if (string.IsNullOrWhiteSpace(webhookUrl))
         {
             _logger.LogWarning("SendGoogleChat called with null/empty webhookUrl");
-            return;
+            return null;
         }
 
         try
         {
             var escaped = text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+            var url = webhookUrl;
             var payload = $"{{\"text\":\"{escaped}\"}}";
+            if (!string.IsNullOrWhiteSpace(threadKey))
+            {
+                var escapedKey = Uri.EscapeDataString(threadKey);
+                url += (webhookUrl.Contains('?') ? "&" : "?") + $"threadKey={escapedKey}&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD";
+                payload = $"{{\"text\":\"{escaped}\",\"thread\":{{\"threadKey\":\"{escapedKey}\"}}}}";
+            }
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync(webhookUrl, content);
+            var response = await _httpClient.PostAsync(url, content);
             _logger.LogInformation("Google Chat webhook response: {StatusCode}", response.StatusCode);
+
+            var body = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode && !string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("thread", out var thread) &&
+                    thread.TryGetProperty("name", out var threadName))
+                {
+                    return threadName.GetString();
+                }
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send Google Chat notification to {Url}", webhookUrl);
         }
+
+        return null;
     }
 
     public async Task SendWebhookAsync(string? url, string jsonPayload)

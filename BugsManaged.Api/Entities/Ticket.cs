@@ -136,6 +136,13 @@ public class Ticket
     // "overdue glow" on the Kanban card. Null = no due date.
     public DateTime? DueDate { get; set; }
 
+    // Resolved Google Chat thread resource name (e.g. "spaces/AAAA/threads/BBBB")
+    // returned the first time we post a note to this ticket's Chat webhook.
+    // Inbound reply events carry this same resource name, so it lets a Chat
+    // reply be matched back to this ticket without the user typing "#123".
+    [MaxLength(255)]
+    public string? GoogleChatThreadName { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

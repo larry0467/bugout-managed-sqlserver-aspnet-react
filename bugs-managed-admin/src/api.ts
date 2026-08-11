@@ -208,7 +208,7 @@ export interface TicketNote {
   authorName?: string;
   content: string;
   noteType: 'COMMENT' | 'QUESTION' | 'INTERNAL';
-  source: 'DASHBOARD' | 'SLACK';
+  source: 'DASHBOARD' | 'SLACK' | 'GOOGLE_CHAT' | 'EMAIL';
   slackThreadTs?: string;
   createdAt: string;
 }

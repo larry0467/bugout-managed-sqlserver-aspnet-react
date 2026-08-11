@@ -1318,7 +1318,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     const chatContent = (
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Text strong><CommentOutlined /> Chat <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>synced with Slack</Text></Text>
+          <Text strong><CommentOutlined /> Chat <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>synced with Slack &amp; Google Chat</Text></Text>
           {!notesMap[record.id] && (
             <Button size="small" onClick={() => loadNotes(record.id)} loading={notesLoading[record.id]}>
               Load Chat
@@ -1329,25 +1329,29 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         {notesMap[record.id] && (
           <>
             {notesMap[record.id].length === 0 ? (
-              <Text type="secondary" style={{ fontSize: 12 }}>No messages yet. Messages posted here will also appear in Slack.</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>No messages yet. Messages posted here will also appear in Slack and Google Chat.</Text>
             ) : (
               <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
                 {notesMap[record.id].map((note: TicketNote) => {
                   const isSlack = note.source === 'SLACK';
+                  const isGoogleChat = note.source === 'GOOGLE_CHAT';
                   return (
                     <div key={note.id} style={{
                       display: 'flex',
                       gap: 8,
                       padding: '8px 10px',
                       marginBottom: 4,
-                      background: isSlack ? '#1a1a2e' : '#0d1117',
+                      background: isSlack ? '#1a1a2e' : isGoogleChat ? '#00332c' : '#0d1117',
                       borderRadius: 8,
-                      borderLeft: `3px solid ${isSlack ? '#4A154B' : noteTypeColors[note.noteType] || '#4caf50'}`,
+                      borderLeft: `3px solid ${isSlack ? '#4A154B' : isGoogleChat ? '#00897B' : noteTypeColors[note.noteType] || '#4caf50'}`,
                     }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                           {isSlack && (
                             <Tag color="#4A154B" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>Slack</Tag>
+                          )}
+                          {isGoogleChat && (
+                            <Tag color="#00897B" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>Google Chat</Tag>
                           )}
                           <Tag
                             color={noteTypeColors[note.noteType]}

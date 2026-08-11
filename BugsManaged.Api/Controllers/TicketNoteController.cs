@@ -88,6 +88,19 @@ public class TicketNoteController : ControllerBase
             _ = _notify.NotifyReporterNoteAddedAsync(ticket, note.Content, note.AuthorName ?? userEmail);
         }
 
+        // Send to Google Chat webhook if configured and the note didn't originate from Google Chat
+        if (note.Source != "GOOGLE_CHAT")
+        {
+            var project = await _db.Projects.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == ticket.ProjectId);
+            if (!string.IsNullOrWhiteSpace(project?.GoogleChatWebhookUrl))
+            {
+                var author = note.AuthorName ?? userEmail;
+                var reportedBy = string.IsNullOrWhiteSpace(ticket.SubmittedBy) ? "unknown" : ticket.SubmittedBy;
+                var gchatText = $"New comment on ticket #{ticket.Id} ({ticket.Title}) — reported by {reportedBy} — by {author}:\n{note.Content}";
+                await SendGoogleChatForTicketAsync(ticket, project.GoogleChatWebhookUrl, gchatText);
+            }
+        }
+
         return CreatedAtAction(nameof(GetNotes), new { ticketId }, note);
     }
 
@@ -163,7 +176,7 @@ public class TicketNoteController : ControllerBase
                     if (!string.IsNullOrWhiteSpace(project?.GoogleChatWebhookUrl))
                     {
                         var gchatText = $"{user.FullName ?? user.Email} mentioned by {actorEmail} on ticket #{ticket.Id}: {ticket.Title}";
-                        await _rawNotify.SendGoogleChatAsync(project.GoogleChatWebhookUrl, gchatText);
+                        await SendGoogleChatForTicketAsync(ticket, project.GoogleChatWebhookUrl, gchatText);
                     }
                 }
                 catch
@@ -171,6 +184,20 @@ public class TicketNoteController : ControllerBase
                     // Best-effort — activity log already captured the mention.
                 }
             }
+        }
+    }
+
+    // Posts to the ticket's Google Chat thread (creating it on first send)
+    // and persists the resolved thread resource name so inbound replies in
+    // that thread can be matched back to this ticket without a typed "#id".
+    private async Task SendGoogleChatForTicketAsync(Ticket ticket, string webhookUrl, string text)
+    {
+        var threadKey = $"ticket-{ticket.Id}";
+        var resolvedThread = await _rawNotify.SendGoogleChatAsync(webhookUrl, text, threadKey);
+        if (!string.IsNullOrWhiteSpace(resolvedThread) && ticket.GoogleChatThreadName != resolvedThread)
+        {
+            ticket.GoogleChatThreadName = resolvedThread;
+            await _db.SaveChangesAsync();
         }
     }
 

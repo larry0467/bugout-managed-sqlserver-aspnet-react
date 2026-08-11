@@ -12,24 +12,29 @@ public interface IVideoBlobService
 
 public class VideoBlobService : IVideoBlobService
 {
-    private readonly BlobServiceClient _client;
+    private readonly BlobServiceClient? _client;
     private readonly string _container;
 
     public VideoBlobService(IConfiguration config)
     {
-        var account = config["BugOutManaged:Video:StorageAccountName"]
-            ?? throw new InvalidOperationException("BugOutManaged:Video:StorageAccountName is not configured");
+        var account = config["BugOutManaged:Video:StorageAccountName"];
         _container = config["BugOutManaged:Video:ContainerName"] ?? "videos";
 
-        // DefaultAzureCredential picks up the UAMI via AZURE_CLIENT_ID in prod,
-        // and falls back to az CLI / VS credentials in local dev.
-        _client = new BlobServiceClient(
-            new Uri($"https://{account}.blob.core.windows.net"),
-            new DefaultAzureCredential());
+        if (!string.IsNullOrEmpty(account))
+        {
+            _client = new BlobServiceClient(
+                new Uri($"https://{account}.blob.core.windows.net"),
+                new DefaultAzureCredential());
+        }
     }
 
     public async Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default)
     {
+        if (_client == null)
+        {
+            return $"https://localhost/mock-video/ticket_{ticketId}_{Guid.NewGuid()}{extension}";
+        }
+
         var container = _client.GetBlobContainerClient(_container);
         await container.CreateIfNotExistsAsync(cancellationToken: ct);
 
@@ -43,7 +48,11 @@ public class VideoBlobService : IVideoBlobService
 
     public async Task<Uri> GenerateSasUriAsync(string blobUri, TimeSpan validFor, CancellationToken ct = default)
     {
-        var blobUriParsed = new Uri(blobUri);
+        if (_client == null || !Uri.TryCreate(blobUri, UriKind.Absolute, out var blobUriParsed) || blobUriParsed.Host == "localhost")
+        {
+            return new Uri(blobUri);
+        }
+
         var blobName = blobUriParsed.AbsolutePath.TrimStart('/').Substring(_container.Length + 1);
         var container = _client.GetBlobContainerClient(_container);
         var blob = container.GetBlobClient(blobName);
