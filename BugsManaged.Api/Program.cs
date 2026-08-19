@@ -224,7 +224,14 @@ using (var scope = app.Services.CreateScope())
 
 if (app.Environment.IsDevelopment())
 {
+    // MapOpenApi only serves the raw document at /openapi/v1.json. Swashbuckle's
+    // UI middleware (UI only — the doc still comes from AddOpenApi) renders it
+    // at /swagger, which is what the launch profile opens on F5.
     app.MapOpenApi();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "BugsManaged API v1");
+    });
 }
 
 // The IIFE widget is embedded in every consumer app with no version in the
