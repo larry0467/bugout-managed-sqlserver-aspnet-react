@@ -39,12 +39,7 @@ public class EscalationEndpointsTests
             .Options;
         var db = new BugsManagedDbContext(options, orgContext);
 
-        var classifier = new TicketClassifierService(
-            new HttpClient(),
-            new ConfigurationBuilder().AddInMemoryCollection().Build(),
-            NullLogger<TicketClassifierService>.Instance);
-
-        var controller = new TicketController(db, new FakeWebHostEnv(), classifier, orgContext);
+        var controller = TestDoubles.CreateTicketController(db, orgContext);
 
         var claims = new[]
         {

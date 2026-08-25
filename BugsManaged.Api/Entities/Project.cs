@@ -33,9 +33,12 @@ public class Project
     [MaxLength(500)]
     public string? SlackBotToken { get; set; }
 
-    // Google Chat incoming-webhook URL. Same model as Slack: paste the
-    // chat.googleapis.com URL the space owner generated and we'll post
-    // `{ "text": "..." }` to it for ticket notifications + @-mentions.
+    // DEPRECATED, and read by nothing. Google Chat moved from incoming webhooks
+    // to a Chat app authenticated with a service account, which addresses Spaces
+    // by resource name rather than a per-project webhook URL — see
+    // Services/GoogleChat. The write path and the settings form that fed this are
+    // both gone; the column stays only so dropping it is a deliberate migration
+    // rather than a surprise buried in an unrelated one. Safe to drop.
     [MaxLength(700)]
     public string? GoogleChatWebhookUrl { get; set; }
 

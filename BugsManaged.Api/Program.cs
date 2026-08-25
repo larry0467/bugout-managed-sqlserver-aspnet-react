@@ -4,6 +4,7 @@ using BugsManaged.Api.Data;
 using BugsManaged.Api.Jobs;
 using BugsManaged.Api.Middleware;
 using BugsManaged.Api.Services;
+using BugsManaged.Api.Services.GoogleChat;
 using BugsManaged.Api.Services.Sandbox;
 using Hangfire;
 using Hangfire.SqlServer;
@@ -97,6 +98,34 @@ builder.Services.AddHttpClient<ITicketNotificationService, CommsManagedNotificat
             : commsOpts.ApiUrl);
     client.DefaultRequestHeaders.Add("X-Comms-Api-Key", commsOpts.ApiKey);
 });
+// ── Google Chat ────────────────────────────────────────────────────────────
+// Task 6: strongly-typed options. The service-account key itself must come from
+// a secret store (App Service setting / Key Vault) or the GoogleServiceAccounts
+// table — never a checked-in appsettings file.
+builder.Services.Configure<GoogleChatOptions>(
+    builder.Configuration.GetSection(GoogleChatOptions.SectionName));
+
+// Singletons: the credential provider caches resolved credentials and opens its
+// own DI scope for the DB lookup; the verifier and the queue hold no state tied
+// to a request.
+builder.Services.AddSingleton<GoogleChatCredentialProvider>();
+// The API client only needs a bearer token, so it takes the narrow interface.
+builder.Services.AddSingleton<IGoogleChatTokenSource>(
+    sp => sp.GetRequiredService<GoogleChatCredentialProvider>());
+// The inbound verifier needs the trusted project numbers, from the same provider.
+builder.Services.AddSingleton<IGoogleChatAudienceSource>(
+    sp => sp.GetRequiredService<GoogleChatCredentialProvider>());
+builder.Services.AddSingleton<GoogleChatRequestVerifier>();
+builder.Services.AddSingleton<GoogleChatQueue>();
+builder.Services.AddHttpClient<GoogleChatApiClient>();
+
+// Scoped: needs a DbContext. Resolved per job by the dispatcher.
+builder.Services.AddScoped<GoogleChatNotifier>();
+
+// Drains GoogleChatQueue. A hosted service rather than a Hangfire job, because
+// Hangfire below is only wired when the sandbox tier is enabled.
+builder.Services.AddHostedService<GoogleChatDispatcher>();
+
 builder.Services.AddHttpClient<NotificationService>();
 builder.Services.AddHttpClient<TicketNoteService>();
 builder.Services.AddHttpClient<TicketClassifierService>();

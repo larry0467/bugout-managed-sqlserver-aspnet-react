@@ -1,113 +1,177 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using BugsManaged.Api.Data;
-using BugsManaged.Api.Entities;
+using BugsManaged.Api.Services.GoogleChat;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace BugsManaged.Api.Controllers;
 
+/// <summary>
+/// Task 4 — where Google Chat delivers events for our Chat app: a client's reply
+/// in their Space, and the app being added to or removed from one.
+///
+/// Configure this URL as the Chat app's HTTP endpoint (Cloud console → Google
+/// Chat API → Configuration → Triggers).
+///
+/// The payload is the **add-ons framework** shape, which nests everything under
+/// `chat` and names the event by which payload object is present, rather than the
+/// older format's top-level `type` string:
+///
+///   { "commonEventObject": { "hostApp": "CHAT" },
+///     "authorizationEventObject": { "systemIdToken": "…" },
+///     "chat": { "user": {…}, "messagePayload": { "message": {…}, "space": {…} } } }
+///
+/// The older `{ "type": "MESSAGE", … }` form is deliberately NOT read. That
+/// format carries its token in the Authorization header, signed by a different
+/// issuer, which GoogleChatRequestVerifier rejects — so a classic-format request
+/// never gets as far as the body. Parsing it here would have been unreachable
+/// code implying support that doesn't exist.
+///
+/// AllowAnonymous because Google posts here directly with no session of ours.
+/// Authenticity comes from the signed token in the body — see
+/// <see cref="GoogleChatRequestVerifier"/>. Nothing is trusted until it verifies.
+/// </summary>
 [ApiController]
 [Route("api/google-chat")]
 [AllowAnonymous]
 public class GoogleChatWebhookController : ControllerBase
 {
-    private readonly BugsManagedDbContext _db;
-    private readonly ILogger<GoogleChatWebhookController> _logger;
-    private readonly string? _verificationToken;
-    private static readonly Regex TicketIdPattern = new(@"(?:#|ticket:)(\d+)", RegexOptions.Compiled);
+    private readonly GoogleChatRequestVerifier _verifier;
+    private readonly GoogleChatNotifier _notifier;
+    private readonly ILogger<GoogleChatWebhookController> _log;
 
-    public GoogleChatWebhookController(BugsManagedDbContext db, IConfiguration config, ILogger<GoogleChatWebhookController> logger)
+    public GoogleChatWebhookController(
+        GoogleChatRequestVerifier verifier,
+        GoogleChatNotifier notifier,
+        ILogger<GoogleChatWebhookController> log)
     {
-        _db = db;
-        _logger = logger;
-        _verificationToken = config["GoogleChat:VerificationToken"];
+        _verifier = verifier;
+        _notifier = notifier;
+        _log = log;
     }
 
     [HttpPost("events")]
     public async Task<IActionResult> HandleEvent([FromBody] JsonElement payload)
     {
-        // Shared-secret check: the Google Chat app config carries a
-        // verification token that gets echoed back in every event payload.
-        // Without a configured token we can't tell a real Google Chat event
-        // from a forged POST to this (AllowAnonymous) endpoint, so we log
-        // and allow through — but a token should be configured in
-        // production. See appsettings.json "GoogleChat:VerificationToken".
-        if (!string.IsNullOrEmpty(_verificationToken))
+       var token = Str(Obj(payload, "authorizationEventObject"), "systemIdToken");
+
+        var verification = await _verifier.VerifyAsync(token, AbsoluteUrl());
+        if (!verification.IsValid)
         {
-            var incomingToken = payload.TryGetProperty("token", out var tokenEl) ? tokenEl.GetString() : null;
-            if (incomingToken != _verificationToken)
-            {
-                _logger.LogWarning("Google Chat webhook rejected: verification token mismatch");
-                return Unauthorized(new { message = "Invalid verification token" });
-            }
-        }
-        else
-        {
-            _logger.LogWarning("Google Chat webhook has no VerificationToken configured — accepting unverified events");
+            _log.LogWarning("Rejected a Google Chat event: {Reason}", verification.Reason);
+            return Unauthorized(new { message = "Request could not be verified as coming from Google Chat" });
         }
 
-        if (payload.TryGetProperty("type", out var type))
+        // Add-ons framework: the event kind is whichever *Payload object is set.
+        var chat = Obj(payload, "chat");
+
+        if (Obj(chat, "messagePayload") is { ValueKind: JsonValueKind.Object } messagePayload)
+            return await HandleMessageAsync(messagePayload);
+
+        if (Obj(chat, "addedToSpacePayload") is { ValueKind: JsonValueKind.Object } added)
         {
-            var eventType = type.GetString();
-
-            // Handle standard message
-            if (eventType == "MESSAGE")
-            {
-                if (payload.TryGetProperty("message", out var messageData))
-                {
-                    var text = messageData.TryGetProperty("text", out var t) ? t.GetString() : null;
-                    var senderData = messageData.TryGetProperty("sender", out var s) ? s : default;
-                    var senderEmail = senderData.ValueKind != JsonValueKind.Undefined && senderData.TryGetProperty("email", out var e) ? e.GetString() : "google-chat-user";
-                    var senderName = senderData.ValueKind != JsonValueKind.Undefined && senderData.TryGetProperty("displayName", out var dn) ? dn.GetString() : senderEmail;
-                    var threadName = messageData.TryGetProperty("thread", out var th) && th.TryGetProperty("name", out var tn) ? tn.GetString() : null;
-
-                    if (!string.IsNullOrEmpty(text) || !string.IsNullOrEmpty(threadName))
-                    {
-                        Ticket? ticket = null;
-
-                        // Prefer thread correlation — it works for any reply
-                        // in the ticket's Chat thread, not just ones where
-                        // the human typed "#123".
-                        if (!string.IsNullOrEmpty(threadName))
-                        {
-                            ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.GoogleChatThreadName == threadName);
-                        }
-
-                        if (ticket == null && !string.IsNullOrEmpty(text))
-                        {
-                            var match = TicketIdPattern.Match(text);
-                            if (match.Success && long.TryParse(match.Groups[1].Value, out var ticketId))
-                            {
-                                ticket = await _db.Tickets.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == ticketId);
-                            }
-                        }
-
-                        if (ticket != null && !string.IsNullOrEmpty(text))
-                        {
-                            var note = new TicketNote
-                            {
-                                TicketId = ticket.Id,
-                                OrganizationId = ticket.OrganizationId,
-                                AuthorEmail = senderEmail ?? "unknown",
-                                AuthorName = senderName,
-                                Content = text.Trim(),
-                                NoteType = "COMMENT",
-                                Source = "GOOGLE_CHAT"
-                            };
-
-                            _db.TicketNotes.Add(note);
-                            await _db.SaveChangesAsync();
-                        }
-                    }
-                }
-            }
-
-            // Acknowledge the event
-            return Ok(new { text = "Message received." });
+            // Logged rather than acted on, which is what's wanted during rollout:
+            // "the client says they never got the invite" is usually answered by
+            // whether these ever arrived.
+            _log.LogInformation("Added to Google Chat space {Space} ({Name})",
+                Str(Obj(added, "space"), "name"), Str(Obj(added, "space"), "displayName"));
+            return Ok(new { text = "👋 Thanks — reply here any time and it lands on your ticket." });
         }
 
-        return BadRequest(new { message = "Invalid payload" });
+        if (Obj(chat, "removedFromSpacePayload") is { ValueKind: JsonValueKind.Object } removed)
+        {
+            _log.LogInformation("Removed from Google Chat space {Space}",
+                Str(Obj(removed, "space"), "name"));
+            return Ok();
+        }
+
+        // CARD_CLICKED, APP_COMMAND and anything Google adds later. Acknowledge so
+        // Chat doesn't retry an event we will never act on.
+        _log.LogDebug("Ignoring Google Chat event with no handled payload");
+        return Ok();
     }
+
+    /// <summary>
+    /// Handles both shapes: <paramref name="container"/> is either the add-ons
+    /// `messagePayload` (message under `message`, space alongside it) or the older
+    /// top-level event (same layout, so one reader serves both).
+    /// </summary>
+    private async Task<IActionResult> HandleMessageAsync(JsonElement container)
+    {
+        var messageData = Obj(container, "message");
+        if (messageData.ValueKind != JsonValueKind.Object)
+            return Ok();
+
+        var sender = Obj(messageData, "sender");
+
+        // argumentText is the body minus the app's own @-mention, which is what
+        // the client actually typed when addressing the app directly. Plain
+        // messages carry no argumentText, so fall back to text.
+        var text = Str(messageData, "argumentText") ?? Str(messageData, "text");
+
+        // The space appears on the message and again beside it in the payload;
+        // read the message's copy first and fall back.
+        var spaceName = Str(Obj(messageData, "space"), "name")
+                        ?? Str(Obj(container, "space"), "name");
+
+        var inbound = new GoogleChatNotifier.InboundMessage(
+            MessageName: Str(messageData, "name"),
+            SpaceName: spaceName,
+            ThreadName: Str(Obj(messageData, "thread"), "name"),
+            Text: text,
+            SenderEmail: Str(sender, "email"),
+            SenderDisplayName: Str(sender, "displayName") ?? Str(sender, "email"),
+            // Loop prevention: our own posts come back with an app author and must
+            // never be re-recorded as client comments.
+            SenderIsBot: string.Equals(Str(sender, "type"), "BOT", StringComparison.OrdinalIgnoreCase));
+
+        try
+        {
+            var outcome = await _notifier.HandleInboundMessageAsync(inbound);
+
+            // Silence on the ordinary outcomes keeps the Space readable; an
+            // unmatched message gets a nudge rather than vanishing unexplained.
+            return outcome switch
+            {
+                GoogleChatNotifier.InboundOutcome.UnknownSpace => Ok(new
+                {
+                    text = "I couldn't match that to one of your tickets. Reply inside a ticket's " +
+                           "thread, or start your message with the ticket number (e.g. `#42`)."
+                }),
+                _ => Ok(),
+            };
+        }
+        catch (Exception ex)
+        {
+            // 200 on an unexpected failure is deliberate: a 500 makes Chat retry
+            // the same event, and if the failure is deterministic that is a retry
+            // loop rather than a recovery. Logged instead, for knowing replay.
+            _log.LogError(ex, "Failed to handle Google Chat message {Name} from space {Space}",
+                inbound.MessageName, inbound.SpaceName);
+            return Ok(new { text = "Something went wrong on our side saving that message." });
+        }
+    }
+
+    /// <summary>
+    /// The URL this request arrived on, which Google audiences the token to.
+    /// Honours X-Forwarded-* so a tunnel or reverse proxy still produces the
+    /// public URL rather than Kestrel's local one.
+    /// </summary>
+    private string AbsoluteUrl()
+    {
+        var scheme = Request.Headers["X-Forwarded-Proto"].FirstOrDefault() ?? Request.Scheme;
+        var host = Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? Request.Host.Value;
+        return $"{scheme}://{host}{Request.Path}";
+    }
+
+    private static JsonElement Obj(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            ? value
+            : default;
+
+    private static string? Str(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

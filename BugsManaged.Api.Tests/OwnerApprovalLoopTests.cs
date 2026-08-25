@@ -37,12 +37,7 @@ public class OwnerApprovalLoopTests
             .Options;
         var db = new BugsManagedDbContext(options, orgContext);
 
-        var classifier = new TicketClassifierService(
-            new HttpClient(),
-            new ConfigurationBuilder().AddInMemoryCollection().Build(),
-            NullLogger<TicketClassifierService>.Instance);
-
-        var controller = new TicketController(db, new FakeWebHostEnv(), classifier, orgContext);
+        var controller = TestDoubles.CreateTicketController(db, orgContext);
 
         var claims = new[]
         {
@@ -150,8 +145,13 @@ public class OwnerApprovalLoopTests
 
         var result = await ctrl.Approve(t.Id);
 
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var ticket = Assert.IsType<Ticket>(ok.Value);
+        // Approve responds with { ticket, promoted, mergeSha, tagName } — the
+        // promotion outcome rides alongside the ticket — so assert against the
+        // persisted row rather than trying to unpick an anonymous type. That also
+        // checks the transition was actually saved, not merely returned.
+        Assert.IsType<OkObjectResult>(result);
+
+        var ticket = await db.Tickets.IgnoreQueryFilters().SingleAsync(x => x.Id == t.Id);
         Assert.Equal("COMPLETED", ticket.EscalationStage);
         Assert.Equal("RESOLVED", ticket.Status);
         Assert.Equal("owner@x.com", ticket.ApprovedBy);

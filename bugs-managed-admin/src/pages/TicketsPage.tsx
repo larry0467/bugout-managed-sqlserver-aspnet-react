@@ -46,7 +46,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef, type TicketChatStatus } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
 import LabelChips from '../components/LabelChips';
@@ -410,6 +410,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [noteType, setNoteType] = useState<Record<number, string>>({});
   const [notesLoading, setNotesLoading] = useState<Record<number, boolean>>({});
 
+  // Google Chat reachability per ticket, loaded alongside the notes so the Chat
+  // tab can say whether the client will actually see what we post.
+  const [chatStatus, setChatStatus] = useState<Record<number, TicketChatStatus>>({});
+
   const projectMap = Object.fromEntries(projects.map(p => [p.id, p.name]));
 
   useEffect(() => {
@@ -681,6 +685,18 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       setNotesMap(prev => ({ ...prev, [ticketId]: notes }));
     } finally {
       setNotesLoading(prev => ({ ...prev, [ticketId]: false }));
+    }
+    loadChatStatus(ticketId);
+  };
+
+  // Best-effort: the Chat tab behaves exactly as before if this fails, or if the
+  // deployment has no Google credentials.
+  const loadChatStatus = async (ticketId: number) => {
+    try {
+      const status = await ticketApi.chatStatus(ticketId);
+      setChatStatus(prev => ({ ...prev, [ticketId]: status }));
+    } catch {
+      // No status is a fine outcome — the indicator simply doesn't render.
     }
   };
 
@@ -1325,6 +1341,51 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             </Button>
           )}
         </div>
+
+        {/* Whether the client will actually see what we post here. Rendered only
+            when the deployment has Google Chat credentials — otherwise there is
+            no Space to report on and the row would just be noise. */}
+        {chatStatus[record.id]?.enabled && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 8,
+            padding: '6px 10px',
+            background: '#00332c',
+            borderRadius: 8,
+            borderLeft: '3px solid #00897B',
+          }}>
+            <Tag color="#00897B" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>
+              Google Chat
+            </Tag>
+            {!chatStatus[record.id]?.spaceExists ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {record.submittedBy
+                  ? 'No Chat space yet — it is created when the next update is sent.'
+                  : 'No client email on this ticket, so there is nobody to open a space with.'}
+              </Text>
+            ) : chatStatus[record.id]?.clientJoined ? (
+              <Text style={{ fontSize: 12 }}>
+                Notified via Google Chat — {chatStatus[record.id]?.memberEmail} has replied here
+              </Text>
+            ) : (
+              <>
+                <Text style={{ fontSize: 12 }}>
+                  Invited {chatStatus[record.id]?.memberEmail}
+                </Text>
+                <Tag color="warning" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>
+                  client hasn&apos;t joined yet
+                </Tag>
+              </>
+            )}
+            {chatStatus[record.id]?.spaceExists && !chatStatus[record.id]?.inviteSent && (
+              <Tag color="error" style={{ fontSize: 9, lineHeight: '14px', padding: '0 4px', margin: 0 }}>
+                invite failed
+              </Tag>
+            )}
+          </div>
+        )}
 
         {notesMap[record.id] && (
           <>
