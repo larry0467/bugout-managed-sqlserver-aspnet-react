@@ -2,6 +2,7 @@ using System.Security.Claims;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
 using BugsManaged.Api.Services;
+using BugsManaged.Api.Services.GoogleChat;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
@@ -24,9 +25,11 @@ public class TicketController : ControllerBase
     private readonly ITicketActivityLogger _activity;
     private readonly ILogger<TicketController> _log;
     private readonly ITicketNotificationService _notify;
+    private readonly GoogleChatQueue _chatQueue;
 
-    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ITicketActivityLogger activity, ILogger<TicketController> log, ITicketNotificationService notify)
+    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ITicketActivityLogger activity, ILogger<TicketController> log, ITicketNotificationService notify, GoogleChatQueue chatQueue)
     {
+        _chatQueue = chatQueue;
         _db = db;
         _classifier = classifier;
         _org = org;
@@ -165,6 +168,14 @@ public class TicketController : ControllerBase
         // Notify reporter via Comms — fire-and-forget, never blocks the response.
         _ = _notify.NotifyTicketReceivedAsync(ticket);
 
+        // Google Chat: create the client's Space if they don't have one, then
+        // acknowledge the ticket in it. Queued, not awaited — creating a Space
+        // is several Google round trips and this is the widget's submit path.
+        // The email above is sent independently, so a client who never joins
+        // Chat still hears from us.
+        _chatQueue.Enqueue(new GoogleChatJob(
+            GoogleChatJobKind.TicketCreated, ticket.Id, ticket.OrganizationId));
+
         return CreatedAtAction(nameof(GetById), new { id = ticket.Id }, ticket);
     }
 
@@ -283,6 +294,24 @@ public class TicketController : ControllerBase
         return Ok(ticket);
     }
 
+    /// <summary>
+    /// Task 7 — whether this ticket's client is reachable over Google Chat, for
+    /// the indicator on the ticket detail view. Deliberately the only Chat-aware
+    /// endpoint the React app needs: the UI never talks to Google directly.
+    ///
+    /// enabled=false means this deployment has no Chat credentials, and the UI
+    /// hides the indicator entirely rather than showing a broken state.
+    /// </summary>
+    [HttpGet("{id}/chat-status")]
+    [Authorize]
+    public async Task<IActionResult> GetChatStatus(long id, [FromServices] GoogleChatNotifier chat)
+    {
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found" });
+
+        return Ok(await chat.GetChatStatusAsync(ticket));
+    }
+
     [HttpPut("{id}/status")]
     [Authorize]
     public async Task<IActionResult> UpdateStatus(long id, [FromBody] UpdateStatusRequest request)
@@ -320,6 +349,11 @@ public class TicketController : ControllerBase
             && (ticket.Status == "RESOLVED" || ticket.Status == "CLOSED"))
         {
             _ = _notify.NotifyReporterResolvedAsync(ticket);
+
+            // The core requirement: tell the client in Google Chat that their
+            // ticket is done. Queued so a Chat outage can't fail the status save.
+            _chatQueue.Enqueue(new GoogleChatJob(
+                GoogleChatJobKind.TicketResolved, ticket.Id, ticket.OrganizationId));
         }
 
         // Tell the reporter when work actually starts. Assignment no longer
@@ -467,6 +501,8 @@ public class TicketController : ControllerBase
         if (!wasAlreadyTerminal)
         {
             _ = _notify.NotifyReporterResolvedAsync(ticket);
+            _chatQueue.Enqueue(new GoogleChatJob(
+                GoogleChatJobKind.TicketResolved, ticket.Id, ticket.OrganizationId));
         }
 
         return Ok(ticket);

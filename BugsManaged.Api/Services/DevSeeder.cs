@@ -136,5 +136,64 @@ public class DevSeeder
             });
         }
         await _db.SaveChangesAsync();
+
+        // Seed dummy tickets if none exist across dev projects
+        if (!await _db.Tickets.IgnoreQueryFilters().AnyAsync(t => t.OrganizationId == org.Id))
+        {
+            var firstProj = await _db.Projects.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.OrganizationId == org.Id);
+            if (firstProj != null)
+            {
+                _db.Tickets.AddRange(
+                    new Ticket
+                    {
+                        OrganizationId = org.Id,
+                        ProjectId = firstProj.Id,
+                        Title = "Login button fails on mobile view",
+                        Description = "Clicking login does not trigger modal or navigation on screens < 600px width.",
+                        TicketType = "BUG",
+                        Priority = "HIGH",
+                        Status = "OPEN",
+                        SubmittedBy = "user1@example.com",
+                        CurrentPageUrl = "http://localhost:5173/login",
+                        BrowserInfo = "Chrome 124.0.0.0 (Windows)",
+                        CreatedAt = DateTime.UtcNow.AddHours(-10),
+                        UpdatedAt = DateTime.UtcNow.AddHours(-10)
+                    },
+                    new Ticket
+                    {
+                        OrganizationId = org.Id,
+                        ProjectId = firstProj.Id,
+                        Title = "Add dark mode toggle in navbar",
+                        Description = "Users requesting dark theme toggle in navigation bar for high contrast UI.",
+                        TicketType = "FEATURE_REQUEST",
+                        Priority = "MEDIUM",
+                        Status = "IN_PROGRESS",
+                        SubmittedBy = "user2@example.com",
+                        CurrentPageUrl = "http://localhost:5173/dashboard",
+                        BrowserInfo = "Firefox 125.0 (Windows)",
+                        CreatedAt = DateTime.UtcNow.AddDays(-2),
+                        UpdatedAt = DateTime.UtcNow.AddDays(-1)
+                    },
+                    new Ticket
+                    {
+                        OrganizationId = org.Id,
+                        ProjectId = firstProj.Id,
+                        Title = "API returns 500 error on exporting CSV report",
+                        Description = "Export CSV fails with NullReferenceException when date range contains 0 records.",
+                        TicketType = "BUG",
+                        Priority = "URGENT",
+                        Status = "OPEN",
+                        SubmittedBy = "admin@acme-corp.example",
+                        CurrentPageUrl = "http://localhost:5173/reports",
+                        BrowserInfo = "Edge 124.0.0.0 (Windows)",
+                        CreatedAt = DateTime.UtcNow.AddMinutes(-45),
+                        UpdatedAt = DateTime.UtcNow.AddMinutes(-45)
+                    }
+                );
+                await _db.SaveChangesAsync();
+                _log.LogInformation("DevSeeder: created dummy tickets for dev project {ProjectId}", firstProj.Id);
+            }
+        }
     }
 }
+

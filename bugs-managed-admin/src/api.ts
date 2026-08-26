@@ -93,7 +93,6 @@ export interface Project {
   slackWebhookUrl?: string;
   slackChannel?: string;
   slackBotToken?: string;
-  googleChatWebhookUrl?: string;
   notificationEmail?: string;
   createdAt: string;
   updatedAt: string;
@@ -208,9 +207,33 @@ export interface TicketNote {
   authorName?: string;
   content: string;
   noteType: 'COMMENT' | 'QUESTION' | 'INTERNAL';
-  source: 'DASHBOARD' | 'SLACK';
+  source: 'DASHBOARD' | 'SLACK' | 'GOOGLE_CHAT' | 'EMAIL';
   slackThreadTs?: string;
+  // Resource name of the Google Chat message this comment mirrors (outbound) or
+  // came from (inbound). Present only on comments that touched Chat.
+  googleChatMessageName?: string | null;
   createdAt: string;
+}
+
+/**
+ * Google Chat reachability for one ticket's client.
+ *
+ * `enabled` false means this deployment has no Chat credentials at all, and the
+ * UI hides the indicator rather than showing a broken state.
+ *
+ * `clientJoined` is only true once we have actually received a message from the
+ * client in their Space. Chat gives us no reliable "human accepted the invite"
+ * event, so their first reply is the honest signal — until then the UI says
+ * invited, not joined.
+ */
+export interface TicketChatStatus {
+  enabled: boolean;
+  spaceExists: boolean;
+  inviteSent: boolean;
+  clientJoined: boolean;
+  spaceName?: string | null;
+  memberEmail?: string | null;
+  lastMessageAt?: string | null;
 }
 
 export interface ProjectStatsRow {
@@ -266,7 +289,7 @@ export const projectApi = {
   list: () => api.get<Project[]>('/projects').then(r => r.data),
   get: (id: number) => api.get<Project>(`/projects/${id}`).then(r => r.data),
   create: (name: string) => api.post<Project>('/projects', { name }).then(r => r.data),
-  updateWebhooks: (id: number, data: { webhookUrl?: string; slackWebhookUrl?: string; googleChatWebhookUrl?: string; notificationEmail?: string }) =>
+  updateWebhooks: (id: number, data: { webhookUrl?: string; slackWebhookUrl?: string; notificationEmail?: string }) =>
     api.put<Project>(`/projects/${id}/webhooks`, data).then(r => r.data),
   updateSlack: (id: number, data: { slackWebhookUrl?: string; slackChannel?: string; slackBotToken?: string }) =>
     api.put<Project>(`/projects/${id}/slack`, data).then(r => r.data),
@@ -283,6 +306,10 @@ export const ticketApi = {
     return api.get<Ticket[]>('/tickets', { params }).then(r => r.data);
   },
   get: (id: number) => api.get<Ticket>(`/tickets/${id}`).then(r => r.data),
+  // Whether this ticket's client is reachable over Google Chat. The only
+  // Chat-aware call the UI makes — it talks to our API, never to Google.
+  chatStatus: (id: number) =>
+    api.get<TicketChatStatus>(`/tickets/${id}/chat-status`).then(r => r.data),
   updateStatus: (id: number, status: string, assignedTo?: string) =>
     api.put<Ticket>(`/tickets/${id}/status`, { status, assignedTo }).then(r => r.data),
   updateDescription: (id: number, description: string, reason?: string) =>

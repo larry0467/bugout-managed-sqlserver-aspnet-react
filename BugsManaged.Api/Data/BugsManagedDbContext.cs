@@ -28,6 +28,8 @@ public class BugsManagedDbContext : DbContext
     public DbSet<TicketActivity> TicketActivities => Set<TicketActivity>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
     public DbSet<TicketStatusDef> TicketStatusDefs => Set<TicketStatusDef>();
+    public DbSet<GoogleChatSpace> GoogleChatSpaces => Set<GoogleChatSpace>();
+    public DbSet<GoogleServiceAccount> GoogleServiceAccounts => Set<GoogleServiceAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,6 +108,31 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketStatusDef>()
             .HasIndex(s => new { s.OrganizationId, s.Key }).IsUnique();
+
+        // One Space per client per organization. This index is the duplicate
+        // guard: two tickets filed at the same instant both get past the
+        // service-layer lookup, and this is what makes the second insert lose.
+        modelBuilder.Entity<GoogleChatSpace>()
+            .HasIndex(s => new { s.OrganizationId, s.MemberEmail }).IsUnique();
+
+        // Inbound events identify their origin by Space, so correlation reads
+        // this on every message.
+        modelBuilder.Entity<GoogleChatSpace>().HasIndex(s => s.SpaceName);
+
+        // Credentials are looked up by organization, including the shared-default
+        // row where OrganizationId is null. Deliberately no global query filter:
+        // GoogleChatCredentialProvider is a singleton reading from its own scope,
+        // where the org context is empty and a filter would match nothing.
+        modelBuilder.Entity<GoogleServiceAccount>().HasIndex(a => new { a.OrganizationId, a.IsActive });
+
+        // Unique-when-present: one Chat message can never become two comments,
+        // which is what makes redelivered events idempotent even concurrently.
+        // Filtered so the vast majority of notes -- which touch Chat not at all --
+        // are unconstrained.
+        modelBuilder.Entity<TicketNote>()
+            .HasIndex(n => n.GoogleChatMessageName)
+            .IsUnique()
+            .HasFilter("[GoogleChatMessageName] IS NOT NULL");
         modelBuilder.Entity<TicketStatusDef>().HasIndex(s => s.OrganizationId);
 
         // Global query filters — every org-scoped query auto-filters by the
@@ -156,6 +183,9 @@ public class BugsManagedDbContext : DbContext
             .HasQueryFilter(a => _orgContext.CurrentOrganizationId != null && a.OrganizationId == _orgContext.CurrentOrganizationId);
 
         modelBuilder.Entity<TicketStatusDef>()
+            .HasQueryFilter(s => _orgContext.CurrentOrganizationId != null && s.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<GoogleChatSpace>()
             .HasQueryFilter(s => _orgContext.CurrentOrganizationId != null && s.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 

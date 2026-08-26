@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using BugsManaged.Api.Data;
 using BugsManaged.Api.Entities;
 using BugsManaged.Api.Services;
+using BugsManaged.Api.Services.GoogleChat;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,12 +28,15 @@ public class TicketNoteController : ControllerBase
         @"(?<![A-Za-z0-9_])@([A-Za-z0-9._%+-]+(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?)",
         RegexOptions.Compiled);
 
-    public TicketNoteController(BugsManagedDbContext db, ITicketNotificationService notify, ITicketActivityLogger activity, NotificationService rawNotify)
+    private readonly GoogleChatQueue _chatQueue;
+
+    public TicketNoteController(BugsManagedDbContext db, ITicketNotificationService notify, ITicketActivityLogger activity, NotificationService rawNotify, GoogleChatQueue chatQueue)
     {
         _db = db;
         _notify = notify;
         _activity = activity;
         _rawNotify = rawNotify;
+        _chatQueue = chatQueue;
     }
 
     [HttpGet]
@@ -75,8 +79,10 @@ public class TicketNoteController : ControllerBase
             payload: new { noteType = note.NoteType });
 
         // @-mentions: parse out unique mentioned identifiers, resolve to org
-        // users, drop a MENTIONED activity entry for each, and fire a
-        // notification (best-effort).
+        // users, drop a MENTIONED activity entry for each, and notify by
+        // email/Slack (best-effort). Deliberately not mirrored to Google Chat —
+        // the only Chat destination is the client's space, and who we pulled in
+        // internally is not the client's business.
         await HandleMentionsAsync(ticket, note, userEmail, userName);
 
         await _db.SaveChangesAsync();
@@ -86,6 +92,16 @@ public class TicketNoteController : ControllerBase
         if (note.NoteType == "COMMENT" && note.Source != "EMAIL")
         {
             _ = _notify.NotifyReporterNoteAddedAsync(ticket, note.Content, note.AuthorName ?? userEmail);
+        }
+
+        // Mirror the comment into the client's Google Chat Space. Queued rather
+        // than posted inline, so a Chat hiccup can never fail or slow the comment
+        // save. Skipped for GOOGLE_CHAT-sourced notes — those already exist in
+        // the Space and echoing them back would loop.
+        if (note.Source != "GOOGLE_CHAT")
+        {
+            _chatQueue.Enqueue(new GoogleChatJob(
+                GoogleChatJobKind.NoteAdded, ticket.Id, ticket.OrganizationId, NoteId: note.Id));
         }
 
         return CreatedAtAction(nameof(GetNotes), new { ticketId }, note);
@@ -103,6 +119,10 @@ public class TicketNoteController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Resolves @-mentions to org users, logs a MENTIONED activity entry for
+    /// each, and notifies by email/Slack.
+    /// </summary>
     private async Task HandleMentionsAsync(Ticket ticket, TicketNote note, string actorEmail, string? actorName)
     {
         var matches = MentionRegex.Matches(note.Content);
@@ -159,11 +179,6 @@ public class TicketNoteController : ControllerBase
                     {
                         var slackPayload = $"{{\"text\":\"<@{user.Email}> mentioned by {actorEmail} on ticket #{ticket.Id}: {ticket.Title.Replace("\"", "\\\"")}\"}}";
                         await _rawNotify.SendSlackAsync(project.SlackWebhookUrl, slackPayload);
-                    }
-                    if (!string.IsNullOrWhiteSpace(project?.GoogleChatWebhookUrl))
-                    {
-                        var gchatText = $"{user.FullName ?? user.Email} mentioned by {actorEmail} on ticket #{ticket.Id}: {ticket.Title}";
-                        await _rawNotify.SendGoogleChatAsync(project.GoogleChatWebhookUrl, gchatText);
                     }
                 }
                 catch

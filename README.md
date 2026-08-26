@@ -203,6 +203,211 @@ Configure per-project on the Settings page in the dashboard.
 
 ---
 
+## Google Chat Integration
+
+Two-way conversation with clients who are **outside** our Workspace domain, using
+the shared-Space-per-client pattern. A private Chat app, not a Marketplace
+listing.
+
+### Serving many subscribers with one Chat app
+
+The common misconception is that each subscriber needs their own Chat app or
+Cloud project. They do not.
+
+`spaces.create` under app authentication **always** creates the Space in the
+Workspace that owns the service account (`customer: customers/my_customer`). You
+cannot create a Space inside somebody else's Workspace. What makes this work for
+external subscribers is `externalUserAllowed: true` plus adding their people as
+**external members** of a Space in *your* Workspace.
+
+So:
+
+- **One Chat app, one Cloud project, one Workspace — yours.** 10 subscribers = 10
+  Spaces in your Workspace, each with that subscriber's people as external
+  members.
+- Onboarding a subscriber needs **no Google Cloud work at all**. No project, no
+  service account, no Chat app on their side.
+- The one prerequisite outside your control: each subscriber's Workspace admin
+  must permit external chat with your domain. Personal Gmail accounts need
+  nothing.
+
+Per-organization credentials (`GoogleServiceAccounts.OrganizationId`) exist for
+the case where a subscriber insists the Chat app live in *their* Workspace. That
+is the exception, not the model — and once a second organization does register an
+app, the sender check described under *How inbound requests are authenticated*
+is what keeps one tenant's app out of another's Spaces.
+
+### How the Space-per-client flow works
+
+One Space per **reporter email**, not per ticket and not per subscriber — the
+person accepts one invite ever, and every later ticket of theirs reuses it. A
+fresh Space per ticket would prompt them again on every report.
+
+Because the key is the individual, one person who reports bugs against several
+subscriber apps has a single Space carrying all of them. Messages therefore name
+the app (`#12 · Customer Portal`) from `Ticket.TenantName`, and colleagues at the
+same subscriber get separate Spaces rather than a shared one.
+
+```
+Client files a ticket
+  └─ no Space yet?  spaces.create  →  spaces.members.create (invite the client)
+                    store spaces/AAAA + their email in GoogleChatSpaces
+  └─ post "we've received ticket #42"
+
+Developer marks it Done/Resolved
+  └─ post "your ticket #42 has been resolved …" into the same Space
+
+Client replies in Chat
+  └─ Google POSTs to /api/google-chat/events (signed bearer token)
+  └─ Space → client → ticket, saved as a TicketNote with Source = GOOGLE_CHAT
+  └─ assigned developer notified
+```
+
+Each ticket gets its own **thread** inside the Space (`threadKey = ticket-{id}`),
+and the resolved thread name is stored on `Ticket.GoogleChatThreadName`. That is
+what lets a reply be attributed to the right ticket without the client typing
+anything. Failing that, an explicit `#42` works; failing that, the reply lands on
+that client's most recently updated ticket.
+
+That last fallback is a guess, and worth knowing about: it ignores the tenant, so
+an unthreaded reply from someone who covers several subscriber apps can attach to
+a ticket for a different app. We cannot infer which they meant, so the "couldn't
+match" reply asks them to use the thread. Threaded replies — the normal case —
+are exact.
+
+Everything outbound goes through an in-memory queue drained by
+`GoogleChatDispatcher`, so a Chat outage can never fail or slow a ticket save.
+The existing email notification is sent independently, so a client who never
+joins the Space still hears from us.
+
+### Setup
+
+1. In a **dedicated GCP project** (see the warning below), enable the Google Chat
+   API and create a service account; download its JSON key.
+2. Chat API → Configuration: set name/avatar/description, tick **Receive 1:1
+   messages** and **Join spaces and group conversations**, set connection type to
+   **HTTP endpoint** → `https://api.your-domain.com/api/google-chat/events`.
+3. Note the project **number** (all digits, not the id) and record it as
+   `GoogleServiceAccounts.ProjectNumber` on the active row —
+   `GoogleChat:ProjectNumber` works too as a deployment-wide fallback. Read on
+   every inbound event and combined, so a tenant on its own Cloud project can be
+   added with an `UPDATE` and no redeploy.
+
+   Quick way to find it: the Chat app's own **Service Account Email** on the
+   configuration page is `service-{PROJECT_NUMBER}@gcp-sa-gsuiteaddons.iam...`.
+
+4. Set `GoogleChat:EventAudience` to the exact HTTP endpoint URL you configured,
+   whenever the public URL differs from what Kestrel sees (any tunnel or reverse
+   proxy). Left empty it is reconstructed from the request, honouring
+   `X-Forwarded-Proto`/`-Host`.
+
+### How inbound requests are authenticated
+
+Chat apps on the add-ons framework do **not** send a bearer token in the
+Authorization header. The token arrives in the request body at
+`authorizationEventObject.systemIdToken`, with these claims:
+
+```
+iss    https://accounts.google.com
+aud    the exact HTTP endpoint URL configured in the Chat app
+email  service-{PROJECT_NUMBER}@gcp-sa-gsuiteaddons.iam.gserviceaccount.com
+```
+
+All three are verified. `aud` being the endpoint URL is what stops a token issued
+for another Chat app being replayed at ours; the `email` claim identifies which
+Cloud project sent it.
+
+That last point matters beyond authenticity. A valid token proves *"an event from
+a project we trust"*, not *"from the project that owns this Space"* — and Space
+resource names are globally unique, so the Space lookup cannot be scoped until
+the sender is known. Verification therefore returns **which** configured project
+matched, and the inbound handler refuses an event whose Space belongs to a
+different organization (`InboundOutcome.SpaceNotOwnedBySender`). Without it, once
+two organizations each had a Chat app, either could write comments onto the
+other's tickets.
+
+A sender mapped to a `GoogleServiceAccounts` row with **no** `OrganizationId` is
+a shared credential — one Chat app serving every tenant — so there is no owning
+organization to compare against and the check correctly does not apply.
+
+The event body is nested rather than tagged with a top-level `type`:
+
+```json
+{ "chat": { "messagePayload": { "message": { … }, "space": { … } } },
+  "authorizationEventObject": { "systemIdToken": "…" } }
+```
+
+`addedToSpacePayload` and `removedFromSpacePayload` appear in the same position.
+The older `{ "type": "MESSAGE", "message": … }` form is still read as a fallback.
+4. Admin console → Apps → Google Workspace → Google Chat: allow **external
+   members in spaces**, since clients are external.
+5. Supply the key as `GoogleChat:ServiceAccountJson` (Key Vault / App Service
+   setting) **or** insert a `GoogleServiceAccounts` row — see
+   [scripts/seed-google-service-account.sql](./scripts/seed-google-service-account.sql).
+
+> **One Chat app per GCP project.** A project holds exactly one Chat app
+> configuration with exactly one App URL. Do not reuse a project that already has
+> a Chat app pointed at another product — the two will fight over the endpoint.
+
+### Scopes
+
+One token is minted **per operation**, not one for the whole client, because Chat
+rejects some app-auth scope combinations on a single token:
+
+| Operation | Scope |
+|---|---|
+| `spaces.create` | `chat.app.spaces.create` |
+| `spaces.members.create` | `chat.app.memberships` |
+| `spaces.messages.create` | `chat.bot` |
+| `spaces.get` | `chat.app.spaces` |
+
+`chat.bot` alone is **not** enough. It covers posting as the app but not creating
+spaces, and asking it to do so returns:
+
+```
+403 PERMISSION_DENIED — ACCESS_TOKEN_SCOPE_INSUFFICIENT
+method: google.chat.v1.ChatService.CreateSpace
+```
+
+The `chat.app.*` scopes additionally require **app authentication with a service
+account** to be enabled on the Chat app (Cloud console → Google Chat API →
+Configuration), and a Workspace admin to permit them if scope restrictions are
+on. Without that, `spaces.create` fails with the same error even with the right
+scope requested.
+
+All four are configurable (`GoogleChat:SpaceCreateScopes`, `MembershipScopes`,
+`MessageScopes`, `SpaceReadScopes`) so a Workspace on a different footing needs no
+redeploy.
+
+### Debugging "the client says they never got the invite"
+
+Almost always the client's own organization blocking external chat, or ours.
+Check in this order:
+
+1. `GET /api/tickets/{id}/chat-status` — `spaceExists` false means no Space was
+   created; `inviteSent` false means the Space exists but
+   `spaces.members.create` was refused. The API log records the refusal reason.
+2. `clientJoined` is only true once we have actually received a message from
+   them. Chat sends `ADDED_TO_SPACE` for the *app*, not for a human joining, so
+   their first reply is the only honest signal. "Invited, not joined" is normal
+   until then.
+3. Search the log for `ADDED_TO_SPACE` / `REMOVED_FROM_SPACE` — these are logged
+   specifically to answer this question.
+4. Our Workspace must allow external members (step 4 above); their Workspace must
+   allow external spaces too, which we cannot see or control.
+
+### Rotating the service account key
+
+Config-based: replace `GoogleChat:ServiceAccountJson` and restart. Resolved
+credentials are cached for the process lifetime, so a key swapped in place needs a
+restart; a key *added* is picked up on the next call.
+
+DB-based: re-run `scripts/seed-google-service-account.sql`, which deactivates the
+previous row before inserting the new one, then restart. Old rows are kept
+inactive rather than deleted, so it stays clear which key was live when.
+
+---
+
 ## AI Agent (Claude Sidecar)
 
 Bug Out Managed ships with an optional Claude-powered agent that can analyze a ticket, diagnose the root cause, and open a GitHub PR with a proposed fix.

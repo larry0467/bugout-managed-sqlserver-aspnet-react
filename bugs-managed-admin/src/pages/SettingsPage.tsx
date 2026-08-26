@@ -9,9 +9,7 @@ const SettingsPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [slackForm] = Form.useForm();
-  const [gchatForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
-  const [gchatSaving, setGchatSaving] = useState(false);
 
   const [statuses, setStatuses] = useState<TicketStatusDef[]>([]);
   const [newStatusKey, setNewStatusKey] = useState('');
@@ -37,29 +35,9 @@ const SettingsPage: React.FC = () => {
         slackChannel: selectedProject.slackChannel || '',
         slackBotToken: selectedProject.slackBotToken || '',
       });
-      gchatForm.setFieldsValue({
-        googleChatWebhookUrl: selectedProject.googleChatWebhookUrl || '',
-      });
     }
-  }, [selectedProject, slackForm, gchatForm]);
+  }, [selectedProject, slackForm]);
 
-  const handleSaveGoogleChat = async () => {
-    if (!selectedProject) return;
-    setGchatSaving(true);
-    try {
-      const values = await gchatForm.validateFields();
-      const updated = await projectApi.updateWebhooks(selectedProject.id, {
-        googleChatWebhookUrl: values.googleChatWebhookUrl || '',
-      });
-      setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
-      setSelectedProject(updated);
-      message.success('Google Chat webhook saved');
-    } catch {
-      message.error('Failed to save Google Chat webhook');
-    } finally {
-      setGchatSaving(false);
-    }
-  };
 
   const handleAddStatus = async () => {
     if (!newStatusKey.trim() || !newStatusLabel.trim()) return;
@@ -135,7 +113,6 @@ const SettingsPage: React.FC = () => {
   };
 
   const slackConnected = selectedProject?.slackWebhookUrl && selectedProject.slackWebhookUrl.length > 0;
-  const gchatConnected = selectedProject?.googleChatWebhookUrl && selectedProject.googleChatWebhookUrl.length > 0;
 
   return (
     <div>
@@ -237,33 +214,31 @@ const SettingsPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Google Chat Integration */}
+        {/* Google Chat Integration — configured on the API, not here. The old
+            incoming-webhook field was removed: nothing reads that URL any more,
+            so the form (and its "Connected" tag) claimed a working integration
+            that did nothing. */}
         <Card
           title={
             <Space>
               <GoogleOutlined style={{ color: '#1a73e8' }} />
               <span>Google Chat Integration</span>
-              {gchatConnected && <Tag color="success" icon={<CheckCircleOutlined />}>Connected</Tag>}
             </Space>
           }
         >
-          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            Posts @-mention notifications (and future ticket events) into a Google Chat space via an incoming webhook.
-            In your Chat space, click the space name → <Text code>Apps & integrations</Text> → <Text code>Add webhooks</Text> →
-            name it "Bug Out Managed" → copy the URL it generates.
+          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            Nothing to configure here. Google Chat runs as a Chat app authenticated with a service
+            account, so it is set up on the API rather than per project: a Space is created for each
+            client on their first ticket, developer comments post into it, and their replies come back
+            as ticket comments.
           </Paragraph>
-          <Form form={gchatForm} layout="vertical">
-            <Form.Item
-              name="googleChatWebhookUrl"
-              label="Google Chat Incoming Webhook URL"
-              extra="Looks like https://chat.googleapis.com/v1/spaces/AAAA.../messages?key=...&token=..."
-            >
-              <Input placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=..." />
-            </Form.Item>
-            <Button type="primary" onClick={handleSaveGoogleChat} loading={gchatSaving}>
-              Save Google Chat Configuration
-            </Button>
-          </Form>
+          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            Credentials live in the <Text code>GoogleServiceAccounts</Text> table (or{' '}
+            <Text code>GoogleChat:ServiceAccountJson</Text>), and the Chat app's endpoint must point at{' '}
+            <Text code>/api/google-chat/events</Text> with{' '}
+            <Text code>GoogleChat:EventAudience</Text> set to the same URL. See the Google Chat section
+            of the README. Per-ticket status is on the ticket's Chat tab.
+          </Paragraph>
         </Card>
 
         {/* Ticket Statuses */}

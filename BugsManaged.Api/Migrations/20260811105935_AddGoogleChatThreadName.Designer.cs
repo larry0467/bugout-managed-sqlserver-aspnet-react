@@ -4,6 +4,7 @@ using BugsManaged.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BugsManaged.Api.Migrations
 {
     [DbContext(typeof(BugsManagedDbContext))]
-    partial class BugsManagedDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260811105935_AddGoogleChatThreadName")]
+    partial class AddGoogleChatThreadName
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -91,115 +94,6 @@ namespace BugsManaged.Api.Migrations
                     b.HasIndex("TicketId");
 
                     b.ToTable("ClaudeRuns");
-                });
-
-            modelBuilder.Entity("BugsManaged.Api.Entities.GoogleChatSpace", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<long?>("CreatedForTicketId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("DisplayName")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<bool>("InviteSent")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastMessageAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("MemberEmail")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<DateTime?>("MemberFirstSeenAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<long>("OrganizationId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SpaceName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SpaceName");
-
-                    b.HasIndex("OrganizationId", "MemberEmail")
-                        .IsUnique();
-
-                    b.ToTable("GoogleChatSpaces");
-                });
-
-            modelBuilder.Entity("BugsManaged.Api.Entities.GoogleServiceAccount", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("ClientEmail")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("ClientId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("ClientX509CertUrl")
-                        .HasMaxLength(700)
-                        .HasColumnType("nvarchar(700)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<long?>("OrganizationId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("PrivateKey")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PrivateKeyId")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("ProjectId")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("ProjectNumber")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "IsActive");
-
-                    b.ToTable("GoogleServiceAccounts");
                 });
 
             modelBuilder.Entity("BugsManaged.Api.Entities.Organization", b =>
@@ -781,10 +675,6 @@ namespace BugsManaged.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("GoogleChatMessageName")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
                     b.Property<string>("NoteType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -806,10 +696,6 @@ namespace BugsManaged.Api.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("GoogleChatMessageName")
-                        .IsUnique()
-                        .HasFilter("[GoogleChatMessageName] IS NOT NULL");
 
                     b.HasIndex("OrganizationId");
 

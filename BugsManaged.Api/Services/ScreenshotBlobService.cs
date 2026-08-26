@@ -4,9 +4,6 @@ using Azure.Storage.Sas;
 
 namespace BugsManaged.Api.Services;
 
-// Parallel to VideoBlobService but for image attachments (PNG/JPEG/WEBP).
-// Separate container so retention / access policy can diverge from videos
-// later (e.g. videos may be 30-day expiry, screenshots indefinite).
 public interface IScreenshotBlobService
 {
     Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default);
@@ -15,22 +12,29 @@ public interface IScreenshotBlobService
 
 public class ScreenshotBlobService : IScreenshotBlobService
 {
-    private readonly BlobServiceClient _client;
+    private readonly BlobServiceClient? _client;
     private readonly string _container;
 
     public ScreenshotBlobService(IConfiguration config)
     {
-        var account = config["BugOutManaged:Video:StorageAccountName"]
-            ?? throw new InvalidOperationException("BugOutManaged:Video:StorageAccountName is not configured");
+        var account = config["BugOutManaged:Video:StorageAccountName"];
         _container = config["BugOutManaged:Screenshots:ContainerName"] ?? "screenshots";
 
-        _client = new BlobServiceClient(
-            new Uri($"https://{account}.blob.core.windows.net"),
-            new DefaultAzureCredential());
+        if (!string.IsNullOrEmpty(account))
+        {
+            _client = new BlobServiceClient(
+                new Uri($"https://{account}.blob.core.windows.net"),
+                new DefaultAzureCredential());
+        }
     }
 
     public async Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default)
     {
+        if (_client == null)
+        {
+            return $"https://localhost/mock-screenshot/ticket_{ticketId}_{Guid.NewGuid()}{extension}";
+        }
+
         var container = _client.GetBlobContainerClient(_container);
         await container.CreateIfNotExistsAsync(cancellationToken: ct);
 
@@ -42,7 +46,11 @@ public class ScreenshotBlobService : IScreenshotBlobService
 
     public async Task<Uri> GenerateSasUriAsync(string blobUri, TimeSpan validFor, CancellationToken ct = default)
     {
-        var blobUriParsed = new Uri(blobUri);
+        if (_client == null || !Uri.TryCreate(blobUri, UriKind.Absolute, out var blobUriParsed) || blobUriParsed.Host == "localhost")
+        {
+            return new Uri(blobUri);
+        }
+
         var blobName = blobUriParsed.AbsolutePath.TrimStart('/').Substring(_container.Length + 1);
         var container = _client.GetBlobContainerClient(_container);
         var blob = container.GetBlobClient(blobName);
@@ -65,3 +73,4 @@ public class ScreenshotBlobService : IScreenshotBlobService
         return new UriBuilder(blob.Uri) { Query = sas.ToString() }.Uri;
     }
 }
+
