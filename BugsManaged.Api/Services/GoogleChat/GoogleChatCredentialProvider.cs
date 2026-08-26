@@ -32,18 +32,33 @@ public interface IGoogleChatTokenSource
 }
 
 /// <summary>
-/// The GCP project numbers an inbound Chat request may legitimately be audienced
-/// to.
+/// A Cloud project whose Chat app may legitimately send us events, and the
+/// organization it belongs to.
+/// </summary>
+/// <param name="ProjectNumber">
+/// All-digits project number. Appears in the sending app's service agent,
+/// service-{ProjectNumber}@gcp-sa-gsuiteaddons.iam.gserviceaccount.com.
+/// </param>
+/// <param name="OrganizationId">
+/// The organization this credential belongs to, or null for a shared credential
+/// (a GoogleServiceAccounts row with no organization, or the deployment-wide
+/// GoogleChat:ProjectNumber). Null means one Chat app legitimately serves every
+/// tenant, so the sender cannot be pinned to one organization.
+/// </param>
+public record GoogleChatSender(string ProjectNumber, long? OrganizationId);
+
+/// <summary>
+/// Every Cloud project whose Chat app this deployment will accept events from.
 ///
-/// A set rather than one value, because at verification time we have not parsed
-/// the payload yet and so do not know which organization the event belongs to —
-/// that is only learned from the Space afterwards. So the audience is checked
-/// against every project number this deployment knows about: the config-wide
-/// fallback plus one per active service-account row.
+/// A set rather than one value because at verification time the payload has not
+/// been parsed, so we do not yet know which organization an event concerns — that
+/// comes from the Space afterwards. Verification therefore matches against every
+/// known sender, and returns *which* one matched so the caller can require the
+/// Space to belong to that sender's organization.
 /// </summary>
 public interface IGoogleChatAudienceSource
 {
-    Task<IReadOnlyCollection<string>> GetTrustedAudiencesAsync(CancellationToken ct = default);
+    Task<IReadOnlyCollection<GoogleChatSender>> GetTrustedSendersAsync(CancellationToken ct = default);
 }
 
 /// <summary>
@@ -159,18 +174,23 @@ public class GoogleChatCredentialProvider : IGoogleChatTokenSource, IGoogleChatA
         => await GetCredentialAsync(organizationId, _options.MessageScopes) != null;
 
     /// <summary>
-    /// Every project number an inbound Chat request may be audienced to: the
-    /// config-wide fallback plus one per active service-account row.
+    /// Every Cloud project whose Chat app may send us events: the config-wide
+    /// fallback plus one per active service-account row, each paired with the
+    /// organization it belongs to.
     ///
     /// Not cached — it is read once per inbound event, which is cheap against an
     /// indexed table, and caching would mean a newly added tenant's replies were
     /// rejected until a restart.
     /// </summary>
-    public async Task<IReadOnlyCollection<string>> GetTrustedAudiencesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyCollection<GoogleChatSender>> GetTrustedSendersAsync(
+        CancellationToken ct = default)
     {
-        var audiences = new HashSet<string>(StringComparer.Ordinal);
+        // Keyed by project number so a number appearing both in config and in a
+        // row resolves once. The org-scoped entry wins, because it is the more
+        // specific claim about who that project belongs to.
+        var senders = new Dictionary<string, GoogleChatSender>(StringComparer.Ordinal);
 
-        AddIfProjectNumber(audiences, _options.ProjectNumber, "GoogleChat:ProjectNumber");
+        AddSender(senders, _options.ProjectNumber, organizationId: null, "GoogleChat:ProjectNumber");
 
         try
         {
@@ -179,11 +199,12 @@ public class GoogleChatCredentialProvider : IGoogleChatTokenSource, IGoogleChatA
 
             var fromDb = await db.GoogleServiceAccounts
                 .Where(a => a.IsActive && a.ProjectNumber != null && a.ProjectNumber != "")
-                .Select(a => new { a.Id, a.ProjectNumber })
+                .Select(a => new { a.Id, a.ProjectNumber, a.OrganizationId })
                 .ToListAsync(ct);
 
             foreach (var row in fromDb)
-                AddIfProjectNumber(audiences, row.ProjectNumber, $"GoogleServiceAccounts.Id={row.Id}");
+                AddSender(senders, row.ProjectNumber, row.OrganizationId,
+                    $"GoogleServiceAccounts.Id={row.Id}");
         }
         catch (Exception ex)
         {
@@ -192,7 +213,7 @@ public class GoogleChatCredentialProvider : IGoogleChatTokenSource, IGoogleChatA
             _log.LogError(ex, "Could not read Google Chat project numbers from the database");
         }
 
-        return audiences;
+        return senders.Values.ToList();
     }
 
     /// <summary>
@@ -206,21 +227,30 @@ public class GoogleChatCredentialProvider : IGoogleChatTokenSource, IGoogleChatA
     /// number is configured — technically true, and thoroughly misleading. So the
     /// bad value is dropped and named instead.
     /// </summary>
-    private void AddIfProjectNumber(ISet<string> audiences, string? value, string source)
+    private void AddSender(
+        IDictionary<string, GoogleChatSender> senders, string? value, long? organizationId, string source)
     {
         var candidate = value?.Trim();
         if (string.IsNullOrEmpty(candidate)) return;
 
-        if (candidate.All(char.IsAsciiDigit))
+        if (!candidate.All(char.IsAsciiDigit))
         {
-            audiences.Add(candidate);
+            _log.LogWarning(
+                "Ignoring {Source} = '{Value}': a Google Cloud project *number* is all digits. This looks " +
+                "like the project *id*. Find the number on the Cloud console project page, next to the id.",
+                source, candidate);
             return;
         }
 
-        _log.LogWarning(
-            "Ignoring {Source} = '{Value}': a Google Cloud project *number* is all digits. This looks " +
-            "like the project *id*. Find the number on the Cloud console project page, next to the id.",
-            source, candidate);
+        // An organization-scoped entry beats a shared one for the same project
+        // number: it says which tenant that Chat app belongs to, which is exactly
+        // what lets the inbound path refuse a Space owned by someone else.
+        if (senders.TryGetValue(candidate, out var existing)
+            && existing.OrganizationId != null
+            && organizationId == null)
+            return;
+
+        senders[candidate] = new GoogleChatSender(candidate, organizationId);
     }
 
     /// <summary>

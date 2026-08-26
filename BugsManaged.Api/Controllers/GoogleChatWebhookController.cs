@@ -65,7 +65,7 @@ public class GoogleChatWebhookController : ControllerBase
         var chat = Obj(payload, "chat");
 
         if (Obj(chat, "messagePayload") is { ValueKind: JsonValueKind.Object } messagePayload)
-            return await HandleMessageAsync(messagePayload);
+            return await HandleMessageAsync(messagePayload, verification.Sender?.OrganizationId);
 
         if (Obj(chat, "addedToSpacePayload") is { ValueKind: JsonValueKind.Object } added)
         {
@@ -95,7 +95,8 @@ public class GoogleChatWebhookController : ControllerBase
     /// `messagePayload` (message under `message`, space alongside it) or the older
     /// top-level event (same layout, so one reader serves both).
     /// </summary>
-    private async Task<IActionResult> HandleMessageAsync(JsonElement container)
+    private async Task<IActionResult> HandleMessageAsync(
+        JsonElement container, long? senderOrganizationId)
     {
         var messageData = Obj(container, "message");
         if (messageData.ValueKind != JsonValueKind.Object)
@@ -126,7 +127,7 @@ public class GoogleChatWebhookController : ControllerBase
 
         try
         {
-            var outcome = await _notifier.HandleInboundMessageAsync(inbound);
+            var outcome = await _notifier.HandleInboundMessageAsync(inbound, senderOrganizationId);
 
             // Silence on the ordinary outcomes keeps the Space readable; an
             // unmatched message gets a nudge rather than vanishing unexplained.
@@ -134,9 +135,17 @@ public class GoogleChatWebhookController : ControllerBase
             {
                 GoogleChatNotifier.InboundOutcome.UnknownSpace => Ok(new
                 {
-                    text = "I couldn't match that to one of your tickets. Reply inside a ticket's " +
-                           "thread, or start your message with the ticket number (e.g. `#42`)."
+                    text = "I couldn't tell which ticket that's about. Reply inside a ticket's own " +
+                           "thread, or start your message with the ticket number (e.g. `#42`) — a " +
+                           "plain message here goes to your most recent ticket, which may be for a " +
+                           "different app."
                 }),
+
+                // Deliberately opaque to the sender: telling a caller that the
+                // Space exists but belongs to someone else confirms the resource
+                // name is real. The detail is in our log instead.
+                GoogleChatNotifier.InboundOutcome.SpaceNotOwnedBySender => Ok(),
+
                 _ => Ok(),
             };
         }

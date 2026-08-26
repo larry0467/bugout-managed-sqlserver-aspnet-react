@@ -209,11 +209,44 @@ Two-way conversation with clients who are **outside** our Workspace domain, usin
 the shared-Space-per-client pattern. A private Chat app, not a Marketplace
 listing.
 
+### Serving many subscribers with one Chat app
+
+The common misconception is that each subscriber needs their own Chat app or
+Cloud project. They do not.
+
+`spaces.create` under app authentication **always** creates the Space in the
+Workspace that owns the service account (`customer: customers/my_customer`). You
+cannot create a Space inside somebody else's Workspace. What makes this work for
+external subscribers is `externalUserAllowed: true` plus adding their people as
+**external members** of a Space in *your* Workspace.
+
+So:
+
+- **One Chat app, one Cloud project, one Workspace — yours.** 10 subscribers = 10
+  Spaces in your Workspace, each with that subscriber's people as external
+  members.
+- Onboarding a subscriber needs **no Google Cloud work at all**. No project, no
+  service account, no Chat app on their side.
+- The one prerequisite outside your control: each subscriber's Workspace admin
+  must permit external chat with your domain. Personal Gmail accounts need
+  nothing.
+
+Per-organization credentials (`GoogleServiceAccounts.OrganizationId`) exist for
+the case where a subscriber insists the Chat app live in *their* Workspace. That
+is the exception, not the model — and once a second organization does register an
+app, the sender check described under *How inbound requests are authenticated*
+is what keeps one tenant's app out of another's Spaces.
+
 ### How the Space-per-client flow works
 
-One Space per client, not per ticket — the client accepts one invite ever, and
-every later ticket of theirs reuses it. A fresh Space per ticket would prompt
-them again on every report.
+One Space per **reporter email**, not per ticket and not per subscriber — the
+person accepts one invite ever, and every later ticket of theirs reuses it. A
+fresh Space per ticket would prompt them again on every report.
+
+Because the key is the individual, one person who reports bugs against several
+subscriber apps has a single Space carrying all of them. Messages therefore name
+the app (`#12 · Customer Portal`) from `Ticket.TenantName`, and colleagues at the
+same subscriber get separate Spaces rather than a shared one.
 
 ```
 Client files a ticket
@@ -235,6 +268,12 @@ and the resolved thread name is stored on `Ticket.GoogleChatThreadName`. That is
 what lets a reply be attributed to the right ticket without the client typing
 anything. Failing that, an explicit `#42` works; failing that, the reply lands on
 that client's most recently updated ticket.
+
+That last fallback is a guess, and worth knowing about: it ignores the tenant, so
+an unthreaded reply from someone who covers several subscriber apps can attach to
+a ticket for a different app. We cannot infer which they meant, so the "couldn't
+match" reply asks them to use the thread. Threaded replies — the normal case —
+are exact.
 
 Everything outbound goes through an in-memory queue drained by
 `GoogleChatDispatcher`, so a Chat outage can never fail or slow a ticket save.
@@ -275,8 +314,21 @@ email  service-{PROJECT_NUMBER}@gcp-sa-gsuiteaddons.iam.gserviceaccount.com
 ```
 
 All three are verified. `aud` being the endpoint URL is what stops a token issued
-for another Chat app being replayed at ours; the `email` claim ties it to our
-Cloud project rather than any Google project.
+for another Chat app being replayed at ours; the `email` claim identifies which
+Cloud project sent it.
+
+That last point matters beyond authenticity. A valid token proves *"an event from
+a project we trust"*, not *"from the project that owns this Space"* — and Space
+resource names are globally unique, so the Space lookup cannot be scoped until
+the sender is known. Verification therefore returns **which** configured project
+matched, and the inbound handler refuses an event whose Space belongs to a
+different organization (`InboundOutcome.SpaceNotOwnedBySender`). Without it, once
+two organizations each had a Chat app, either could write comments onto the
+other's tickets.
+
+A sender mapped to a `GoogleServiceAccounts` row with **no** `OrganizationId` is
+a shared credential — one Chat app serving every tenant — so there is no owning
+organization to compare against and the check correctly does not apply.
 
 The event body is nested rather than tagged with a top-level `type`:
 

@@ -52,7 +52,15 @@ public class GoogleChatRequestVerifier
         _log = log;
     }
 
-    public record VerificationResult(bool IsValid, string? Reason);
+    /// <param name="Sender">
+    /// Which configured Cloud project the token came from, when that could be
+    /// determined. Null means no project number is configured, so the sender is
+    /// unidentified — the caller then cannot constrain which organization's Space
+    /// the event may touch. A non-null Sender with a null OrganizationId is a
+    /// shared credential: identified project, but legitimately serving every
+    /// tenant.
+    /// </param>
+    public record VerificationResult(bool IsValid, string? Reason, GoogleChatSender? Sender = null);
 
     /// <summary>
     /// Verifies the system ID token carried in the event body.
@@ -102,32 +110,36 @@ public class GoogleChatRequestVerifier
                     TrustedAudiences = { expectedAudience },
                 });
 
-            // Ties the token to our Cloud project. Without this, any Google-signed
-            // add-on token audienced to this URL would pass.
-            var projectNumbers = await _audiences.GetTrustedAudiencesAsync();
-            if (projectNumbers.Count > 0)
+            // Identifies *which* Cloud project sent this. Without it, any
+            // Google-signed add-on token audienced to this URL would pass — and
+            // the caller would have no way to tell one tenant's Chat app from
+            // another's, which is what allows a cross-tenant write.
+            var senders = await _audiences.GetTrustedSendersAsync();
+            if (senders.Count > 0)
             {
-                var expectedEmails = projectNumbers
-                    .Select(n => $"service-{n}{ServiceAgentSuffix}")
-                    .ToArray();
+                var matched = senders.FirstOrDefault(s =>
+                    string.Equals($"service-{s.ProjectNumber}{ServiceAgentSuffix}", payload.Email,
+                        StringComparison.OrdinalIgnoreCase));
 
-                if (!expectedEmails.Contains(payload.Email, StringComparer.OrdinalIgnoreCase))
+                if (matched == null)
                 {
+                    var expected = senders.Select(s => $"service-{s.ProjectNumber}{ServiceAgentSuffix}");
                     return new VerificationResult(false,
                         $"Token was issued for '{payload.Email}', which is not the service agent of any " +
-                        $"configured project number. Expected one of: {string.Join(", ", expectedEmails)}.");
+                        $"configured project number. Expected one of: {string.Join(", ", expected)}.");
                 }
+
+                return new VerificationResult(true, null, matched);
             }
-            else
-            {
-                // Signature, issuer and audience already passed, so this is not an
-                // open door — but without a project number we cannot tell our own
-                // Chat app from another one pointed at the same URL. Worth naming.
-                _log.LogWarning(
-                    "Accepting a Google Chat event without checking the sending project: no project " +
-                    "number configured. Set GoogleServiceAccounts.ProjectNumber (the all-digits value " +
-                    "from '{Email}') to close this.", payload.Email);
-            }
+
+            // Signature, issuer and audience already passed, so this is not an
+            // open door — but without a project number we cannot tell our own
+            // Chat app from another one pointed at the same URL, and the caller
+            // gets no sender to constrain the Space against. Worth naming.
+            _log.LogWarning(
+                "Accepting a Google Chat event without checking the sending project: no project " +
+                "number configured. Set GoogleServiceAccounts.ProjectNumber (the all-digits value " +
+                "from '{Email}') to close this.", payload.Email);
 
             return new VerificationResult(true, null);
         }

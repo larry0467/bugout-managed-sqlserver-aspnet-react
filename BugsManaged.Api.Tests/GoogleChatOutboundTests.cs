@@ -224,6 +224,52 @@ public class GoogleChatOutboundTests
     }
 
     [Fact]
+    public async Task Tenant_name_appears_in_the_outbound_comment()
+    {
+        var handler = new StubHandler()
+            .Enqueue(HttpStatusCode.OK, new { name = $"{SpaceName}/messages/M1" });
+
+        var (_, notifier, db) = Build(handler);
+        var ticket = SeedTicket(db);
+
+        // Spaces are keyed on reporter email, so one person reporting against
+        // several subscriber apps has a single Space. Naming the app is what keeps
+        // that Space readable.
+        ticket.TenantId = "tenant-customer-portal";
+        ticket.TenantName = "Customer Portal";
+        SeedSpace(db);
+        var note = SeedNote(db, ticket);
+        await db.SaveChangesAsync();
+
+        await notifier.HandleAsync(new GoogleChatJob(
+            GoogleChatJobKind.NoteAdded, ticket.Id, OrgId, NoteId: note.Id));
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Contains("Customer Portal", request.Body);
+        Assert.Contains($"#{ticket.Id}", request.Body);
+    }
+
+    [Fact]
+    public async Task A_ticket_with_no_tenant_gets_no_label()
+    {
+        var handler = new StubHandler()
+            .Enqueue(HttpStatusCode.OK, new { name = $"{SpaceName}/messages/M1" });
+
+        var (_, notifier, db) = Build(handler);
+        var ticket = SeedTicket(db);        // TenantName left null
+        SeedSpace(db);
+        var note = SeedNote(db, ticket);
+        await db.SaveChangesAsync();
+
+        await notifier.HandleAsync(new GoogleChatJob(
+            GoogleChatJobKind.NoteAdded, ticket.Id, OrgId, NoteId: note.Id));
+
+        // No stray separator when there is nothing to name.
+        var request = Assert.Single(handler.Requests);
+        Assert.DoesNotContain($"#{ticket.Id} · ", request.Body);
+    }
+
+    [Fact]
     public async Task Comment_post_records_the_thread_and_message_ids()
     {
         var handler = new StubHandler()

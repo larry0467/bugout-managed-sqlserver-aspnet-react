@@ -87,7 +87,7 @@ public class GoogleChatNotifier
         if (space == null) return;
 
         var text =
-            $"Hi — we've received ticket #{ticket.Id}: {Sanitize(ticket.Title)}. " +
+            $"Hi — we've received ticket #{ticket.Id}{TenantLabel(ticket)}: {Sanitize(ticket.Title)}. " +
             $"We'll update you here. {TicketUrl(ticket)}";
 
         await PostAsync(ticket, space, text, ct);
@@ -104,7 +104,7 @@ public class GoogleChatNotifier
 
         var verb = ticket.Status == "CLOSED" ? "closed" : "resolved";
         var text =
-            $"✅ Your ticket #{ticket.Id} — {Sanitize(ticket.Title)} — has been {verb}.{resolution} " +
+            $"✅ Your ticket #{ticket.Id}{TenantLabel(ticket)} — {Sanitize(ticket.Title)} — has been {verb}.{resolution} " +
             $"Reply here if anything is still off. {TicketUrl(ticket)}";
 
         await PostAsync(ticket, space, text, ct);
@@ -127,7 +127,7 @@ public class GoogleChatNotifier
 
         var author = Sanitize(note.AuthorName ?? note.AuthorEmail);
         var text =
-            $"💬 New comment on ticket #{ticket.Id} — {Sanitize(ticket.Title)}\n" +
+            $"💬 New comment on ticket #{ticket.Id}{TenantLabel(ticket)} — {Sanitize(ticket.Title)}\n" +
             $"From {author} at {Stamp(note.CreatedAt)}:\n{Sanitize(note.Content)}\n{TicketUrl(ticket)}";
 
         var sent = await PostAsync(ticket, space, text, ct);
@@ -278,7 +278,20 @@ public class GoogleChatNotifier
         string? SenderDisplayName,
         bool SenderIsBot);
 
-    public enum InboundOutcome { Saved, Duplicate, Ignored, UnknownSpace }
+    public enum InboundOutcome
+    {
+        Saved,
+        Duplicate,
+        Ignored,
+        UnknownSpace,
+
+        /// <summary>
+        /// The event verified, but it came from one organization's Chat app while
+        /// naming another organization's Space. Refused — see the sender check in
+        /// <see cref="HandleInboundMessageAsync"/>.
+        /// </summary>
+        SpaceNotOwnedBySender,
+    }
 
     /// <summary>
     /// Turns a client's Chat reply into a ticket comment, then notifies the
@@ -291,12 +304,20 @@ public class GoogleChatNotifier
     ///     Chat retries whenever our acknowledgement is slow or lost.
     ///  3. The insert races a concurrent redelivery on a unique index, so even
     ///     two simultaneous deliveries produce one comment.
+    ///  4. The sending Cloud project must own the Space it names, so one tenant's
+    ///     Chat app cannot write into another tenant's Space.
     ///
     /// An unknown Space is logged and ignored, never an error: it means someone
     /// added the app to a Space we have no mapping for.
     /// </summary>
+    /// <param name="senderOrganizationId">
+    /// The organization behind the Chat app that sent this event, from token
+    /// verification. Null when the sender could not be pinned to one
+    /// organization — a shared credential serving every tenant, or no project
+    /// number configured — in which case no ownership check is possible.
+    /// </param>
     public async Task<InboundOutcome> HandleInboundMessageAsync(
-        InboundMessage message, CancellationToken ct = default)
+        InboundMessage message, long? senderOrganizationId = null, CancellationToken ct = default)
     {
         if (message.SenderIsBot)
         {
@@ -324,6 +345,24 @@ public class GoogleChatNotifier
                 "Google Chat message from unmapped space {Space} ignored — no client is bound to it",
                 message.SpaceName);
             return InboundOutcome.UnknownSpace;
+        }
+
+        // The Space lookup above is intentionally global — a Space resource name
+        // is unique across Google, so there is nothing to scope it by until we
+        // know who sent the event. This is where that gets checked: a verified
+        // token proves "a Google-signed event from a project we trust", not "from
+        // the project that owns this Space". Without this, one subscriber's Chat
+        // app could name another subscriber's Space and have a comment written
+        // onto their ticket.
+        if (senderOrganizationId != null && space.OrganizationId != senderOrganizationId)
+        {
+            _log.LogWarning(
+                "Refused a Google Chat event for space {Space} (organization {SpaceOrg}) sent by a Chat " +
+                "app belonging to organization {SenderOrg} — a Chat app may only write into its own " +
+                "organization's spaces",
+                message.SpaceName, space.OrganizationId, senderOrganizationId);
+
+            return InboundOutcome.SpaceNotOwnedBySender;
         }
 
         var ticket = await ResolveTicketAsync(space, message, text, ct);
@@ -507,6 +546,20 @@ public class GoogleChatNotifier
 
     private static string? NormalizeEmail(string? email) =>
         string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// " · Customer Portal" when the ticket carries a host-app tenant, otherwise
+    /// empty.
+    ///
+    /// Spaces are keyed on the reporter's email, so one person who reports bugs
+    /// against several subscriber apps has a single Space carrying all of them —
+    /// which is ambiguous without naming the app. Ticket.TenantId/TenantName are
+    /// already populated by the widget, so this costs nothing.
+    /// </summary>
+    private static string TenantLabel(Ticket ticket) =>
+        string.IsNullOrWhiteSpace(ticket.TenantName)
+            ? string.Empty
+            : $" · {Sanitize(ticket.TenantName)}";
 
     private static string Stamp(DateTime utc) =>
         utc.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");

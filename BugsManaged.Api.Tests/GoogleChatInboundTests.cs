@@ -267,6 +267,53 @@ public class GoogleChatInboundTests
         Assert.Contains("users/all", cleaned);
     }
 
+    // ── cross-tenant isolation ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Sender_from_another_organization_cannot_write_into_this_space()
+    {
+        var (notifier, db) = NewNotifier();
+        SeedTicketAndSpace(db);     // Space belongs to OrgId (1)
+
+        // Verified event, but sent by a Chat app belonging to organization 2. A
+        // valid token proves "from a project we trust", not "from the project that
+        // owns this Space" — this is the check that closes that gap.
+        var outcome = await notifier.HandleInboundMessageAsync(
+            Message(), senderOrganizationId: OrgId + 1);
+
+        Assert.Equal(GoogleChatNotifier.InboundOutcome.SpaceNotOwnedBySender, outcome);
+        Assert.Equal(0, await db.TicketNotes.IgnoreQueryFilters().CountAsync());
+    }
+
+    [Fact]
+    public async Task Sender_from_the_owning_organization_is_accepted()
+    {
+        var (notifier, db) = NewNotifier();
+        SeedTicketAndSpace(db);
+
+        var outcome = await notifier.HandleInboundMessageAsync(
+            Message(), senderOrganizationId: OrgId);
+
+        Assert.Equal(GoogleChatNotifier.InboundOutcome.Saved, outcome);
+        Assert.Equal(1, await db.TicketNotes.IgnoreQueryFilters().CountAsync());
+    }
+
+    [Fact]
+    public async Task Shared_credential_sender_is_not_constrained()
+    {
+        var (notifier, db) = NewNotifier();
+        SeedTicketAndSpace(db);
+
+        // A GoogleServiceAccounts row with no OrganizationId — one Chat app
+        // legitimately serving every tenant. There is no owning organization to
+        // compare against, so the check must not fire.
+        var outcome = await notifier.HandleInboundMessageAsync(
+            Message(), senderOrganizationId: null);
+
+        Assert.Equal(GoogleChatNotifier.InboundOutcome.Saved, outcome);
+        Assert.Equal(1, await db.TicketNotes.IgnoreQueryFilters().CountAsync());
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -305,17 +352,20 @@ public class GoogleChatWebhookVerificationTests
     /// <summary>Stands in for the config value plus the GoogleServiceAccounts rows.</summary>
     private sealed class StubAudiences : IGoogleChatAudienceSource
     {
-        private readonly string[] _audiences;
+        private readonly GoogleChatSender[] _senders;
 
         // Null-tolerant: `Verifier(null)` binds null to the params *array*, not to
         // an element, which would otherwise NRE instead of exercising the
-        // no-audience-configured path.
-        public StubAudiences(params string?[]? audiences) =>
-            _audiences = (audiences ?? Array.Empty<string?>())
-                .Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a!).ToArray();
+        // no-sender-configured path.
+        public StubAudiences(params string?[]? projectNumbers) =>
+            _senders = (projectNumbers ?? Array.Empty<string?>())
+                .Where(a => !string.IsNullOrWhiteSpace(a))
+                .Select(a => new GoogleChatSender(a!, OrganizationId: null))
+                .ToArray();
 
-        public Task<IReadOnlyCollection<string>> GetTrustedAudiencesAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyCollection<string>>(_audiences);
+        public Task<IReadOnlyCollection<GoogleChatSender>> GetTrustedSendersAsync(
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyCollection<GoogleChatSender>>(_senders);
     }
 
     private const string Endpoint = "https://example.test/api/google-chat/events";
