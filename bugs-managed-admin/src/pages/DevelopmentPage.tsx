@@ -25,6 +25,14 @@ interface Props {
 }
 
 const linkKinds: DevelopmentLinkKind[] = ['BRANCH', 'PR', 'COMMIT', 'DOC', 'VIDEO'];
+
+// Beta is the hand-off point: from there on bugs come in through the widget
+// like any other, so the default board shows only work still in flight.
+// Shipped items are hidden, not gone — the digest and the announcement video
+// still need them.
+type BoardView = 'active' | 'shipped' | 'all';
+const activeStages: DevelopmentStage[] = ['ORDERED', 'IN_PROGRESS', 'LOCAL_DEMO', 'PR_OPEN', 'MERGED_DEV'];
+const shippedStages: DevelopmentStage[] = ['BETA', 'PRODUCTION', 'ANNOUNCED'];
 const linkKindIcon: Record<DevelopmentLinkKind, React.ReactNode> = {
   BRANCH: <BranchesOutlined />,
   PR: <PullRequestOutlined />,
@@ -55,7 +63,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
   const [projectFilter, setProjectFilter] = useState<number | undefined>();
   const [stageFilter, setStageFilter] = useState<DevelopmentStage[]>([]);
   const [needsVideoOnly, setNeedsVideoOnly] = useState(false);
-  const [showAnnounced, setShowAnnounced] = useState(false);
+  const [view, setView] = useState<BoardView>('active');
   const [search, setSearch] = useState('');
   const [groupByApp, setGroupByApp] = useState(false);
   const [shippedToday, setShippedToday] = useState<DevelopmentOrder[] | null>(null);
@@ -80,18 +88,25 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
 
   const load = useCallback(() => {
     setLoading(true);
+    // An explicit stage pick wins; "needs video" only makes sense on shipped
+    // items, so it overrides the Active view's stage restriction.
+    let stages: DevelopmentStage[] | undefined = stageFilter.length > 0 ? stageFilter : undefined;
+    if (!stages && !needsVideoOnly) {
+      if (view === 'active') stages = activeStages;
+      else if (view === 'shipped') stages = shippedStages;
+    }
     developmentApi
       .list({
         projectId: projectFilter,
-        stage: stageFilter,
+        stage: stages,
         needsAnnouncement: needsVideoOnly,
         search: search || undefined,
-        includeAnnounced: showAnnounced,
+        includeAnnounced: true,
       })
       .then(setOrders)
       .catch((e) => message.error(errMsg(e, 'Could not load development orders')))
       .finally(() => setLoading(false));
-  }, [projectFilter, stageFilter, needsVideoOnly, search, showAnnounced]);
+  }, [projectFilter, stageFilter, needsVideoOnly, search, view]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -522,6 +537,15 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap size={[12, 8]}>
+          <Segmented
+            value={view}
+            onChange={(v) => setView(v as BoardView)}
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Shipped (beta → announced)', value: 'shipped' },
+              { label: 'All', value: 'all' },
+            ]}
+          />
           <Select
             allowClear
             placeholder="All apps"
@@ -549,7 +573,6 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
             onClear={() => setSearch('')}
           />
           <Checkbox checked={needsVideoOnly} onChange={(e) => setNeedsVideoOnly(e.target.checked)}>Needs announcement video</Checkbox>
-          <Checkbox checked={showAnnounced} onChange={(e) => setShowAnnounced(e.target.checked)}>Show announced</Checkbox>
           <Segmented
             value={groupByApp ? 'app' : 'flat'}
             onChange={(v) => setGroupByApp(v === 'app')}
@@ -562,7 +585,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
 
       {groupByApp && (
         grouped.length === 0
-          ? <Empty description={loading ? 'Loading…' : 'No development orders match these filters'} />
+          ? <Empty description={loading ? 'Loading…' : (view === 'active' ? 'Nothing in flight — shipped items are under the Shipped view' : 'No development orders match these filters')} />
           : grouped.map(([app, rows]) => (
             <Card key={app} size="small" style={{ marginBottom: 16 }}
               title={<Space><AppstoreOutlined /> {app} <Tag>{rows.length}</Tag></Space>}>
