@@ -2,7 +2,7 @@ Bug Out developer kit
 =====================
 
 Work Bug Out tickets in your own Claude Code session, on your own Claude plan.
-The full workflow is in "Bug Out Development - Team Workflow.pdf" (from Larry).
+The full workflow is in BugOut-Development-Team-Workflow.pdf (from Larry).
 
 What you need first
 - Your Bug Out login (role Developer) and your personal service key file
