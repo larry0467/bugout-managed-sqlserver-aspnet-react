@@ -1,0 +1,28 @@
+{
+  "worker": "devbox",
+  "pollProjects": [ "service-managed" ],
+  "maxPerDay": 6,
+  "maxMinutesPerFix": 45,
+  "workRoot": "C:\\SM_wt\\fixes",
+  "claude": {
+    "model": "sonnet",
+    "permissionMode": "acceptEdits",
+    "allowedTools": [
+      "Read", "Edit", "Write", "Glob", "Grep",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git add*)", "Bash(git commit*)", "Bash(git show*)", "Bash(git grep*)",
+      "Bash(dotnet build*)", "Bash(dotnet test*)", "Bash(dotnet restore*)",
+      "Bash(npm run build*)", "Bash(npm test*)", "Bash(npx tsc*)", "Bash(npm ci*)", "Bash(npm install*)"
+    ]
+  },
+  "devops": { "org": "protocall", "project": "WebbasedLLC" },
+  "apps": {
+    "service-managed": {
+      "name": "Service Managed",
+      "repos": [
+        { "name": "ServiceManagerUI",  "git": "C:\\SM_API",                "folder": "api", "baseBranch": "dev", "build": "dotnet build ServiceManaged.Core\\ServiceManaged.Core.sln -c Debug --nologo -v q  (or just the service project you changed under ServiceManaged.Core\\Services)", "kind": "ASP.NET Core services (C#), solution ServiceManaged.Core\\ServiceManaged.Core.sln" },
+        { "name": "ServiceManagedWeb", "git": "C:\\ServiceManaged\\SM_WEB", "folder": "web", "baseBranch": "dev", "build": "npm ci --no-audit --no-fund && npm run typecheck", "kind": "React + Vite web (TypeScript); typecheck = tsc -b" }
+      ],
+      "context": "ProToCall's field-service platform. Bill by the customer's labor rate, not a rate sheet; never gate behaviour on HasRateSheetSetUp. Follow the existing patterns in each repo; the team merges PRs into dev and deploys to beta themselves."
+    }
+  }
+}

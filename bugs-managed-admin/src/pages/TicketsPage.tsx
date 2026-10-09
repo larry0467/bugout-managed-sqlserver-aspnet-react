@@ -29,6 +29,9 @@ import {
   ClockCircleOutlined,
   EditOutlined,
   RocketOutlined,
+  ToolOutlined,
+  LikeOutlined,
+  DislikeOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -48,7 +51,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, developmentApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, developmentApi, fixApi, fixStatusMeta, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
 import LabelChips from '../components/LabelChips';
@@ -338,6 +341,20 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [downloadLoading, setDownloadLoading] = useState<number | null>(null);
   const [shareLoading, setShareLoading] = useState<number | null>(null);
   const [resolveModal, setResolveModal] = useState<Ticket | null>(null);
+  // Drafted-fix queue (Claude Code on the devbox). Approve / reject is a
+  // human admin decision; requesting a fix is open to anyone who can write.
+  const [rejectFixModal, setRejectFixModal] = useState<Ticket | null>(null);
+  const [rejectFixReason, setRejectFixReason] = useState('');
+  const [rejectFixRequeue, setRejectFixRequeue] = useState(true);
+  const canDecideFix = (() => {
+    try {
+      const raw = localStorage.getItem('bom_user');
+      const role = raw ? (JSON.parse(raw) as AuthUser).role : null;
+      return role === 'PLATFORM_OWNER' || role === 'SUPER_ADMIN';
+    } catch {
+      return false;
+    }
+  })();
   const [resolution, setResolution] = useState('');
   // Edit-description modal
   const [editDescModal, setEditDescModal] = useState<Ticket | null>(null);
@@ -630,6 +647,39 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
       navigate(`/development/${d.order.id}`);
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Could not promote this ticket');
+    }
+  };
+
+  const handleRequestFix = async (t: Ticket) => {
+    try {
+      await fixApi.request(t.id);
+      message.success(`#${t.id} queued for a drafted fix — the devbox picks it up on its next pass`);
+      loadTickets();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not queue the fix');
+    }
+  };
+
+  const handleApproveFix = async (t: Ticket) => {
+    try {
+      await fixApi.approve(t.id);
+      message.success(`Fix for #${t.id} approved — the team can merge the PR`);
+      loadTickets();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not approve the fix');
+    }
+  };
+
+  const handleRejectFix = async () => {
+    if (!rejectFixModal) return;
+    try {
+      await fixApi.reject(rejectFixModal.id, rejectFixReason.trim() || undefined, rejectFixRequeue);
+      message.success(rejectFixRequeue ? 'Fix rejected and queued again with your feedback' : 'Fix rejected');
+      setRejectFixModal(null);
+      setRejectFixReason('');
+      loadTickets();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not reject the fix');
     }
   };
 
@@ -1552,6 +1602,32 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               <PlayCircleOutlined /> NO VIDEO UPLOADED
             </Tag>
           )}
+          {/* Drafted-fix queue: status chip + the next human action. */}
+          {record.fixStatus && fixStatusMeta[record.fixStatus] && (
+            <Tag color={fixStatusMeta[record.fixStatus].color} icon={<ToolOutlined />} style={{ fontSize: 11 }}>
+              {fixStatusMeta[record.fixStatus].label}
+            </Tag>
+          )}
+          {(!record.fixStatus || record.fixStatus === 'FAILED' || record.fixStatus === 'REJECTED') && (
+            <Button size="small" icon={<ToolOutlined />} onClick={() => handleRequestFix(record)}>
+              {record.fixStatus ? 'Request fix again' : 'Request Claude fix'}
+            </Button>
+          )}
+          {record.fixStatus === 'READY_TO_TEST' && canDecideFix && (
+            <>
+              <Button size="small" type="primary" ghost icon={<LikeOutlined />} onClick={() => handleApproveFix(record)}>
+                Approve fix
+              </Button>
+              <Button
+                size="small"
+                danger
+                icon={<DislikeOutlined />}
+                onClick={() => { setRejectFixModal(record); setRejectFixReason(''); setRejectFixRequeue(true); }}
+              >
+                Reject fix
+              </Button>
+            </>
+          )}
           {/* Development tracker hand-off: a feature request becomes an
               order on the Development board with one click, keeping its
               history. Orders already on the board link straight to it. */}
@@ -1581,6 +1657,23 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             Resolve
           </Button>
         </Space>
+
+        {/* What the drafted fix found, and feedback from a rejection. */}
+        {(record.fixSummary || record.fixFeedback) && (
+          <Card size="small" style={{ marginBottom: 12 }} title={<><ToolOutlined /> Drafted fix</>}>
+            {record.fixSummary && (
+              <Text style={{ whiteSpace: 'pre-wrap', display: 'block', marginBottom: record.fixFeedback ? 8 : 0 }}>{record.fixSummary}</Text>
+            )}
+            {record.fixFeedback && <Text type="secondary">Feedback: {record.fixFeedback}</Text>}
+            {record.isDevelopmentOrder && (
+              <div style={{ marginTop: 8 }}>
+                <Button size="small" icon={<RocketOutlined />} onClick={() => navigate(`/development/${record.id}`)}>
+                  PRs, stage and testing notes on the Development board
+                </Button>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Attachments — all files attached to this ticket (widget bug
             report uploads + every chat-note attachment). Surfaced here
@@ -2043,6 +2136,26 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             style={{ width: '100%', borderRadius: 8 }}
           />
         )}
+      </Modal>
+
+      {/* Reject drafted fix */}
+      <Modal
+        title={`Reject the drafted fix for #${rejectFixModal?.id}`}
+        open={!!rejectFixModal}
+        onOk={handleRejectFix}
+        onCancel={() => setRejectFixModal(null)}
+        okText="Reject"
+        okButtonProps={{ danger: true }}
+      >
+        <Input.TextArea
+          rows={3}
+          placeholder="What was wrong or missing — this is fed to the next attempt"
+          value={rejectFixReason}
+          onChange={(e) => setRejectFixReason(e.target.value)}
+        />
+        <Checkbox style={{ marginTop: 8 }} checked={rejectFixRequeue} onChange={(e) => setRejectFixRequeue(e.target.checked)}>
+          Queue it again with this feedback
+        </Checkbox>
       </Modal>
 
       {/* Resolve Modal */}

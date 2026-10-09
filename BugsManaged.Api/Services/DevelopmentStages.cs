@@ -65,6 +65,38 @@ public static class DevelopmentStages
     };
 }
 
+// Lifecycle of a drafted fix (Ticket.FixStatus). The dispatcher on the devbox
+// moves REQUESTED -> CLAIMED -> READY_TO_TEST | FAILED; a human moves
+// READY_TO_TEST -> APPROVED | REJECTED (and REJECTED may go back to REQUESTED).
+public static class FixStatuses
+{
+    public const string Requested = "REQUESTED";
+    public const string Claimed = "CLAIMED";
+    public const string ReadyToTest = "READY_TO_TEST";
+    public const string Failed = "FAILED";
+    public const string Approved = "APPROVED";
+    public const string Rejected = "REJECTED";
+
+    public static readonly string[] All = { Requested, Claimed, ReadyToTest, Failed, Approved, Rejected };
+
+    public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
+    {
+        [Requested] = "Fix requested",
+        [Claimed] = "Claude is working on it",
+        [ReadyToTest] = "Fix ready to test",
+        [Failed] = "Fix attempt failed",
+        [Approved] = "Fix approved",
+        [Rejected] = "Fix rejected",
+    };
+
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var key = value.Trim().ToUpperInvariant().Replace(' ', '_').Replace('-', '_');
+        return Array.IndexOf(All, key) >= 0 ? key : null;
+    }
+}
+
 // Bound from the "DevelopmentTracker" configuration section. Every setting
 // has a default so an unconfigured environment still runs the board; only
 // the digest recipients need a real value (and they fall back to the org's

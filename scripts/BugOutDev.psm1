@@ -271,6 +271,69 @@ function ConvertTo-BugOutLinkBody {
     return $h
 }
 
+# ---------- drafted-fix queue (the devbox dispatcher's verbs) ----------
+
+function Get-BugOutFixQueue {
+    [CmdletBinding()]
+    param(
+        [string]$ProjectSlug,
+        [ValidateSet('REQUESTED', 'CLAIMED', 'READY_TO_TEST', 'FAILED', 'APPROVED', 'REJECTED')][string]$Status = 'REQUESTED',
+        [int]$Take = 20,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $q = @{ status = $Status; take = $Take }
+    if ($ProjectSlug) { $q.projectSlug = $ProjectSlug }
+    Invoke-BugOutDev -Method GET -Path 'fixes/queue' -Query $q -ConfigPath $ConfigPath
+}
+
+function Get-BugOutFix {
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method GET -Path "fixes/$Id" -ConfigPath $ConfigPath
+}
+
+function Get-BugOutFixApps {
+    [CmdletBinding()] param([string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method GET -Path 'fixes/apps' -ConfigPath $ConfigPath
+}
+
+function Request-BugOutFix {
+    # Queue any ticket for a drafted fix (what "Request Claude fix" does in the UI).
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$Note, [string]$ConfigPath = $script:DefaultConfigPath)
+    $body = @{}
+    if ($Note) { $body.note = $Note }
+    Invoke-BugOutDev -Method POST -Path "fixes/$Id/request" -Body $body -ConfigPath $ConfigPath
+}
+
+function Start-BugOutFix {
+    # Claim a REQUESTED ticket for this worker. 409 when someone else got it first.
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$Worker = "devbox $env:COMPUTERNAME", [string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method POST -Path "fixes/$Id/claim" -Body @{ worker = $Worker } -ConfigPath $ConfigPath
+}
+
+function Reset-BugOutFix {
+    # Give a CLAIMED ticket back to the queue (worker gave up or died).
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method POST -Path "fixes/$Id/release" -Body @{} -ConfigPath $ConfigPath
+}
+
+function Complete-BugOutFix {
+    # Report the outcome. READY_TO_TEST puts the ticket on the Development board at PR open.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$Id,
+        [Parameter(Mandatory)][ValidateSet('READY_TO_TEST', 'FAILED')][string]$Outcome,
+        [string]$Summary,
+        [string]$TestingNotes,
+        [object[]]$Links,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ outcome = $Outcome }
+    if ($Summary) { $body.summary = $Summary }
+    if ($TestingNotes) { $body.testingNotes = $TestingNotes }
+    if ($Links) { $body.links = @($Links | ForEach-Object { ConvertTo-BugOutLinkBody $_ }) }
+    Invoke-BugOutDev -Method POST -Path "fixes/$Id/result" -Body $body -ConfigPath $ConfigPath
+}
+
 # ---------- Videos Managed ----------
 
 function Get-VideosManagedRecording {
@@ -345,4 +408,5 @@ Export-ModuleMember -Function Get-BugOutDevConfig, Set-BugOutDevConfig, Invoke-B
     Get-BugOutProjects, Set-BugOutProject, Get-BugOutStages,
     Get-BugOutOrders, Get-BugOutOrder, New-BugOutOrder, Set-BugOutOrderStage, Update-BugOutOrder,
     Add-BugOutOrderLink, Remove-BugOutOrderLink, Get-BugOutShipped,
+    Get-BugOutFixQueue, Get-BugOutFix, Get-BugOutFixApps, Request-BugOutFix, Start-BugOutFix, Reset-BugOutFix, Complete-BugOutFix,
     Get-VideosManagedRecording, ConvertFrom-WebVtt, New-BugOutOrderFromVideo

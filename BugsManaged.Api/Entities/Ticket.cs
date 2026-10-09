@@ -173,6 +173,35 @@ public class Ticket
     // then; the digest query is "ProductionAt set, DigestSentAt null".
     public DateTime? DigestSentAt { get; set; }
 
+    // How a tester knows the order did what was asked: the expected outcome,
+    // the screens to open, the data to use. Shown on the board and copied into
+    // PR descriptions by sessions.
+    public string? TestingNotes { get; set; }
+
+    // ===== Drafted-fix queue (Claude Code on the devbox) =====
+    // One of FixStatuses: REQUESTED, CLAIMED, READY_TO_TEST, FAILED, APPROVED,
+    // REJECTED. Null for tickets nobody asked a fix for. Set automatically on
+    // arrival when the app has Project.AutoDraftFixes, or by "Request fix".
+    [MaxLength(30)]
+    public string? FixStatus { get; set; }
+
+    public DateTime? FixRequestedAt { get; set; }
+
+    public DateTime? FixClaimedAt { get; set; }
+
+    // Which worker claimed it ("devbox" + session id), so a stale claim can be
+    // released and a second dispatcher never doubles the work.
+    [MaxLength(255)]
+    public string? FixClaimedBy { get; set; }
+
+    public DateTime? FixCompletedAt { get; set; }
+
+    // The worker's analysis / result markdown (also posted as an internal note).
+    public string? FixSummary { get; set; }
+
+    // Why a fix was rejected; fed back into the prompt when it is re-queued.
+    public string? FixFeedback { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

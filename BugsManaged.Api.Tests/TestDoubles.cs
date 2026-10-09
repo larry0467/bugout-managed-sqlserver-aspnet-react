@@ -121,13 +121,22 @@ public static class TestDoubles
             => Task.FromResult(new PromoteResultDto());
     }
 
-    private sealed class NoOpVideoBlobService : IVideoBlobService
+    public sealed class NoOpVideoBlobService : IVideoBlobService
     {
         public Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default)
             => Task.FromResult($"https://example.invalid/{ticketId}{extension}");
 
         public Task<Uri> GenerateSasUriAsync(string blobUri, TimeSpan validFor, CancellationToken ct = default)
-            => Task.FromResult(new Uri(blobUri));
+            => Task.FromResult(new Uri(blobUri + "?sas=1"));
+    }
+
+    public sealed class NoOpScreenshotBlobService : IScreenshotBlobService
+    {
+        public Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default)
+            => Task.FromResult($"https://example.invalid/shots/{ticketId}{extension}");
+
+        public Task<Uri> GenerateSasUriAsync(string blobUri, TimeSpan validFor, CancellationToken ct = default)
+            => Task.FromResult(new Uri(blobUri + "?sas=1"));
     }
 
     /// <summary>

@@ -30,20 +30,26 @@ $cfg = Get-BugOutDevConfig -Path $ConfigPath
 Write-Host "Seeding development board at $($cfg.apiBase)" -ForegroundColor Cyan
 
 # ---------- applications ----------
+# Names and slugs match the applications that already exist in production
+# (Oct 9 2026: facilities-managed, factoring-managed, frait-managed,
+# hancock-managed, managed-platform, service-managed, utilities-managed,
+# videos-managed, voices-managed) so nothing is duplicated; the rest are new.
 $apps = @(
-    @{ name = 'Service Managed';          slug = 'service-managed' }
-    @{ name = 'Utilities Managed';        slug = 'utilities-managed' }
-    @{ name = 'Forsor';                   slug = 'forsor' }
-    @{ name = 'Videos Managed';           slug = 'videos-managed' }
-    @{ name = 'Financials Managed';       slug = 'financials-managed' }
-    @{ name = 'Groundbeds Managed';       slug = 'groundbeds-managed' }
-    @{ name = 'Bug Out Managed';          slug = 'bug-out-managed' }
-    @{ name = 'Comms Managed';            slug = 'comms-managed' }
-    @{ name = 'Voices Managed';           slug = 'voices-managed' }
-    @{ name = 'Hancock';                  slug = 'hancock' }
-    @{ name = 'Freight Managed';          slug = 'freight-managed' }
-    @{ name = 'Rx Managed';               slug = 'rx-managed' }
-    @{ name = 'Managed Platform Console'; slug = 'managed-platform-console' }
+    @{ name = 'Service Managed';    slug = 'service-managed' }
+    @{ name = 'Utilities Managed';  slug = 'utilities-managed' }
+    @{ name = 'Forsor';             slug = 'forsor' }
+    @{ name = 'Videos Managed';     slug = 'videos-managed' }
+    @{ name = 'Financials Managed'; slug = 'financials-managed' }
+    @{ name = 'Groundbeds Managed'; slug = 'groundbeds-managed' }
+    @{ name = 'Bug Out Managed';    slug = 'bug-out-managed' }
+    @{ name = 'Comms Managed';      slug = 'comms-managed' }
+    @{ name = 'Voices Managed';     slug = 'voices-managed' }
+    @{ name = 'Hancock Managed';    slug = 'hancock-managed' }
+    @{ name = 'Frait Managed';      slug = 'frait-managed' }
+    @{ name = 'Facilities Managed'; slug = 'facilities-managed' }
+    @{ name = 'Factoring Managed';  slug = 'factoring-managed' }
+    @{ name = 'Rx Managed';         slug = 'rx-managed' }
+    @{ name = 'Managed Platform';   slug = 'managed-platform' }
 )
 
 $existing = @(Get-BugOutProjects -ConfigPath $ConfigPath)

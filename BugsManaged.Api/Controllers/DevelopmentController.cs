@@ -76,7 +76,7 @@ public class DevelopmentController : ControllerBase
 
     public record OrderSummaryDto(
         long Id, long ProjectId, string ProjectName, string ProjectSlug,
-        string Title, string? Summary, string Priority, string Status,
+        string Title, string? Summary, string? TestingNotes, string TicketType, string? FixStatus, string Priority, string Status,
         string Stage, string StageLabel, int StageOrder,
         string? OrderedBy, DateTime OrderedAt,
         string? VideoUrl, bool HasTranscript,
@@ -94,7 +94,8 @@ public class DevelopmentController : ControllerBase
     public record CreateOrderRequest(
         long? ProjectId, string? ProjectSlug, string Title, string? Summary,
         string? VideoUrl, string? Transcript, string? SessionLogUrl, string? SessionId,
-        string? OrderedBy, string? Stage, string? Priority, List<LinkRequest>? Links);
+        string? OrderedBy, string? Stage, string? Priority, List<LinkRequest>? Links,
+        string? TestingNotes = null);
 
     public record PromoteRequest(string? Stage, string? SessionLogUrl, string? SessionId);
 
@@ -102,7 +103,7 @@ public class DevelopmentController : ControllerBase
     public record UpdateOrderRequest(
         string? Title, string? Summary, string? VideoUrl, string? Transcript,
         string? SessionLogUrl, string? SessionId, string? AnnouncementVideoUrl,
-        string? Priority, string? OrderedBy);
+        string? Priority, string? OrderedBy, string? TestingNotes = null);
 
     public record SetStageRequest(string Stage, string? Note);
 
@@ -309,6 +310,7 @@ public class DevelopmentController : ControllerBase
             DevelopmentStage = stage,
             SessionLogUrl = Clean(body.SessionLogUrl),
             SessionId = Clean(body.SessionId),
+            TestingNotes = Clean(body.TestingNotes),
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -422,6 +424,7 @@ public class DevelopmentController : ControllerBase
         Set(body.SessionLogUrl, () => ticket.SessionLogUrl, v => ticket.SessionLogUrl = v, "sessionLogUrl", changed);
         Set(body.SessionId, () => ticket.SessionId, v => ticket.SessionId = v, "sessionId", changed);
         Set(body.OrderedBy, () => ticket.SubmittedBy, v => ticket.SubmittedBy = v, "orderedBy", changed);
+        Set(body.TestingNotes, () => ticket.TestingNotes, v => ticket.TestingNotes = v, "testingNotes", changed);
 
         string? stageNote = null;
         if (body.AnnouncementVideoUrl != null)
@@ -636,7 +639,7 @@ public class DevelopmentController : ControllerBase
         var stage = t.DevelopmentStage ?? DevelopmentStages.Ordered;
         return new OrderSummaryDto(
             t.Id, t.ProjectId, p?.Name ?? $"Project {t.ProjectId}", p?.Slug ?? string.Empty,
-            t.Title, t.Description, t.Priority, t.Status,
+            t.Title, t.Description, t.TestingNotes, t.TicketType, t.FixStatus, t.Priority, t.Status,
             stage, DevelopmentStages.Labels.TryGetValue(stage, out var label) ? label : stage, DevelopmentStages.OrderOf(stage),
             t.SubmittedBy, t.CreatedAt,
             t.VideoUrl, !string.IsNullOrWhiteSpace(t.Transcript),

@@ -159,6 +159,15 @@ export interface Ticket {
   announcementVideoUrl?: string | null;
   announcedAt?: string | null;
   digestSentAt?: string | null;
+  testingNotes?: string | null;
+  // Drafted-fix queue (see fixApi)
+  fixStatus?: FixStatus | null;
+  fixRequestedAt?: string | null;
+  fixClaimedAt?: string | null;
+  fixClaimedBy?: string | null;
+  fixCompletedAt?: string | null;
+  fixSummary?: string | null;
+  fixFeedback?: string | null;
 }
 
 export interface TicketLabel {
@@ -618,6 +627,11 @@ export interface DevelopmentOrder {
   projectSlug: string;
   title: string;
   summary?: string | null;
+  // How a tester knows it did what was asked.
+  testingNotes?: string | null;
+  // BUG when the order is a drafted fix for a reported bug.
+  ticketType: string;
+  fixStatus?: FixStatus | null;
   priority: string;
   status: string;
   stage: DevelopmentStage;
@@ -681,6 +695,7 @@ export interface CreateDevelopmentOrderInput {
   stage?: DevelopmentStage;
   priority?: string;
   links?: DevelopmentLinkInput[];
+  testingNotes?: string;
 }
 
 // PATCH semantics: omit a field to leave it, send '' to clear it.
@@ -694,6 +709,7 @@ export interface UpdateDevelopmentOrderInput {
   announcementVideoUrl?: string;
   priority?: string;
   orderedBy?: string;
+  testingNotes?: string;
 }
 
 export interface DevelopmentListParams {
@@ -736,6 +752,98 @@ export const developmentApi = {
     api.delete(`/development/orders/${id}/links/${linkId}`).then(r => r.data),
   shipped: (date?: string) =>
     api.get<{ date: string; timeZone: string; items: DevelopmentOrder[] }>('/development/shipped', { params: date ? { date } : {} }).then(r => r.data),
+};
+
+// ===== Drafted-fix queue (Claude Code on the devbox) =====
+// A reported bug is queued, the devbox dispatcher claims it, runs Claude Code
+// against the app's repos, opens PRs against dev and reports back. Humans
+// approve or reject; the team merges.
+
+export type FixStatus = 'REQUESTED' | 'CLAIMED' | 'READY_TO_TEST' | 'FAILED' | 'APPROVED' | 'REJECTED';
+
+export const fixStatusMeta: Record<FixStatus, { label: string; color: string }> = {
+  REQUESTED: { label: 'Fix requested', color: 'gold' },
+  CLAIMED: { label: 'Claude is working on it', color: 'blue' },
+  READY_TO_TEST: { label: 'Fix ready to test', color: 'purple' },
+  FAILED: { label: 'Fix attempt failed', color: 'red' },
+  APPROVED: { label: 'Fix approved', color: 'green' },
+  REJECTED: { label: 'Fix rejected', color: 'default' },
+};
+
+export interface FixAttachment {
+  id: number;
+  fileName: string;
+  contentType?: string | null;
+  sizeBytes: number;
+  url?: string | null;
+  fromChat: boolean;
+}
+
+export interface FixQueueItem {
+  ticketId: number;
+  projectId: number;
+  projectSlug: string;
+  projectName: string;
+  ticketType: string;
+  title: string;
+  description?: string | null;
+  priority: string;
+  status: string;
+  submittedBy?: string | null;
+  createdAt: string;
+  currentPageUrl?: string | null;
+  currentPageName?: string | null;
+  browserInfo?: string | null;
+  consoleErrors?: string | null;
+  networkErrors?: string | null;
+  transcript?: string | null;
+  videoUrl?: string | null;
+  tenantId?: string | null;
+  tenantName?: string | null;
+  environment?: string | null;
+  fixStatus?: FixStatus | null;
+  fixStatusLabel?: string | null;
+  fixRequestedAt?: string | null;
+  fixClaimedAt?: string | null;
+  fixClaimedBy?: string | null;
+  fixCompletedAt?: string | null;
+  fixSummary?: string | null;
+  fixFeedback?: string | null;
+  testingNotes?: string | null;
+  isDevelopmentOrder: boolean;
+  developmentStage?: DevelopmentStage | null;
+  boardUrl: string;
+  links: DevelopmentLink[];
+  attachments: FixAttachment[];
+}
+
+export interface AppFixSetting {
+  id: number;
+  name: string;
+  slug: string;
+  autoDraftFixes: boolean;
+  requested: number;
+  claimed: number;
+  readyToTest: number;
+}
+
+export const fixApi = {
+  apps: () => api.get<AppFixSetting[]>('/development/fixes/apps').then(r => r.data),
+  setAutoDraft: (projectId: number, enabled: boolean) =>
+    api.put<AppFixSetting>(`/development/fixes/apps/${projectId}`, { enabled }).then(r => r.data),
+  queue: (params: { projectSlug?: string; status?: FixStatus; take?: number } = {}) =>
+    api.get<FixQueueItem[]>('/development/fixes/queue', { params }).then(r => r.data),
+  get: (ticketId: number) => api.get<FixQueueItem>(`/development/fixes/${ticketId}`).then(r => r.data),
+  request: (ticketId: number, note?: string) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/request`, { note }).then(r => r.data),
+  claim: (ticketId: number, worker?: string) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/claim`, { worker }).then(r => r.data),
+  release: (ticketId: number) => api.post<FixQueueItem>(`/development/fixes/${ticketId}/release`).then(r => r.data),
+  result: (ticketId: number, data: { outcome: 'READY_TO_TEST' | 'FAILED'; summary?: string; links?: DevelopmentLinkInput[]; testingNotes?: string }) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/result`, data).then(r => r.data),
+  approve: (ticketId: number) => api.post<FixQueueItem>(`/development/fixes/${ticketId}/approve`).then(r => r.data),
+  reject: (ticketId: number, reason?: string, requeue = false) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/reject`, { reason, requeue }).then(r => r.data),
 };
 
 // ===== Service keys (machine credentials for Claude Code sessions) =====

@@ -60,6 +60,12 @@ public class Project
     [MaxLength(100)]
     public string? GithubRepo { get; set; }
 
+    // Development tracker: when true, every BUG ticket that arrives for this
+    // app is queued for a drafted fix (Ticket.FixStatus = REQUESTED). The
+    // dispatcher on the devbox picks it up, runs Claude Code, opens PRs
+    // against dev and reports back; nothing is merged or published by it.
+    public bool AutoDraftFixes { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

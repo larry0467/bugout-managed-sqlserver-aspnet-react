@@ -8,11 +8,11 @@ import type { TableProps } from 'antd';
 import {
   AppstoreOutlined, BranchesOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LinkOutlined,
   PlayCircleOutlined, PlusOutlined, PullRequestOutlined, ReloadOutlined, RocketOutlined, SearchOutlined,
-  VideoCameraAddOutlined, VideoCameraOutlined, ArrowRightOutlined, SwapOutlined,
+  VideoCameraAddOutlined, VideoCameraOutlined, ArrowRightOutlined, SwapOutlined, CheckSquareOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
-  developmentApi, developmentStages, developmentStageMap, ticketApi,
+  developmentApi, developmentStages, developmentStageMap, ticketApi, fixStatusMeta,
   type AuthUser, type DevelopmentLink, type DevelopmentLinkKind, type DevelopmentOrder, type DevelopmentOrderDetail,
   type DevelopmentProject, type DevelopmentStage, type Ticket,
 } from '../api';
@@ -74,6 +74,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
   const [stageNote, setStageNote] = useState('');
   const [stagePick, setStagePick] = useState<DevelopmentStage | undefined>();
   const [announceUrl, setAnnounceUrl] = useState('');
+  const [testingDraft, setTestingDraft] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [editForm] = Form.useForm();
   const [linkForm] = Form.useForm();
@@ -124,6 +125,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         setStagePick(undefined);
         setStageNote('');
         setAnnounceUrl(d.order.announcementVideoUrl ?? '');
+        setTestingDraft(d.order.testingNotes ?? '');
       })
       .catch((e) => {
         message.error(errMsg(e, `Development order #${orderId} was not found`));
@@ -147,6 +149,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
   const applyDetail = (d: DevelopmentOrderDetail) => {
     setDetail(d);
     setAnnounceUrl(d.order.announcementVideoUrl ?? '');
+    setTestingDraft(d.order.testingNotes ?? '');
     setOrders((prev) => {
       const idx = prev.findIndex((o) => o.id === d.order.id);
       if (idx < 0) return prev;
@@ -194,11 +197,26 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
     }
   };
 
+  const saveTestingNotes = async () => {
+    if (!detail) return;
+    setSaving(true);
+    try {
+      const d = await developmentApi.update(detail.order.id, { testingNotes: testingDraft.trim() });
+      applyDetail(d);
+      message.success('Testing notes saved');
+    } catch (e) {
+      message.error(errMsg(e, 'Could not save the testing notes'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openEdit = () => {
     if (!detail) return;
     editForm.setFieldsValue({
       title: detail.order.title,
       summary: detail.order.summary ?? '',
+      testingNotes: detail.order.testingNotes ?? '',
       orderedBy: detail.order.orderedBy ?? '',
       videoUrl: detail.order.videoUrl ?? '',
       sessionLogUrl: detail.order.sessionLogUrl ?? '',
@@ -217,6 +235,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
       const d = await developmentApi.update(detail.order.id, {
         title: v.title,
         summary: v.summary ?? '',
+        testingNotes: v.testingNotes ?? '',
         orderedBy: v.orderedBy ?? '',
         videoUrl: v.videoUrl ?? '',
         sessionLogUrl: v.sessionLogUrl ?? '',
@@ -269,6 +288,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         projectId: v.projectId,
         title: v.title,
         summary: v.summary || undefined,
+        testingNotes: v.testingNotes || undefined,
         videoUrl: v.videoUrl || undefined,
         sessionLogUrl: v.sessionLogUrl || undefined,
         orderedBy: v.orderedBy || undefined,
@@ -364,6 +384,16 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
             <Text strong style={{ cursor: 'pointer' }} onClick={() => navigate(`/development/${r.id}`)}>
               #{r.id} {r.title}
             </Text>
+            {r.ticketType === 'BUG' && (
+              <Tag color="volcano" style={{ marginLeft: 8, fontSize: 11 }}>
+                bug fix{r.fixStatus && fixStatusMeta[r.fixStatus] ? ` · ${fixStatusMeta[r.fixStatus].label}` : ''}
+              </Tag>
+            )}
+            {r.testingNotes && (
+              <Tooltip title={r.testingNotes}>
+                <Tag color="cyan" style={{ marginLeft: 4, fontSize: 11 }}>how to test</Tag>
+              </Tooltip>
+            )}
             {r.summary && (
               <div>
                 <Text type="secondary" ellipsis style={{ maxWidth: 520, display: 'inline-block', fontSize: 13 }}>
@@ -703,6 +733,33 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
               </Card>
             )}
 
+            <Card
+              size="small"
+              style={{ marginBottom: 16, borderColor: order.testingNotes ? undefined : 'rgba(255,255,255,0.25)' }}
+              title={<Space><CheckSquareOutlined /> How to test / expected outcome {!order.testingNotes && <Tag>missing</Tag>}</Space>}
+            >
+              {writer ? (
+                <>
+                  <Input.TextArea
+                    rows={4}
+                    value={testingDraft}
+                    onChange={(e) => setTestingDraft(e.target.value)}
+                    placeholder="What a tester should open, do and expect. Example: on WO 84530 open Estimates, draft with AI; the document says Estimate, lists nitrogen + recovery + vacuum + welding, and the hours match the technician's log."
+                  />
+                  <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Shown on the board, copied into PR descriptions, and read by whoever tests in beta.
+                    </Text>
+                    <Button size="small" type="primary" loading={saving} disabled={(order.testingNotes ?? '') === testingDraft.trim()} onClick={saveTestingNotes}>
+                      Save
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{order.testingNotes || <Text type="secondary">Nobody has written how to test this yet.</Text>}</Paragraph>
+              )}
+            </Card>
+
             <Card size="small" title={<Space><LinkOutlined /> Branches, PRs and documents <Tag>{order.links.length}</Tag></Space>} style={{ marginBottom: 16 }}>
               {order.links.length === 0 && <Text type="secondary">No links yet.</Text>}
               {order.links.map((l) => (
@@ -796,6 +853,9 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
           <Form.Item name="summary" label="What was ordered">
             <Input.TextArea rows={4} />
           </Form.Item>
+          <Form.Item name="testingNotes" label="How to test / expected outcome">
+            <Input.TextArea rows={3} />
+          </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="orderedBy" label="Ordered by" style={{ width: 220 }}><Input /></Form.Item>
             <Form.Item name="priority" label="Priority" style={{ width: 160 }}>
@@ -820,6 +880,9 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
           </Form.Item>
           <Form.Item name="summary" label="What was ordered">
             <Input.TextArea rows={3} placeholder="One paragraph: what the video asked for" />
+          </Form.Item>
+          <Form.Item name="testingNotes" label="How to test / expected outcome">
+            <Input.TextArea rows={2} placeholder="What a tester should open, do and expect" />
           </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
             <Form.Item name="orderedBy" label="Ordered by" style={{ width: 220 }}><Input /></Form.Item>

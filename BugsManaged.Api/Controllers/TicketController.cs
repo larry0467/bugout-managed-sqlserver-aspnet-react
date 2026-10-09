@@ -162,6 +162,27 @@ public class TicketController : ControllerBase
             note: note);
         await _db.SaveChangesAsync();
 
+        // Development tracker: apps with "Auto-draft fixes" queue every bug for
+        // the devbox dispatcher (Claude Code) the moment it arrives. See
+        // DevelopmentFixController; nothing is merged or published by it.
+        if (ticket.TicketType == "BUG")
+        {
+            var autoDraft = await _db.Projects
+                .Where(p => p.Id == ticket.ProjectId)
+                .Select(p => p.AutoDraftFixes)
+                .FirstOrDefaultAsync();
+            if (autoDraft)
+            {
+                ticket.FixStatus = FixStatuses.Requested;
+                ticket.FixRequestedAt = now;
+                _activity.Log(ticket, "FIX_REQUESTED",
+                    "Queued for a drafted fix (auto-draft is on for this app)",
+                    ProductionDigestService.SystemActorEmail, ProductionDigestService.SystemActorName,
+                    payload: new { auto = true });
+                await _db.SaveChangesAsync();
+            }
+        }
+
         // Notify reporter via Comms — fire-and-forget, never blocks the response.
         _ = _notify.NotifyTicketReceivedAsync(ticket);
 

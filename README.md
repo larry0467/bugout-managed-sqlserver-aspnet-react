@@ -309,6 +309,32 @@ service key in the `X-BOM-Service-Key` header (create a dedicated key for it). S
 Deliveries are idempotent (Azure DevOps retries); events that are not acted on return `202` with the reason so the
 subscription never shows as failing. Defaults map `ServiceManagerUI` / `ServiceManagedWeb` to `service-managed`.
 
+### Drafted fixes (Claude Code on the devbox, not the API sidecar)
+
+Settings → **Auto-draft Fixes** turns the queue on per application. Every `BUG` that arrives through that app's widget
+gets `FixStatus = REQUESTED`; any ticket can also be queued with **Request Claude fix**. The devbox dispatcher
+(`scripts\fix-dispatcher\BugOutFixDispatcher.ps1`, scheduled every 10 minutes by `Register-FixDispatcherTask.ps1`,
+config `%USERPROFILE%\.bugout\fix-dispatcher.json`) polls `GET /api/development/fixes/queue`, claims the oldest ticket,
+checks out git worktrees of the app's repos on `BugOut_Fix_{ticketId}` from `origin/dev`, writes `TICKET.md`
+(description, voice transcript, console/network errors, page, tenant, screenshots) and runs
+`claude -p` headlessly with a whitelisted tool set. Whatever Claude commits is pushed and opened as pull requests
+against `dev` through the Azure DevOps REST API; the result is posted with `POST .../fixes/{id}/result`, which
+marks the ticket **Fix ready to test**, turns it into a development order at `PR_OPEN` (so it sits on the board and the
+webhook moves it on merge / deploy) and adds an internal note with the analysis. A platform owner or super admin then
+**approves** or **rejects** on the ticket (reject can re-queue with feedback); the team merges; beta picks it up.
+Nothing is ever merged or deployed by the dispatcher. If the devbox is off, requests wait. Caps: one ticket per run,
+`maxPerDay`, `maxMinutesPerFix`; worktrees are removed after each run (disk is tight on the devbox).
+
+| Method | Route (`/api/development/fixes`) | Who |
+|--------|-----------------------------------|-----|
+| GET / PUT | `apps`, `apps/{projectId}` `{ enabled }` | list / flip auto-draft (PUT: human admin) |
+| GET | `queue?projectSlug=&status=REQUESTED&take=` | key or user |
+| GET | `{ticketId}` | key or user (blob SAS links included) |
+| POST | `{ticketId}/request` `{ note }` | writer or key |
+| POST | `{ticketId}/claim` `{ worker }` / `{ticketId}/release` | key (dispatcher) |
+| POST | `{ticketId}/result` `{ outcome: READY_TO_TEST \| FAILED, summary, testingNotes, links[] }` | key (dispatcher) |
+| POST | `{ticketId}/approve` / `{ticketId}/reject` `{ reason, requeue }` | human admin only |
+
 ### From PowerShell (what a Claude Code session does)
 
 ```powershell

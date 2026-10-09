@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker, Checkbox, Modal } from 'antd';
 import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons';
-import { projectApi, statusApi, serviceKeyApi, serviceKeyScopes, type Project, type TicketStatusDef, type ServiceKey, type CreatedServiceKey, type AuthUser } from '../api';
+import { projectApi, statusApi, serviceKeyApi, serviceKeyScopes, fixApi, type Project, type TicketStatusDef, type ServiceKey, type CreatedServiceKey, type AuthUser, type AppFixSetting } from '../api';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -45,6 +45,21 @@ const SettingsPage: React.FC = () => {
 
   const loadServiceKeys = () => serviceKeyApi.list().then(setServiceKeys).catch(() => {});
   useEffect(() => { if (isOrgAdmin) loadServiceKeys(); }, [isOrgAdmin]);
+
+  // ----- auto-draft fixes per app (Claude Code on the devbox) -----
+  const [fixApps, setFixApps] = useState<AppFixSetting[]>([]);
+  const loadFixApps = () => fixApi.apps().then(setFixApps).catch(() => {});
+  useEffect(() => { if (isOrgAdmin) loadFixApps(); }, [isOrgAdmin]);
+
+  const toggleAutoDraft = async (app: AppFixSetting, enabled: boolean) => {
+    try {
+      await fixApi.setAutoDraft(app.id, enabled);
+      await loadFixApps();
+      message.success(enabled ? `Auto-draft fixes on for ${app.name}` : `Auto-draft fixes off for ${app.name}`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not change the setting');
+    }
+  };
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
@@ -451,6 +466,39 @@ const SettingsPage: React.FC = () => {
             </Space>
           </div>
         </Card>
+
+        {/* Auto-draft fixes — which apps hand incoming bugs to Claude Code on the devbox */}
+        {isOrgAdmin && (
+          <Card title={<><RobotOutlined /> Auto-draft Fixes (Claude Code on the devbox)</>}>
+            <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              When on for an app, every <Text strong>bug</Text> reported through its widget is queued for a drafted fix.
+              The dispatcher on the devbox picks it up, runs Claude Code against the app's repos with the recording's
+              transcript and console errors, opens pull requests against <Text code>dev</Text>, and marks the ticket{' '}
+              <Text strong>Fix ready to test</Text>. Nothing is merged or published by it: approve or reject the fix on the
+              ticket, then the team merges and beta picks it up. Any ticket can also be queued by hand with{' '}
+              <Text strong>Request Claude fix</Text>. If the devbox is off, requests simply wait.
+            </Paragraph>
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={false}
+              dataSource={fixApps}
+              locale={{ emptyText: 'No applications yet' }}
+              columns={[
+                { title: 'Application', dataIndex: 'name' },
+                {
+                  title: 'Auto-draft fixes',
+                  dataIndex: 'autoDraftFixes',
+                  width: 150,
+                  render: (v: boolean, app: AppFixSetting) => <Switch checked={v} onChange={(checked) => toggleAutoDraft(app, checked)} />,
+                },
+                { title: 'Queued', dataIndex: 'requested', width: 90, render: (v: number) => (v ? <Tag color="gold">{v}</Tag> : <Text type="secondary">0</Text>) },
+                { title: 'In progress', dataIndex: 'claimed', width: 110, render: (v: number) => (v ? <Tag color="blue">{v}</Tag> : <Text type="secondary">0</Text>) },
+                { title: 'Ready to test', dataIndex: 'readyToTest', width: 120, render: (v: number) => (v ? <Tag color="purple">{v}</Tag> : <Text type="secondary">0</Text>) },
+              ]}
+            />
+          </Card>
+        )}
 
         {/* Service keys — machine credentials for the development tracker */}
         {isOrgAdmin && (

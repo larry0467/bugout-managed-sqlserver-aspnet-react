@@ -116,6 +116,9 @@ public class BugsManagedDbContext : DbContext
             .HasIndex(t => new { t.OrganizationId, t.IsDevelopmentOrder, t.DevelopmentStage });
         modelBuilder.Entity<Ticket>()
             .HasIndex(t => new { t.IsDevelopmentOrder, t.ProductionAt, t.DigestSentAt });
+        // The devbox dispatcher polls for REQUESTED fixes.
+        modelBuilder.Entity<Ticket>()
+            .HasIndex(t => new { t.OrganizationId, t.FixStatus });
 
         modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.TicketId);
         modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.OrganizationId);
