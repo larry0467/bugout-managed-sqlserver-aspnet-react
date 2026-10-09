@@ -33,9 +33,10 @@ if ($Remove) {
 }
 
 $cmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $script
-# /NP = no password stored (runs only when the user is logged on); /IT = interactive session;
-# /RL LIMITED = no elevation; /F = replace an existing task of the same name.
-schtasks /Create /TN $TaskName /SC MINUTE /MO $Minutes /TR $cmd /RU $env:USERNAME /NP /IT /RL LIMITED /F | Out-Null
+# /NP = no password stored, which also means "run only when the user is logged on"
+# (schtasks refuses /IT together with /NP); /RL LIMITED = no elevation; /F = replace.
+schtasks /Create /TN $TaskName /SC MINUTE /MO $Minutes /TR $cmd /RU $env:USERNAME /NP /RL LIMITED /F | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "schtasks /Create failed ($LASTEXITCODE)" }
 Write-Host "Task $TaskName runs every $Minutes minute(s) as $env:USERNAME while logged on."
 Write-Host "Run now:   schtasks /Run /TN $TaskName"
 Write-Host "Status:    schtasks /Query /TN $TaskName /V /FO LIST"
