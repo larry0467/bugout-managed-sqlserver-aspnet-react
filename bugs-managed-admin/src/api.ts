@@ -149,6 +149,16 @@ export interface Ticket {
   environment?: 'PRODUCTION' | 'STAGING' | 'DEVELOPMENT';
   // Trello-style fields
   dueDate?: string | null;
+  // Development tracker (see developmentApi). True when this ticket is a
+  // development order tracked on the Development board.
+  isDevelopmentOrder?: boolean;
+  developmentStage?: DevelopmentStage | null;
+  sessionLogUrl?: string | null;
+  sessionId?: string | null;
+  productionAt?: string | null;
+  announcementVideoUrl?: string | null;
+  announcedAt?: string | null;
+  digestSentAt?: string | null;
 }
 
 export interface TicketLabel {
@@ -555,6 +565,213 @@ export const systemApi = {
 export const sandboxApi = {
   status: () => api.get<SandboxStatus>('/admin/sandbox/status').then(r => r.data),
   reset: () => api.post<SandboxResetResult>('/admin/sandbox/reset').then(r => r.data),
+};
+
+// ===== Development tracker =====
+// Every piece of ordered development across the Managed Platform apps. An
+// order is a FEATURE_REQUEST ticket with isDevelopmentOrder set; the API
+// returns a board-shaped view of it (project name, links, stage label).
+
+export type DevelopmentStage =
+  | 'ORDERED'
+  | 'IN_PROGRESS'
+  | 'LOCAL_DEMO'
+  | 'PR_OPEN'
+  | 'MERGED_DEV'
+  | 'BETA'
+  | 'PRODUCTION'
+  | 'ANNOUNCED';
+
+// Same order as DevelopmentStages.All on the API. Colors are antd Tag presets.
+export const developmentStages: { key: DevelopmentStage; label: string; color: string }[] = [
+  { key: 'ORDERED', label: 'Ordered', color: 'gold' },
+  { key: 'IN_PROGRESS', label: 'In progress', color: 'blue' },
+  { key: 'LOCAL_DEMO', label: 'Local demo', color: 'cyan' },
+  { key: 'PR_OPEN', label: 'PR open', color: 'purple' },
+  { key: 'MERGED_DEV', label: 'Merged to dev', color: 'geekblue' },
+  { key: 'BETA', label: 'Beta', color: 'orange' },
+  { key: 'PRODUCTION', label: 'Production', color: 'green' },
+  { key: 'ANNOUNCED', label: 'Announced', color: 'success' },
+];
+
+export const developmentStageMap = Object.fromEntries(
+  developmentStages.map((s) => [s.key, s]),
+) as Record<DevelopmentStage, { key: DevelopmentStage; label: string; color: string }>;
+
+export type DevelopmentLinkKind = 'BRANCH' | 'PR' | 'COMMIT' | 'DOC' | 'VIDEO';
+
+export interface DevelopmentLink {
+  id: number;
+  kind: DevelopmentLinkKind;
+  repo?: string | null;
+  name: string;
+  url?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export interface DevelopmentOrder {
+  id: number;
+  projectId: number;
+  projectName: string;
+  projectSlug: string;
+  title: string;
+  summary?: string | null;
+  priority: string;
+  status: string;
+  stage: DevelopmentStage;
+  stageLabel: string;
+  stageOrder: number;
+  orderedBy?: string | null;
+  orderedAt: string;
+  videoUrl?: string | null;
+  hasTranscript: boolean;
+  sessionLogUrl?: string | null;
+  sessionId?: string | null;
+  productionAt?: string | null;
+  announcementVideoUrl?: string | null;
+  announcedAt?: string | null;
+  digestSentAt?: string | null;
+  needsAnnouncement: boolean;
+  boardUrl: string;
+  updatedAt: string;
+  links: DevelopmentLink[];
+}
+
+export interface DevelopmentStageChange {
+  fromStage?: string | null;
+  toStage: string;
+  note?: string | null;
+  changedBy?: string | null;
+  changedAt: string;
+}
+
+export interface DevelopmentOrderDetail {
+  order: DevelopmentOrder;
+  transcript?: string | null;
+  stageHistory: DevelopmentStageChange[];
+  activity: TicketActivity[];
+}
+
+export interface DevelopmentProject {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface DevelopmentLinkInput {
+  kind: DevelopmentLinkKind;
+  repo?: string;
+  name: string;
+  url?: string;
+  note?: string;
+}
+
+export interface CreateDevelopmentOrderInput {
+  projectId?: number;
+  projectSlug?: string;
+  title: string;
+  summary?: string;
+  videoUrl?: string;
+  transcript?: string;
+  sessionLogUrl?: string;
+  sessionId?: string;
+  orderedBy?: string;
+  stage?: DevelopmentStage;
+  priority?: string;
+  links?: DevelopmentLinkInput[];
+}
+
+// PATCH semantics: omit a field to leave it, send '' to clear it.
+export interface UpdateDevelopmentOrderInput {
+  title?: string;
+  summary?: string;
+  videoUrl?: string;
+  transcript?: string;
+  sessionLogUrl?: string;
+  sessionId?: string;
+  announcementVideoUrl?: string;
+  priority?: string;
+  orderedBy?: string;
+}
+
+export interface DevelopmentListParams {
+  projectId?: number;
+  projectSlug?: string;
+  stage?: DevelopmentStage[] | string;
+  needsAnnouncement?: boolean;
+  search?: string;
+  includeAnnounced?: boolean;
+}
+
+export const developmentApi = {
+  stages: () =>
+    api.get<Array<{ key: DevelopmentStage; label: string; order: number }>>('/development/stages').then(r => r.data),
+  projects: () => api.get<DevelopmentProject[]>('/development/projects').then(r => r.data),
+  ensureProject: (name: string, slug?: string) =>
+    api.post<DevelopmentProject>('/development/projects', { name, slug }).then(r => r.data),
+  list: (params: DevelopmentListParams = {}) => {
+    const q: any = {};
+    if (params.projectId) q.projectId = params.projectId;
+    if (params.projectSlug) q.projectSlug = params.projectSlug;
+    if (params.stage && params.stage.length) q.stage = Array.isArray(params.stage) ? params.stage.join(',') : params.stage;
+    if (params.needsAnnouncement) q.needsAnnouncement = true;
+    if (params.search) q.search = params.search;
+    if (params.includeAnnounced === false) q.includeAnnounced = false;
+    return api.get<DevelopmentOrder[]>('/development/orders', { params: q }).then(r => r.data);
+  },
+  get: (id: number) => api.get<DevelopmentOrderDetail>(`/development/orders/${id}`).then(r => r.data),
+  create: (input: CreateDevelopmentOrderInput) =>
+    api.post<DevelopmentOrderDetail>('/development/orders', input).then(r => r.data),
+  promoteTicket: (ticketId: number, data: { stage?: DevelopmentStage; sessionLogUrl?: string; sessionId?: string } = {}) =>
+    api.post<DevelopmentOrderDetail>(`/development/orders/from-ticket/${ticketId}`, data).then(r => r.data),
+  update: (id: number, input: UpdateDevelopmentOrderInput) =>
+    api.patch<DevelopmentOrderDetail>(`/development/orders/${id}`, input).then(r => r.data),
+  setStage: (id: number, stage: DevelopmentStage, note?: string) =>
+    api.put<DevelopmentOrderDetail>(`/development/orders/${id}/stage`, { stage, note }).then(r => r.data),
+  addLink: (id: number, link: DevelopmentLinkInput) =>
+    api.post<DevelopmentLink>(`/development/orders/${id}/links`, link).then(r => r.data),
+  removeLink: (id: number, linkId: number) =>
+    api.delete(`/development/orders/${id}/links/${linkId}`).then(r => r.data),
+  shipped: (date?: string) =>
+    api.get<{ date: string; timeZone: string; items: DevelopmentOrder[] }>('/development/shipped', { params: date ? { date } : {} }).then(r => r.data),
+};
+
+// ===== Service keys (machine credentials for Claude Code sessions) =====
+
+export interface ServiceKey {
+  id: number;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  createdBy?: string | null;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+  revokedBy?: string | null;
+}
+
+// Returned once, on create. `key` is the raw secret and is never shown again.
+export interface CreatedServiceKey {
+  id: number;
+  name: string;
+  key: string;
+  keyPrefix: string;
+  scopes: string[];
+  createdAt: string;
+  header: string;
+  acceptedOn: string;
+  note: string;
+}
+
+export const serviceKeyScopes = ['development:write', 'development:read'] as const;
+
+export const serviceKeyApi = {
+  list: () => api.get<ServiceKey[]>('/service-keys').then(r => r.data),
+  create: (name: string, scopes: string[]) =>
+    api.post<CreatedServiceKey>('/service-keys', { name, scopes }).then(r => r.data),
+  revoke: (id: number) => api.delete(`/service-keys/${id}`).then(r => r.data),
 };
 
 export default api;

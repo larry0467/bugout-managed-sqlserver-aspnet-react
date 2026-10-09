@@ -37,16 +37,7 @@ public class FastPathSubmitTests
         });
         db.SaveChanges();
 
-        var classifier = new TicketClassifierService(
-            new HttpClient(),
-            new ConfigurationBuilder().AddInMemoryCollection().Build(),
-            NullLogger<TicketClassifierService>.Instance);
-
-        var controller = new TicketController(db, new FakeWebHostEnv(), classifier, orgContext);
-        controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext(),
-        };
+        var controller = TestDoubles.CreateTicketController(db, orgContext);
         return (controller, db);
     }
 

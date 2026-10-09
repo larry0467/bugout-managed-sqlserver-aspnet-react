@@ -10,6 +10,7 @@ import {
   UserOutlined,
   TeamOutlined,
   TrophyOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -18,6 +19,7 @@ import SettingsPage from './pages/SettingsPage';
 import TeamPage from './pages/TeamPage';
 import LoginPage from './pages/LoginPage';
 import PerformancePage from './pages/PerformancePage';
+import DevelopmentPage from './pages/DevelopmentPage';
 import SandboxBanner from './components/SandboxBanner';
 import ManagedLauncher from './components/ManagedLauncher';
 import type { AuthUser, Organization } from './api';
@@ -82,10 +84,15 @@ const App: React.FC = () => {
     { key: '/', icon: <DashboardOutlined />, label: <Link to="/">Dashboard</Link> },
     { key: '/projects', icon: <ProjectOutlined />, label: <Link to="/projects">Applications</Link> },
     { key: '/tickets', icon: <BugOutlined />, label: <Link to="/tickets">Tickets</Link> },
+    { key: '/development', icon: <RocketOutlined />, label: <Link to="/development">Development</Link> },
     { key: '/performance', icon: <TrophyOutlined />, label: <Link to="/performance">Performance</Link> },
     { key: '/team', icon: <TeamOutlined />, label: <Link to="/team">Team</Link> },
     { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
   ];
+
+  // Highlight the section, not the exact path, so the deep link
+  // /development/123 still lights up the Development tab.
+  const selectedMenuKey = '/' + (location.pathname.split('/')[1] ?? '');
 
   return (
     <Layout style={{ minHeight: '100vh', flexDirection: 'column' }}>
@@ -126,7 +133,7 @@ const App: React.FC = () => {
             handling kicks in if the viewport is too narrow. */}
         <Menu
           mode="horizontal"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[selectedMenuKey]}
           items={menuItems}
           style={{ background: 'transparent', borderBottom: 'none', flex: 1, minWidth: 0 }}
         />
@@ -147,6 +154,10 @@ const App: React.FC = () => {
           <Route path="/" element={<DashboardPage isPlatformAdmin={isPlatformAdmin} />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/tickets" element={<TicketsPage isPlatformAdmin={isPlatformAdmin} />} />
+          {/* Development tracker. /development/:id is the first deep link in
+              the admin: the what-shipped digest email points at it. */}
+          <Route path="/development" element={<DevelopmentPage user={user} />} />
+          <Route path="/development/:id" element={<DevelopmentPage user={user} />} />
           <Route path="/performance" element={<PerformancePage isPlatformAdmin={isPlatformAdmin} />} />
           <Route path="/team" element={<TeamPage />} />
           <Route path="/settings" element={<SettingsPage />} />

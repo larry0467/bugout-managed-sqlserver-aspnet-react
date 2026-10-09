@@ -136,6 +136,43 @@ public class Ticket
     // "overdue glow" on the Kanban card. Null = no due date.
     public DateTime? DueDate { get; set; }
 
+    // ===== Development orders (the cross-app development tracker) =====
+    // A development order is an ordinary FEATURE_REQUEST ticket with this
+    // bit set, so the bug board and the Development board share one table,
+    // one activity feed and one set of notes. Everything below is null for
+    // plain bug reports. See Controllers/DevelopmentController.cs.
+    public bool IsDevelopmentOrder { get; set; } = false;
+
+    // One of DevelopmentStages.All: ORDERED, IN_PROGRESS, LOCAL_DEMO,
+    // PR_OPEN, MERGED_DEV, BETA, PRODUCTION, ANNOUNCED. Transitions are
+    // appended to TicketStageHistory and TicketActivity (DEV_STAGE_CHANGED).
+    [MaxLength(50)]
+    public string? DevelopmentStage { get; set; }
+
+    // Link to the Claude Code session's markdown log (OneDrive share link or
+    // a file: path) so a later session can pick the item up where it stopped.
+    [MaxLength(2000)]
+    public string? SessionLogUrl { get; set; }
+
+    [MaxLength(100)]
+    public string? SessionId { get; set; }
+
+    // Stamped the first time the stage becomes PRODUCTION. Drives the daily
+    // "what shipped today" digest and the production-date column.
+    public DateTime? ProductionAt { get; set; }
+
+    // The short "what shipped" video Larry records for the team after an
+    // item reaches production. Setting it on a PRODUCTION item moves the
+    // stage to ANNOUNCED.
+    [MaxLength(2000)]
+    public string? AnnouncementVideoUrl { get; set; }
+
+    public DateTime? AnnouncedAt { get; set; }
+
+    // When the production digest that listed this item was sent. Null until
+    // then; the digest query is "ProductionAt set, DigestSentAt null".
+    public DateTime? DigestSentAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

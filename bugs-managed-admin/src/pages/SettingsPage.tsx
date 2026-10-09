@@ -1,9 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker } from 'antd';
-import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { projectApi, statusApi, type Project, type TicketStatusDef } from '../api';
+import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker, Checkbox, Modal } from 'antd';
+import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined } from '@ant-design/icons';
+import { projectApi, statusApi, serviceKeyApi, serviceKeyScopes, type Project, type TicketStatusDef, type ServiceKey, type CreatedServiceKey, type AuthUser } from '../api';
 
 const { Title, Text, Paragraph } = Typography;
+
+// Service keys are org-admin territory. The page has no user prop, so read
+// the role App stored at login.
+const currentRole = (): string | null => {
+  try {
+    const raw = localStorage.getItem('bom_user');
+    return raw ? (JSON.parse(raw) as AuthUser).role : null;
+  } catch {
+    return null;
+  }
+};
 
 const SettingsPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,6 +33,48 @@ const SettingsPage: React.FC = () => {
 
   const loadStatuses = () => statusApi.list().then(setStatuses).catch(() => {});
   useEffect(() => { loadStatuses(); }, []);
+
+  // ----- service keys (machine credentials for Claude Code sessions) -----
+  const isOrgAdmin = currentRole() === 'PLATFORM_OWNER' || currentRole() === 'SUPER_ADMIN';
+  const [serviceKeys, setServiceKeys] = useState<ServiceKey[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(['development:write']);
+  const [keySaving, setKeySaving] = useState(false);
+  const [createdKey, setCreatedKey] = useState<CreatedServiceKey | null>(null);
+  const [showRevoked, setShowRevoked] = useState(false);
+
+  const loadServiceKeys = () => serviceKeyApi.list().then(setServiceKeys).catch(() => {});
+  useEffect(() => { if (isOrgAdmin) loadServiceKeys(); }, [isOrgAdmin]);
+
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) return;
+    setKeySaving(true);
+    try {
+      const created = await serviceKeyApi.create(newKeyName.trim(), newKeyScopes);
+      setCreatedKey(created);
+      setNewKeyName('');
+      await loadServiceKeys();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to create the service key');
+    } finally {
+      setKeySaving(false);
+    }
+  };
+
+  const handleRevokeKey = async (id: number) => {
+    try {
+      await serviceKeyApi.revoke(id);
+      await loadServiceKeys();
+      message.success('Service key revoked');
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Failed to revoke');
+    }
+  };
+
+  const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') || window.location.origin;
+  const keyFileJson = createdKey
+    ? JSON.stringify({ key: createdKey.key, apiBase, org: localStorage.getItem('bom_org') ? JSON.parse(localStorage.getItem('bom_org')!).slug : undefined }, null, 2)
+    : '';
 
   useEffect(() => {
     projectApi.list().then((data) => {
@@ -382,6 +435,108 @@ const SettingsPage: React.FC = () => {
             </Space>
           </div>
         </Card>
+
+        {/* Service keys — machine credentials for the development tracker */}
+        {isOrgAdmin && (
+          <Card title={<><RobotOutlined /> Service Keys (Claude Code sessions)</>}>
+            <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              A service key lets a non-interactive caller (a Claude Code session on the devbox) log development orders, add
+              PR links and move stages on the <Text strong>Development</Text> board. It is sent as the{' '}
+              <Text code>X-BOM-Service-Key</Text> header and is accepted <Text strong>only</Text> on{' '}
+              <Text code>/api/development/*</Text>: it cannot read bug reports, manage users or create other keys.
+              The key is shown once; only its hash is stored. Revoke and re-issue if it leaks.
+            </Paragraph>
+
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={false}
+              dataSource={serviceKeys.filter((k) => showRevoked || !k.revokedAt)}
+              locale={{ emptyText: 'No service keys yet' }}
+              columns={[
+                { title: 'Name', dataIndex: 'name' },
+                { title: 'Key', dataIndex: 'keyPrefix', render: (v: string) => <Text code>{v}…</Text> },
+                { title: 'Scopes', dataIndex: 'scopes', render: (v: string[]) => v.map((s) => <Tag key={s}>{s}</Tag>) },
+                { title: 'Created', dataIndex: 'createdAt', render: (v: string, r: ServiceKey) => <>{new Date(v).toLocaleDateString()} <Text type="secondary">{r.createdBy}</Text></> },
+                { title: 'Last used', dataIndex: 'lastUsedAt', render: (v?: string | null) => (v ? new Date(v).toLocaleString() : <Text type="secondary">never</Text>) },
+                {
+                  title: 'Status',
+                  key: 'status',
+                  render: (_: any, r: ServiceKey) => r.revokedAt
+                    ? <Tag color="default">revoked {new Date(r.revokedAt).toLocaleDateString()}</Tag>
+                    : <Tag color="success" icon={<CheckCircleOutlined />}>active</Tag>,
+                },
+                {
+                  title: '',
+                  key: 'actions',
+                  width: 60,
+                  render: (_: any, r: ServiceKey) => !r.revokedAt && (
+                    <Popconfirm title={`Revoke "${r.name}"? Sessions using it stop working immediately.`} onConfirm={() => handleRevokeKey(r.id)}>
+                      <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  ),
+                },
+              ]}
+            />
+            <div style={{ marginTop: 8 }}>
+              <Checkbox checked={showRevoked} onChange={(e) => setShowRevoked(e.target.checked)}>Show revoked keys</Checkbox>
+            </div>
+
+            <Divider />
+
+            <Text strong>Create a key</Text>
+            <Space wrap style={{ marginTop: 8 }}>
+              <Input
+                placeholder="Name (e.g. Claude Code - devbox)"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                style={{ width: 280 }}
+                maxLength={100}
+              />
+              <Checkbox.Group
+                value={newKeyScopes}
+                onChange={(v) => setNewKeyScopes(v as string[])}
+                options={serviceKeyScopes.map((s) => ({ label: s, value: s }))}
+              />
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateKey} loading={keySaving} disabled={!newKeyName.trim() || newKeyScopes.length === 0}>
+                Create
+              </Button>
+            </Space>
+
+            <Modal
+              title="Service key created — copy it now"
+              open={!!createdKey}
+              onCancel={() => setCreatedKey(null)}
+              onOk={() => setCreatedKey(null)}
+              okText="I saved it"
+              cancelButtonProps={{ style: { display: 'none' } }}
+              width={720}
+            >
+              {createdKey && (
+                <div>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="This is the only time the key is shown."
+                    description={`Name: ${createdKey.name} · scopes: ${createdKey.scopes.join(', ')} · header: ${createdKey.header} · accepted on ${createdKey.acceptedOn}`}
+                  />
+                  <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
+                    <Input readOnly value={createdKey.key} style={{ fontFamily: 'monospace' }} />
+                    <Button icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(createdKey.key); message.success('Key copied'); }}>Copy</Button>
+                  </Space.Compact>
+                  <Paragraph type="secondary" style={{ marginBottom: 4 }}>
+                    On the devbox, save it as <Text code>%USERPROFILE%\.bugout\service-key.json</Text> (never commit it):
+                  </Paragraph>
+                  <pre style={{ background: '#0d1117', padding: 12, borderRadius: 8, fontSize: 12, overflow: 'auto' }}>{keyFileJson}</pre>
+                  <Button size="small" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(keyFileJson); message.success('JSON copied'); }}>
+                    Copy JSON
+                  </Button>
+                </div>
+              )}
+            </Modal>
+          </Card>
+        )}
 
         {/* Notification Preferences */}
         <Card title={<><BellOutlined /> Notification Preferences</>}>

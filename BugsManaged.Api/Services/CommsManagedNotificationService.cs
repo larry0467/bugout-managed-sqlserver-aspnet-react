@@ -120,16 +120,26 @@ public class CommsManagedNotificationService : ITicketNotificationService
                      $"https://bugout.managedplatform.com/tickets/{ticket.Id}",
             ct: ct);
 
+    // Development tracker: the daily "what shipped today" digest. Not tied to
+    // one ticket, so it goes through the core send with a synthetic id and
+    // reports success back to the caller, which only stamps DigestSentAt
+    // when at least one recipient was actually reached.
+    public Task<bool> SendDigestAsync(string to, string subject, string body, CancellationToken ct = default)
+        => SendCoreAsync(to, ticketId: 0, subject, body, ct);
+
     // -------------------------------------------------------------------------
     // Core send — calls POST /api/v1/messages/send on Comms
     // -------------------------------------------------------------------------
 
-    private async Task SendAsync(string? to, Ticket ticket, string subject, string body, CancellationToken ct)
+    private Task SendAsync(string? to, Ticket ticket, string subject, string body, CancellationToken ct)
+        => SendCoreAsync(to, ticket.Id, subject, body, ct);
+
+    private async Task<bool> SendCoreAsync(string? to, long ticketId, string subject, string body, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(to))
         {
-            _log.LogWarning("CommsBridge: skipping notification for ticket {Id} — no recipient", ticket.Id);
-            return;
+            _log.LogWarning("CommsBridge: skipping notification for ticket {Id} — no recipient", ticketId);
+            return false;
         }
 
         // Fail fast on the unconfigured-prod case (Terraform creates KV slots
@@ -141,14 +151,14 @@ public class CommsManagedNotificationService : ITicketNotificationService
             _log.LogError(
                 "CommsBridge: WorkspaceId is not a valid GUID (value='{Val}'). Set the comms-managed-workspace-id KV secret to the Comms workspace GUID and restart the API.",
                 _opts.WorkspaceId);
-            return;
+            return false;
         }
         if (!Guid.TryParse(_opts.SystemSenderUserId, out var senderGuid) || senderGuid == Guid.Empty)
         {
             _log.LogError(
                 "CommsBridge: SystemSenderUserId is not a valid GUID (value='{Val}'). Set the comms-managed-system-sender-user-id KV secret to a Comms user GUID and restart the API.",
                 _opts.SystemSenderUserId);
-            return;
+            return false;
         }
 
         // Comms expects entityId as Guid? — null is fine. Sending the Bug Out
@@ -175,19 +185,20 @@ public class CommsManagedNotificationService : ITicketNotificationService
                 var err = await resp.Content.ReadAsStringAsync(ct);
                 _log.LogError(
                     "CommsBridge: send failed for ticket {Id} → {Status}: {Body}",
-                    ticket.Id, (int)resp.StatusCode, err);
+                    ticketId, (int)resp.StatusCode, err);
+                return false;
             }
-            else
-            {
-                _log.LogInformation(
-                    "CommsBridge: sent {Subject} for ticket {Id} to {To}",
-                    subject, ticket.Id, to);
-            }
+
+            _log.LogInformation(
+                "CommsBridge: sent {Subject} for ticket {Id} to {To}",
+                subject, ticketId, to);
+            return true;
         }
         catch (Exception ex)
         {
             // Notifications are best-effort — never let them fail a ticket mutation.
-            _log.LogError(ex, "CommsBridge: exception sending notification for ticket {Id}", ticket.Id);
+            _log.LogError(ex, "CommsBridge: exception sending notification for ticket {Id}", ticketId);
+            return false;
         }
     }
 
@@ -211,6 +222,10 @@ public interface ITicketNotificationService
     Task NotifyReporterResolvedAsync(Ticket ticket, CancellationToken ct = default);
     Task NotifyAssigneeChangesRequestedAsync(Ticket ticket, string reason, CancellationToken ct = default);
     Task NotifyReporterNoteAddedAsync(Ticket ticket, string noteContent, string authorName, CancellationToken ct = default);
+
+    // Development tracker digest. Returns true when the message was accepted
+    // by Comms, so the caller can decide whether to mark the items as sent.
+    Task<bool> SendDigestAsync(string to, string subject, string body, CancellationToken ct = default);
 }
 
 // ---------------------------------------------------------------------------

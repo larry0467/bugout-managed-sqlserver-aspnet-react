@@ -46,7 +46,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
         };
-    });
+    })
+    // Machine keys for the development tracker (X-BOM-Service-Key). Not the
+    // default scheme: only controllers that opt in with
+    // [Authorize(AuthenticationSchemes = ServiceKeys.DevelopmentSchemes)]
+    // accept it, and the handler itself refuses paths outside /api/development.
+    .AddScheme<ServiceKeyAuthenticationOptions, ServiceKeyAuthenticationHandler>(ServiceKeys.Scheme, _ => { });
 builder.Services.AddAuthorization();
 
 // CORS
@@ -85,6 +90,17 @@ builder.Services.Configure<SandboxOptions>(builder.Configuration.GetSection("San
 builder.Services.AddSingleton<IVideoBlobService, VideoBlobService>();
 builder.Services.AddSingleton<IScreenshotBlobService, ScreenshotBlobService>();
 builder.Services.AddScoped<ITicketActivityLogger, TicketActivityLogger>();
+// Development tracker: options, the digest composer and its worker.
+builder.Services.Configure<DevelopmentTrackerOptions>(
+    builder.Configuration.GetSection(DevelopmentTrackerOptions.SectionName));
+builder.Services.PostConfigure<DevelopmentTrackerOptions>(o =>
+{
+    // Board links in the digest point at the admin SPA. Fall back to the
+    // dashboard URL other features already use, then to prod.
+    if (string.IsNullOrWhiteSpace(o.BoardBaseUrl))
+        o.BoardBaseUrl = builder.Configuration["BugsManaged:DashboardBaseUrl"] ?? "https://bugout.managedplatform.com";
+});
+builder.Services.AddScoped<ProductionDigestService>();
 // Comms Managed notification bridge — replaces the no-op NotificationService.
 var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
     ?? new CommsManagedOptions();
@@ -109,6 +125,10 @@ builder.Services.AddHttpClient<IClaudeAgentClient, ClaudeAgentClient>();
 // Background worker that drains the ClaudeRuns table. Singleton hosted
 // service that creates a scope per poll for DbContext.
 builder.Services.AddHostedService<ClaudeRunWorker>();
+
+// Daily "what shipped today" digest for development orders that reached
+// production. Gated by DevelopmentTracker:DigestEnabled.
+builder.Services.AddHostedService<ProductionDigestWorker>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

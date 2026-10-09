@@ -28,6 +28,8 @@ public class BugsManagedDbContext : DbContext
     public DbSet<TicketActivity> TicketActivities => Set<TicketActivity>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
     public DbSet<TicketStatusDef> TicketStatusDefs => Set<TicketStatusDef>();
+    public DbSet<TicketDevelopmentLink> TicketDevelopmentLinks => Set<TicketDevelopmentLink>();
+    public DbSet<ServiceApiKey> ServiceApiKeys => Set<ServiceApiKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -108,6 +110,20 @@ public class BugsManagedDbContext : DbContext
             .HasIndex(s => new { s.OrganizationId, s.Key }).IsUnique();
         modelBuilder.Entity<TicketStatusDef>().HasIndex(s => s.OrganizationId);
 
+        // Development tracker. The board lists orders per org, the digest
+        // scans for ProductionAt-set / DigestSentAt-null rows across orgs.
+        modelBuilder.Entity<Ticket>()
+            .HasIndex(t => new { t.OrganizationId, t.IsDevelopmentOrder, t.DevelopmentStage });
+        modelBuilder.Entity<Ticket>()
+            .HasIndex(t => new { t.IsDevelopmentOrder, t.ProductionAt, t.DigestSentAt });
+
+        modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.TicketId);
+        modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.OrganizationId);
+
+        // The auth handler looks a key up by hash before any org is known.
+        modelBuilder.Entity<ServiceApiKey>().HasIndex(k => k.KeyHash).IsUnique();
+        modelBuilder.Entity<ServiceApiKey>().HasIndex(k => k.OrganizationId);
+
         // Global query filters — every org-scoped query auto-filters by the
         // current org resolved by OrgResolutionMiddleware. Use
         // .IgnoreQueryFilters() when you genuinely need to read across orgs
@@ -157,6 +173,14 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketStatusDef>()
             .HasQueryFilter(s => _orgContext.CurrentOrganizationId != null && s.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketDevelopmentLink>()
+            .HasQueryFilter(l => _orgContext.CurrentOrganizationId != null && l.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        // ServiceKeyAuthenticationHandler reads this table with
+        // IgnoreQueryFilters because it runs before the org is resolved.
+        modelBuilder.Entity<ServiceApiKey>()
+            .HasQueryFilter(k => _orgContext.CurrentOrganizationId != null && k.OrganizationId == _orgContext.CurrentOrganizationId);
     }
 
     public override int SaveChanges()

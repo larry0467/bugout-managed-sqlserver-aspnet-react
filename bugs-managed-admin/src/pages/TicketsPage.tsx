@@ -28,7 +28,9 @@ import {
   UserOutlined,
   ClockCircleOutlined,
   EditOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import {
   DndContext,
   PointerSensor,
@@ -46,7 +48,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, developmentApi, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
 import LabelChips from '../components/LabelChips';
@@ -300,6 +302,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<number | null | 'all'>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   // Filter selects are multi-select. Empty array = no filter on that
   // axis (i.e. all values pass). Lets the user say "show me everything
@@ -615,6 +618,19 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     setResolveModal(null);
     setResolution('');
     loadTickets();
+  };
+
+  // Hand a ticket to the Development board. It stays a ticket (same id,
+  // chat, history); it just gains the development-order bit and a stage.
+  const handleTrackAsOrder = async (t: Ticket) => {
+    try {
+      const d = await developmentApi.promoteTicket(t.id);
+      message.success(`#${t.id} is now on the Development board`);
+      loadTickets();
+      navigate(`/development/${d.order.id}`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not promote this ticket');
+    }
   };
 
   const handleAssign = async (ticketId: number, assignedTo: string) => {
@@ -1535,6 +1551,26 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             <Tag color="default" style={{ fontSize: 11 }}>
               <PlayCircleOutlined /> NO VIDEO UPLOADED
             </Tag>
+          )}
+          {/* Development tracker hand-off: a feature request becomes an
+              order on the Development board with one click, keeping its
+              history. Orders already on the board link straight to it. */}
+          {record.isDevelopmentOrder ? (
+            <Button
+              size="small"
+              icon={<RocketOutlined />}
+              onClick={() => navigate(`/development/${record.id}`)}
+            >
+              Development order
+            </Button>
+          ) : (
+            <Button
+              size="small"
+              icon={<RocketOutlined />}
+              onClick={() => handleTrackAsOrder(record)}
+            >
+              Track as development
+            </Button>
           )}
           <Button
             size="small"

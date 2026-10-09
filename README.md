@@ -250,6 +250,67 @@ window.BugOutManagedWidget.unmount();             // remove from DOM
 
 ---
 
+## Development Tracker
+
+Every piece of ordered development across the Managed Platform apps lives on the **Development** page
+(`/development`): the Videos Managed recording that ordered it, what was ordered, the branches and PRs,
+the stage, the Claude Code session log, and the what-shipped announcement video.
+
+- An order is a `FEATURE_REQUEST` ticket with `IsDevelopmentOrder = 1`, so it shares the activity feed, notes
+  and attachments with the bug board. Any ticket can be promoted with **Track as development** in its detail view.
+- Stages: `ORDERED → IN_PROGRESS → LOCAL_DEMO → PR_OPEN → MERGED_DEV → BETA → PRODUCTION → ANNOUNCED`.
+  Reaching `PRODUCTION` stamps `ProductionAt`; pasting the announcement video moves the item to `ANNOUNCED`.
+  The bug-board `Status` follows the stage when the org's status dictionary has the matching key.
+- Deep link: `/development/{id}` (the digest email points there).
+- **Daily digest** (`ProductionDigestWorker`): after `DevelopmentTracker:DigestHourLocal` (17:00 Central by default)
+  the API emails everything that reached production and has not been in a digest yet, through Comms Managed, to
+  `DevelopmentTracker:DigestRecipients` (or every `PLATFORM_OWNER` in the org when empty), asking for the
+  what-shipped video. One digest per organization per day; nothing is stamped unless Comms accepted the message.
+
+### Service keys (machine access)
+
+Claude Code sessions write to the tracker with a **service key** (Settings → Service Keys; `PLATFORM_OWNER` /
+`SUPER_ADMIN`). The raw key is shown once; only its SHA-256 is stored. Send it as `X-BOM-Service-Key`. It is
+accepted **only** on `/api/development/*` (enforced in `ServiceKeyAuthenticationHandler`), carries role `SERVICE`
+and the scopes `development:read` / `development:write`. On the devbox it lives in
+`%USERPROFILE%\.bugout\service-key.json` as `{ "key": "bsk_...", "apiBase": "https://bugout-api.managedplatform.com" }`.
+
+### API (`/api/development`, user JWT or service key)
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `stages` | stage keys and labels |
+| GET / POST | `projects` | list apps / ensure an app exists (`{ name, slug? }`) |
+| GET | `orders?projectSlug=&stage=A,B&needsAnnouncement=&search=&includeAnnounced=` | the board |
+| GET | `orders/{id}` | detail: links, stage history, activity, transcript |
+| POST | `orders` | create: `projectSlug` or `projectId`, `title`, `summary`, `videoUrl`, `transcript`, `sessionLogUrl`, `sessionId`, `orderedBy`, `stage`, `priority`, `links[]` |
+| POST | `orders/from-ticket/{ticketId}` | promote an existing ticket |
+| PATCH | `orders/{id}` | `title`, `summary`, `videoUrl`, `transcript`, `sessionLogUrl`, `sessionId`, `announcementVideoUrl`, `priority`, `orderedBy` (`""` clears) |
+| PUT | `orders/{id}/stage` | `{ stage, note }` |
+| POST / DELETE | `orders/{id}/links[/{linkId}]` | `{ kind: BRANCH \| PR \| COMMIT \| DOC \| VIDEO, repo, name, url, note }` |
+| GET | `shipped?date=yyyy-MM-dd` | what reached production that day (tracker time zone) |
+
+Writes need `PLATFORM_OWNER` / `SUPER_ADMIN` / `DEVELOPER` or a key with `development:write`; `VIEWER` and
+read-only keys can only read. Everything is organization-scoped like tickets.
+
+### From PowerShell (what a Claude Code session does)
+
+```powershell
+Import-Module .\scripts\BugOutDev.psm1
+Set-BugOutDevConfig -Key 'bsk_...' -ApiBase 'https://bugout-api.managedplatform.com'      # once
+$o = New-BugOutOrderFromVideo -VideoUrl 'https://videos-dev.managedplatform.com/<account>/r/<slug>' `
+       -ProjectSlug service-managed -Title 'NTE history button' -Summary 'What the video asked for'
+Add-BugOutOrderLink -Id $o.order.id -Kind PR -Repo ServiceManagerUI -Name 'PR 4349' -Url 'https://dev.azure.com/...'
+Set-BugOutOrderStage -Id $o.order.id -Stage PR_OPEN -Note 'both PRs open against dev'
+Update-BugOutOrder -Id $o.order.id -SessionLogUrl 'https://.../SESSION-2026-10-08.md'
+```
+
+`New-BugOutOrderFromVideo` reads the recording through `videos-api-dev.managedplatform.com/public/<account>/r/<slug>`
+and stores the captions as the transcript. `$o.order.boardUrl` is the link to put in the PR description.
+`scripts\Seed-DevelopmentOrders.ps1` creates one app per Managed Platform product and the first orders; it is idempotent.
+
+---
+
 ## Environment Variables
 
 | Variable | Description |
@@ -261,6 +322,11 @@ window.BugOutManagedWidget.unmount();             // remove from DOM
 | `BugOutManaged__VideoStoragePath` | Path for video blob storage |
 | `BugOutManaged__ClaudeAgent__BaseUrl` | URL of the Claude agent sidecar (optional) |
 | `BugOutManaged__ClaudeAgent__ApiKey` | Shared secret for the Claude agent sidecar (optional) |
+| `DevelopmentTracker__DigestEnabled` | Run the daily what-shipped digest (default `true`) |
+| `DevelopmentTracker__DigestHourLocal` | Local hour after which the digest goes out (default `17`) |
+| `DevelopmentTracker__TimeZone` | Windows or IANA id for the digest clock (default `Central Standard Time`) |
+| `DevelopmentTracker__DigestRecipients` | Comma-separated emails; empty = every PLATFORM_OWNER in the org |
+| `DevelopmentTracker__BoardBaseUrl` | Admin URL used for board links in the digest (default prod admin) |
 
 ---
 
