@@ -86,8 +86,11 @@ public class DevelopmentFixController : ControllerBase
         bool IsDevelopmentOrder, string? DevelopmentStage, string BoardUrl,
         List<DevelopmentController.LinkDto> Links, List<FixAttachmentDto> Attachments);
 
-    public record AppFixSettingDto(long Id, string Name, string Slug, bool AutoDraftFixes, int Requested, int Claimed, int ReadyToTest);
+    public record AppFixSettingDto(long Id, string Name, string Slug, bool AutoDraftFixes, int Requested, int Claimed, int ReadyToTest,
+        bool VideosManagedRecorder = false, string? VideosManagedKeyPrefix = null);
     public record AutoDraftRequest(bool Enabled);
+    // Null or empty clears the key.
+    public record RecorderKeyRequest(string? ApiKey);
     public record RequestFixRequest(string? Note);
     public record TriageRequest(string Decision, string? Note, string? GuidanceVideoUrl);
     public record ClaimRequest(string? Worker);
@@ -111,7 +114,61 @@ public class DevelopmentFixController : ControllerBase
         int Count(long pid, string status) => counts.Where(c => c.ProjectId == pid && c.FixStatus == status).Sum(c => c.Count);
 
         return Ok(projects.Select(p => new AppFixSettingDto(p.Id, p.Name, p.Slug, p.AutoDraftFixes,
-            Count(p.Id, FixStatuses.Requested), Count(p.Id, FixStatuses.Claimed), Count(p.Id, FixStatuses.ReadyToTest))).ToList());
+            Count(p.Id, FixStatuses.Requested), Count(p.Id, FixStatuses.Claimed), Count(p.Id, FixStatuses.ReadyToTest),
+            HasRecorderKey(p), MaskKey(p.VideosManagedApiKey))).ToList());
+    }
+
+    private static bool HasRecorderKey(Project p) => !string.IsNullOrWhiteSpace(p.VideosManagedApiKey);
+
+    // "vm_live_8f3a…": enough to recognise the key in Videos Managed's
+    // Developers page, never enough to use it.
+    public static string? MaskKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        var k = key.Trim();
+        return k.Length <= 12 ? k[..Math.Min(4, k.Length)] + "…" : k[..12] + "…";
+    }
+
+    // ===== per-app Videos Managed recorder key =====
+
+    // Paste the workspace API key minted in Videos Managed → Settings →
+    // Developers (scope recordings:write). From then on the app's widget
+    // records through Videos Managed. Humans only; the key is stored as-is
+    // because Bug Out has to present it to Videos Managed, and it is never
+    // returned in full.
+    [HttpPut("apps/{projectId}/recorder")]
+    public async Task<IActionResult> SetRecorderKey(long projectId, [FromBody] RecorderKeyRequest body)
+    {
+        if (!IsHumanAdmin()) return Forbidden("Only a platform owner or super admin can change the recorder key");
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == projectId);
+        if (project == null) return NotFound(new { message = "Application not found" });
+
+        var key = body.ApiKey?.Trim();
+        if (string.IsNullOrEmpty(key))
+        {
+            if (project.VideosManagedApiKey != null)
+            {
+                project.VideosManagedApiKey = null;
+                project.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _audit.Record(action: "development.recorder-key-cleared", outcome: "success", actorEmail: CallerEmail(),
+                    organizationId: project.OrganizationId, targetType: "Project", targetId: project.Id.ToString());
+            }
+        }
+        else
+        {
+            if (!key.StartsWith("vm_live_", StringComparison.Ordinal) || key.Length < 20 || key.Length > 255)
+                return BadRequest(new { message = "That does not look like a Videos Managed API key (vm_live_…). Mint one in Videos Managed → Settings → Developers with the recordings:write scope." });
+            project.VideosManagedApiKey = key;
+            project.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            _audit.Record(action: "development.recorder-key-set", outcome: "success", actorEmail: CallerEmail(),
+                organizationId: project.OrganizationId, targetType: "Project", targetId: project.Id.ToString(),
+                extra: new Dictionary<string, object?> { ["keyPrefix"] = MaskKey(key) });
+        }
+
+        return Ok(new AppFixSettingDto(project.Id, project.Name, project.Slug, project.AutoDraftFixes, 0, 0, 0,
+            HasRecorderKey(project), MaskKey(project.VideosManagedApiKey)));
     }
 
     [HttpPut("apps/{projectId}")]
@@ -129,7 +186,8 @@ public class DevelopmentFixController : ControllerBase
                 outcome: "success", actorEmail: CallerEmail(), organizationId: project.OrganizationId,
                 targetType: "Project", targetId: project.Id.ToString());
         }
-        return Ok(new AppFixSettingDto(project.Id, project.Name, project.Slug, project.AutoDraftFixes, 0, 0, 0));
+        return Ok(new AppFixSettingDto(project.Id, project.Name, project.Slug, project.AutoDraftFixes, 0, 0, 0,
+            HasRecorderKey(project), MaskKey(project.VideosManagedApiKey)));
     }
 
     // ===== queue =====

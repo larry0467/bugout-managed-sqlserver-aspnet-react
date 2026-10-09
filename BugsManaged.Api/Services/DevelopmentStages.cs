@@ -149,8 +149,19 @@ public class DevelopmentTrackerOptions
     public string BoardBaseUrl { get; set; } = string.Empty;
 
     // Videos Managed public API, used to read the captions of a guidance video
-    // (share links are a JS app; the recording JSON lives here).
+    // (share links are a JS app; the recording JSON lives here) and to create
+    // guest capture sessions for the widget's recorder.
     public string VideosApiBase { get; set; } = "https://videos-api-dev.managedplatform.com";
+
+    // Where Videos Managed share links live. A ticket only accepts a VideoUrl on
+    // this host (or another *.managedplatform.com host): the admin UI embeds it.
+    public string VideosWebBase { get; set; } = "https://videos-dev.managedplatform.com";
+
+    // Transcript backfill for recordings made through Videos Managed: how often
+    // to look for captions, and how long after the recording to keep looking.
+    public bool TranscriptBackfillEnabled { get; set; } = true;
+    public int TranscriptPollMinutes { get; set; } = 2;
+    public int TranscriptLookbackHours { get; set; } = 72;
 
     // ----- Azure DevOps webhook (POST /api/development/webhooks/azure-devops) -----
 

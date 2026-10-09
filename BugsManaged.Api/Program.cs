@@ -103,8 +103,11 @@ builder.Services.PostConfigure<DevelopmentTrackerOptions>(o =>
 builder.Services.AddScoped<ProductionDigestService>();
 builder.Services.AddScoped<DevelopmentOrderService>();
 builder.Services.AddScoped<AzureDevOpsWebhookService>();
-// Reads guidance-video transcripts from Videos Managed during triage.
+// Videos Managed: reads recording transcripts (guidance videos at triage,
+// widget recordings afterwards) and creates guest capture sessions for the
+// widget's recorder window.
 builder.Services.AddHttpClient<IVideosManagedClient, VideosManagedClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddScoped<VideosManagedTranscriptService>();
 // Comms Managed notification bridge — replaces the no-op NotificationService.
 var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
     ?? new CommsManagedOptions();
@@ -133,6 +136,11 @@ builder.Services.AddHostedService<ClaudeRunWorker>();
 // Daily "what shipped today" digest for development orders that reached
 // production. Gated by DevelopmentTracker:DigestEnabled.
 builder.Services.AddHostedService<ProductionDigestWorker>();
+
+// Copies captions from Videos Managed recordings into Ticket.Transcript once
+// Videos Managed has finished transcribing. Gated by
+// DevelopmentTracker:TranscriptBackfillEnabled.
+builder.Services.AddHostedService<VideosManagedTranscriptWorker>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

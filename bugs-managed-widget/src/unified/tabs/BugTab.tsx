@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { BugOutConfig, PanelSize, UserConfig } from '../types';
+import { useVideosManagedCapture } from '../../videosManagedCapture';
 
 // ---------------------------------------------------------------------------
 // BugTab — renders the report form DIRECTLY inside the unified panel.
@@ -125,6 +126,10 @@ export default function BugTab({
   const [isRecovered,       setIsRecovered]       = useState(false);
   const [showRecoveryPill,  setShowRecoveryPill]  = useState(false);
   const [isMobile,          setIsMobile]          = useState(false);
+
+  // Recording through Videos Managed (separate window) when the app has a
+  // workspace key; falls back to the in-page recorder below otherwise.
+  const vmCapture = useVideosManagedCapture({ apiUrl, apiKey, getTitle: () => title.trim() });
 
   // Mini-controller drag position
   const [miniPos, setMiniPos] = useState<{ top: number; left: number }>(() => ({
@@ -271,6 +276,7 @@ export default function BugTab({
     setIsRecovered(false); setShowRecoveryPill(false); setNoAudioWarning(false);
     recoveredChunksRef.current = [];
     dbClearChunks();
+    vmCapture.clear();
   };
 
   const handleSubmit = async () => {
@@ -296,6 +302,14 @@ export default function BugTab({
       if (appVersion)  ticketData.applicationVersion = appVersion;
       if (environment) ticketData.environment        = environment;
 
+      // Recorded through Videos Managed: share link + recording id instead of a
+      // blob; Bug Out copies the transcript over once Videos Managed has it.
+      if (vmCapture.attached) {
+        ticketData.videoUrl                 = vmCapture.attached.shareUrl;
+        ticketData.videosManagedRecordingId = vmCapture.attached.recordingId;
+        if (vmCapture.attached.durationSeconds) ticketData.videoDurationSeconds = vmCapture.attached.durationSeconds;
+      }
+
       const res = await fetch(`${apiUrl}/tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-BOM-API-Key': apiKey },
@@ -304,7 +318,7 @@ export default function BugTab({
       if (!res.ok) throw new Error('Failed to submit ticket');
       const ticket = await res.json();
 
-      const videoToUpload = recordedBlob || uploadFile;
+      const videoToUpload = vmCapture.attached ? null : (recordedBlob || uploadFile);
       if (videoToUpload && ticket.id) {
         try {
           const fd = new FormData();
@@ -399,6 +413,13 @@ export default function BugTab({
       }
     } catch (err) { console.error('Failed to start recording:', err); }
   }, []);
+
+  // Prefer the Videos Managed recorder window; record in the page when the app
+  // has no workspace key or the window was blocked.
+  const beginRecording = useCallback(async () => {
+    if (await vmCapture.begin()) return;
+    await startRecording();
+  }, [vmCapture, startRecording]);
 
   const stopRecording = useCallback(() => {
     if (beforeUnloadRef.current) { window.removeEventListener('beforeunload', beforeUnloadRef.current); beforeUnloadRef.current = null; }
@@ -542,6 +563,19 @@ export default function BugTab({
             <input type="file" accept="video/*" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
             {uploadFile && <span style={{ fontSize: 11, opacity: 0.7 }}>{uploadFile.name}</span>}
           </div>
+        ) : vmCapture.capturing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'bom-pulse 1.4s ease-out infinite' }} />
+            <span style={{ fontSize: 12, color: '#e53935', fontWeight: 600 }}>Recording in the recorder window…</span>
+            <button onClick={vmCapture.focus} style={{ ...btnStyle, padding: '4px 10px', fontSize: 11, background: '#64748b', color: '#fff' }}>Show window</button>
+            <button onClick={vmCapture.cancel} style={{ ...btnStyle, padding: '4px 10px', fontSize: 11, background: '#475569', color: '#fff' }}>Cancel</button>
+          </div>
+        ) : vmCapture.attached ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>&#10003; Recording attached</span>
+            <a href={vmCapture.attached.shareUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, opacity: 0.8, color: fg }}>view</a>
+            <button onClick={vmCapture.clear} style={{ ...btnStyle, padding: '4px 10px', fontSize: 11, background: '#64748b', color: '#fff' }}>Remove</button>
+          </div>
         ) : isRecording ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'bom-pulse 1.4s ease-out infinite' }} />
@@ -556,7 +590,7 @@ export default function BugTab({
           </div>
         ) : (
           <button
-            onClick={startRecording}
+            onClick={beginRecording}
             style={{ ...btnStyle, background: `linear-gradient(135deg, ${ORB_COLORS[0]}, ${ORB_COLORS[1]})`, color: '#fff', fontSize: 13 }}
           >
             Start Recording

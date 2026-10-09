@@ -1,14 +1,14 @@
-import { jsxs as s, Fragment as Ke, jsx as t } from "react/jsx-runtime";
-import { useRef as E, useState as h, useCallback as ge, useEffect as Ee } from "react";
-function lt(v) {
-  return v && v.__esModule && Object.prototype.hasOwnProperty.call(v, "default") ? v.default : v;
+import { jsxs as u, Fragment as Ne, jsx as t } from "react/jsx-runtime";
+import { useState as k, useEffect as fe, useRef as F, useCallback as X } from "react";
+function bt(r) {
+  return r && r.__esModule && Object.prototype.hasOwnProperty.call(r, "default") ? r.default : r;
 }
-var Je = { exports: {} };
-(function(v) {
-  (function(T, d) {
-    v.exports ? v.exports = d() : window.ysFixWebmDuration = d();
+var ct = { exports: {} };
+(function(r) {
+  (function(o, n) {
+    r.exports ? r.exports = n() : window.ysFixWebmDuration = n();
   })("fix-webm-duration", function() {
-    var T = {
+    var o = {
       172351395: { name: "EBML", type: "Container" },
       646: { name: "EBMLVersion", type: "Uint" },
       759: { name: "EBMLReadVersion", type: "Uint" },
@@ -234,260 +234,510 @@ var Je = { exports: {} };
       1159: { name: "TagString", type: "String" },
       1157: { name: "TagBinary", type: "Binary" }
     };
-    function d(n, i) {
-      n.prototype = Object.create(i.prototype), n.prototype.constructor = n;
+    function n(i, p) {
+      i.prototype = Object.create(p.prototype), i.prototype.constructor = i;
     }
-    function B(n, i) {
-      this.name = n || "Unknown", this.type = i || "Unknown";
+    function s(i, p) {
+      this.name = i || "Unknown", this.type = p || "Unknown";
     }
-    B.prototype.updateBySource = function() {
-    }, B.prototype.setSource = function(n) {
-      this.source = n, this.updateBySource();
-    }, B.prototype.updateByData = function() {
-    }, B.prototype.setData = function(n) {
-      this.data = n, this.updateByData();
+    s.prototype.updateBySource = function() {
+    }, s.prototype.setSource = function(i) {
+      this.source = i, this.updateBySource();
+    }, s.prototype.updateByData = function() {
+    }, s.prototype.setData = function(i) {
+      this.data = i, this.updateByData();
     };
-    function P(n, i) {
-      B.call(this, n, i || "Uint");
+    function c(i, p) {
+      s.call(this, i, p || "Uint");
     }
-    d(P, B);
-    function oe(n) {
-      return n.length % 2 === 1 ? "0" + n : n;
+    n(c, s);
+    function f(i) {
+      return i.length % 2 === 1 ? "0" + i : i;
     }
-    P.prototype.updateBySource = function() {
+    c.prototype.updateBySource = function() {
       this.data = "";
-      for (var n = 0; n < this.source.length; n++) {
-        var i = this.source[n].toString(16);
-        this.data += oe(i);
+      for (var i = 0; i < this.source.length; i++) {
+        var p = this.source[i].toString(16);
+        this.data += f(p);
       }
-    }, P.prototype.updateByData = function() {
-      var n = this.data.length / 2;
-      this.source = new Uint8Array(n);
-      for (var i = 0; i < n; i++) {
-        var a = this.data.substr(i * 2, 2);
-        this.source[i] = parseInt(a, 16);
+    }, c.prototype.updateByData = function() {
+      var i = this.data.length / 2;
+      this.source = new Uint8Array(i);
+      for (var p = 0; p < i; p++) {
+        var d = this.data.substr(p * 2, 2);
+        this.source[p] = parseInt(d, 16);
       }
-    }, P.prototype.getValue = function() {
+    }, c.prototype.getValue = function() {
       return parseInt(this.data, 16);
-    }, P.prototype.setValue = function(n) {
-      this.setData(oe(n.toString(16)));
+    }, c.prototype.setValue = function(i) {
+      this.setData(f(i.toString(16)));
     };
-    function F(n, i) {
-      B.call(this, n, i || "Float");
+    function h(i, p) {
+      s.call(this, i, p || "Float");
     }
-    d(F, B), F.prototype.getFloatArrayType = function() {
+    n(h, s), h.prototype.getFloatArrayType = function() {
       return this.source && this.source.length === 4 ? Float32Array : Float64Array;
-    }, F.prototype.updateBySource = function() {
-      var n = this.source.reverse(), i = this.getFloatArrayType(), a = new i(n.buffer);
-      this.data = a[0];
-    }, F.prototype.updateByData = function() {
-      var n = this.getFloatArrayType(), i = new n([this.data]), a = new Uint8Array(i.buffer);
-      this.source = a.reverse();
-    }, F.prototype.getValue = function() {
+    }, h.prototype.updateBySource = function() {
+      var i = this.source.reverse(), p = this.getFloatArrayType(), d = new p(i.buffer);
+      this.data = d[0];
+    }, h.prototype.updateByData = function() {
+      var i = this.getFloatArrayType(), p = new i([this.data]), d = new Uint8Array(p.buffer);
+      this.source = d.reverse();
+    }, h.prototype.getValue = function() {
       return this.data;
-    }, F.prototype.setValue = function(n) {
-      this.setData(n);
+    }, h.prototype.setValue = function(i) {
+      this.setData(i);
     };
-    function R(n, i) {
-      B.call(this, n, i || "Container");
+    function x(i, p) {
+      s.call(this, i, p || "Container");
     }
-    d(R, B), R.prototype.readByte = function() {
+    n(x, s), x.prototype.readByte = function() {
       return this.source[this.offset++];
-    }, R.prototype.readUint = function() {
-      for (var n = this.readByte(), i = 8 - n.toString(2).length, a = n - (1 << 7 - i), g = 0; g < i; g++)
-        a *= 256, a += this.readByte();
-      return a;
-    }, R.prototype.updateBySource = function() {
-      for (this.data = [], this.offset = 0; this.offset < this.source.length; this.offset = a) {
-        var n = this.readUint(), i = this.readUint(), a = Math.min(this.offset + i, this.source.length), g = this.source.slice(this.offset, a), u = T[n] || { name: "Unknown", type: "Unknown" }, x = B;
-        switch (u.type) {
+    }, x.prototype.readUint = function() {
+      for (var i = this.readByte(), p = 8 - i.toString(2).length, d = i - (1 << 7 - p), T = 0; T < p; T++)
+        d *= 256, d += this.readByte();
+      return d;
+    }, x.prototype.updateBySource = function() {
+      for (this.data = [], this.offset = 0; this.offset < this.source.length; this.offset = d) {
+        var i = this.readUint(), p = this.readUint(), d = Math.min(this.offset + p, this.source.length), T = this.source.slice(this.offset, d), m = o[i] || { name: "Unknown", type: "Unknown" }, v = s;
+        switch (m.type) {
           case "Container":
-            x = R;
+            v = x;
             break;
           case "Uint":
-            x = P;
+            v = c;
             break;
           case "Float":
-            x = F;
+            v = h;
             break;
         }
-        var S = new x(u.name, u.type);
-        S.setSource(g), this.data.push({
-          id: n,
-          idHex: n.toString(16),
-          data: S
+        var b = new v(m.name, m.type);
+        b.setSource(T), this.data.push({
+          id: i,
+          idHex: i.toString(16),
+          data: b
         });
       }
-    }, R.prototype.writeUint = function(n, i) {
-      for (var a = 1, g = 128; n >= g && a < 8; a++, g *= 128)
+    }, x.prototype.writeUint = function(i, p) {
+      for (var d = 1, T = 128; i >= T && d < 8; d++, T *= 128)
         ;
-      if (!i)
-        for (var u = g + n, x = a - 1; x >= 0; x--) {
-          var S = u % 256;
-          this.source[this.offset + x] = S, u = (u - S) / 256;
+      if (!p)
+        for (var m = T + i, v = d - 1; v >= 0; v--) {
+          var b = m % 256;
+          this.source[this.offset + v] = b, m = (m - b) / 256;
         }
-      this.offset += a;
-    }, R.prototype.writeSections = function(n) {
+      this.offset += d;
+    }, x.prototype.writeSections = function(i) {
       this.offset = 0;
-      for (var i = 0; i < this.data.length; i++) {
-        var a = this.data[i], g = a.data.source, u = g.length;
-        this.writeUint(a.id, n), this.writeUint(u, n), n || this.source.set(g, this.offset), this.offset += u;
+      for (var p = 0; p < this.data.length; p++) {
+        var d = this.data[p], T = d.data.source, m = T.length;
+        this.writeUint(d.id, i), this.writeUint(m, i), i || this.source.set(T, this.offset), this.offset += m;
       }
       return this.offset;
-    }, R.prototype.updateByData = function() {
-      var n = this.writeSections("draft");
-      this.source = new Uint8Array(n), this.writeSections();
-    }, R.prototype.getSectionById = function(n) {
-      for (var i = 0; i < this.data.length; i++) {
-        var a = this.data[i];
-        if (a.id === n)
-          return a.data;
+    }, x.prototype.updateByData = function() {
+      var i = this.writeSections("draft");
+      this.source = new Uint8Array(i), this.writeSections();
+    }, x.prototype.getSectionById = function(i) {
+      for (var p = 0; p < this.data.length; p++) {
+        var d = this.data[p];
+        if (d.id === i)
+          return d.data;
       }
       return null;
     };
-    function b(n) {
-      R.call(this, "File", "File"), this.setSource(n);
+    function U(i) {
+      x.call(this, "File", "File"), this.setSource(i);
     }
-    d(b, R), b.prototype.fixDuration = function(n, i) {
-      var a = i && i.logger;
-      a === void 0 ? a = function(N) {
-        console.log(N);
-      } : a || (a = function() {
+    n(U, x), U.prototype.fixDuration = function(i, p) {
+      var d = p && p.logger;
+      d === void 0 ? d = function(j) {
+        console.log(j);
+      } : d || (d = function() {
       });
-      var g = this.getSectionById(139690087);
-      if (!g)
-        return a("[fix-webm-duration] Segment section is missing"), !1;
-      var u = g.getSectionById(88713574);
-      if (!u)
-        return a("[fix-webm-duration] Info section is missing"), !1;
-      var x = u.getSectionById(710577);
-      if (!x)
-        return a("[fix-webm-duration] TimecodeScale section is missing"), !1;
-      var S = u.getSectionById(1161);
-      if (S)
-        if (S.getValue() <= 0)
-          a(`[fix-webm-duration] Duration section is present, but the value is ${S.getValue()}`), S.setValue(n);
+      var T = this.getSectionById(139690087);
+      if (!T)
+        return d("[fix-webm-duration] Segment section is missing"), !1;
+      var m = T.getSectionById(88713574);
+      if (!m)
+        return d("[fix-webm-duration] Info section is missing"), !1;
+      var v = m.getSectionById(710577);
+      if (!v)
+        return d("[fix-webm-duration] TimecodeScale section is missing"), !1;
+      var b = m.getSectionById(1161);
+      if (b)
+        if (b.getValue() <= 0)
+          d(`[fix-webm-duration] Duration section is present, but the value is ${b.getValue()}`), b.setValue(i);
         else
-          return a(`[fix-webm-duration] Duration section is present, and the value is ${S.getValue()}`), !1;
+          return d(`[fix-webm-duration] Duration section is present, and the value is ${b.getValue()}`), !1;
       else
-        a("[fix-webm-duration] Duration section is missing"), S = new F("Duration", "Float"), S.setValue(n), u.data.push({
+        d("[fix-webm-duration] Duration section is missing"), b = new h("Duration", "Float"), b.setValue(i), m.data.push({
           id: 1161,
-          data: S
+          data: b
         });
-      return x.setValue(1e6), u.updateByData(), g.updateByData(), this.updateByData(), !0;
-    }, b.prototype.toBlob = function(n) {
-      return new Blob([this.source.buffer], { type: n || "video/webm" });
+      return v.setValue(1e6), m.updateByData(), T.updateByData(), this.updateByData(), !0;
+    }, U.prototype.toBlob = function(i) {
+      return new Blob([this.source.buffer], { type: i || "video/webm" });
     };
-    function L(n, i, a, g) {
-      if (typeof a == "object" && (g = a, a = void 0), !a)
-        return new Promise(function(x) {
-          L(n, i, x, g);
+    function E(i, p, d, T) {
+      if (typeof d == "object" && (T = d, d = void 0), !d)
+        return new Promise(function(v) {
+          E(i, p, v, T);
         });
       try {
-        var u = new FileReader();
-        u.onloadend = function() {
+        var m = new FileReader();
+        m.onloadend = function() {
           try {
-            var x = new b(new Uint8Array(u.result));
-            x.fixDuration(i, g) && (n = x.toBlob(n.type));
+            var v = new U(new Uint8Array(m.result));
+            v.fixDuration(p, T) && (i = v.toBlob(i.type));
           } catch {
           }
-          a(n);
-        }, u.readAsArrayBuffer(n);
+          d(i);
+        }, m.readAsArrayBuffer(i);
       } catch {
-        a(n);
+        d(i);
       }
     }
-    return L.default = L, L;
+    return E.default = E, E;
   });
-})(Je);
-var dt = Je.exports;
-const pt = /* @__PURE__ */ lt(dt), ut = "bom-draft", $ = "chunks";
-let be = null;
-function Fe() {
-  return be || (be = new Promise((v, T) => {
-    const d = indexedDB.open(ut, 1);
-    d.onupgradeneeded = () => d.result.createObjectStore($, { autoIncrement: !0 }), d.onsuccess = () => v(d.result), d.onerror = () => {
-      be = null, T(d.error);
-    };
-  })), be;
+})(ct);
+var xt = ct.exports;
+const vt = /* @__PURE__ */ bt(xt);
+function ie(r) {
+  const o = r.match(/rgba?\(([^)]+)\)/i);
+  if (!o) return null;
+  const n = o[1].split(",").map((s) => parseFloat(s.trim()));
+  return n.length < 3 || n.some((s) => Number.isNaN(s)) ? null : [n[0], n[1], n[2], n[3] ?? 1];
 }
-function mt(v) {
-  Fe().then((T) => {
-    T.transaction($, "readwrite").objectStore($).add(v);
+function J(r) {
+  if (!r || typeof document > "u") return null;
+  const o = r.trim();
+  if (!o || o === "transparent" || o === "currentColor" || o === "inherit") return null;
+  const n = document.createElement("span");
+  if (n.style.color = "", n.style.color = o, !n.style.color) return null;
+  n.style.display = "none", document.body.appendChild(n);
+  const s = getComputedStyle(n).color;
+  return document.body.removeChild(n), ie(s);
+}
+function at([r, o, n]) {
+  const s = (c) => {
+    const f = c / 255;
+    return f <= 0.03928 ? f / 12.92 : Math.pow((f + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * s(r) + 0.7152 * s(o) + 0.0722 * s(n);
+}
+function Me([r, o, n]) {
+  r /= 255, o /= 255, n /= 255;
+  const s = Math.max(r, o, n), c = Math.min(r, o, n), f = (s + c) / 2;
+  let h = 0, x = 0;
+  if (s !== c) {
+    const U = s - c;
+    x = f > 0.5 ? U / (2 - s - c) : U / (s + c), s === r ? h = (o - n) / U + (o < n ? 6 : 0) : s === o ? h = (n - r) / U + 2 : h = (r - o) / U + 4, h *= 60;
+  }
+  return [h, x, f];
+}
+function St(r, o, n) {
+  const s = o * Math.min(n, 1 - n), c = (f) => {
+    const h = (f + r / 30) % 12, x = n - s * Math.max(-1, Math.min(h - 3, 9 - h, 1));
+    return Math.round(255 * x).toString(16).padStart(2, "0");
+  };
+  return `#${c(0)}${c(8)}${c(4)}`;
+}
+function je([r, o, n]) {
+  return `#${[r, o, n].map((s) => Math.round(s).toString(16).padStart(2, "0")).join("")}`;
+}
+function kt(r) {
+  if (r[3] < 0.35) return !0;
+  const [, o, n] = Me(r);
+  return o < 0.18 || n > 0.93 || n < 0.07;
+}
+function Ee(r, o) {
+  const n = J(r);
+  if (!n) return r;
+  const [s, c, f] = Me(n);
+  return St(s, c, Math.max(0, Math.min(1, f + o)));
+}
+function wt(r, o) {
+  const n = J(r), s = J(o);
+  if (!n || !s) return 0;
+  const c = Math.abs(Me(n)[0] - Me(s)[0]);
+  return Math.min(c, 360 - c);
+}
+const Ct = 'button,a,[role="button"],[class*="primary"],[class*="accent"],[class*="brand"],[class*="btn"],header,nav,[class*="navbar"],[class*="sidebar"]', Ut = /(primary|accent|brand|gold|navy|blue|green|teal|indigo|violet|orange|red|color)/i;
+function Tt() {
+  const r = /* @__PURE__ */ new Map(), o = (c, f) => {
+    if (!c || kt(c)) return;
+    const h = je(c);
+    r.set(h, (r.get(h) ?? 0) + f);
+  }, n = document.querySelector('meta[name="theme-color"]');
+  o(J(n == null ? void 0 : n.content), 6);
+  try {
+    const c = getComputedStyle(document.documentElement);
+    for (let f = 0; f < c.length; f++) {
+      const h = c[f];
+      h.startsWith("--") && Ut.test(h) && o(J(c.getPropertyValue(h)), 3);
+    }
+  } catch {
+  }
+  const s = Array.from(document.querySelectorAll(Ct)).slice(0, 240);
+  for (const c of s) {
+    const f = getComputedStyle(c);
+    o(ie(f.backgroundColor), 2), o(ie(f.borderTopColor), 1), o(ie(f.color), 1);
+  }
+  return r;
+}
+function Bt(r) {
+  const o = [...r.entries()].sort((f, h) => h[1] - f[1]);
+  if (o.length === 0) return null;
+  const n = o[0][0], s = o.slice(1).find(([f]) => wt(f, n) > 35), c = s ? s[0] : Ee(n, 0.16);
+  return { accent: n, ring: c };
+}
+function Rt() {
+  var n;
+  for (const s of [document.documentElement, document.body].filter(Boolean)) {
+    const c = `${s.className} ${s.getAttribute("data-theme") ?? ""} ${s.getAttribute("data-bs-theme") ?? ""} ${s.getAttribute("data-color-mode") ?? ""} ${s.getAttribute("data-mode") ?? ""}`.toLowerCase();
+    if (/\bdark\b/.test(c)) return "dark";
+    if (/\blight\b/.test(c)) return "light";
+  }
+  let r = document.body;
+  for (; r; ) {
+    const s = ie(getComputedStyle(r).backgroundColor);
+    if (s && s[3] > 0.5) return at(s) < 0.5 ? "dark" : "light";
+    r = r.parentElement;
+  }
+  const o = J(getComputedStyle(document.body || document.documentElement).color);
+  return o ? at(o) < 0.5 ? "light" : "dark" : (n = window.matchMedia) != null && n.call(window, "(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function Dt() {
+  let r = document.body;
+  for (; r; ) {
+    const o = ie(getComputedStyle(r).backgroundColor);
+    if (o && o[3] > 0.5) return o;
+    r = r.parentElement;
+  }
+  return null;
+}
+function st() {
+  if (typeof document > "u")
+    return {
+      mode: "dark",
+      accent: "#6366f1",
+      accentRing: "#8b5cf6",
+      surface: "#1a1a2e",
+      inputBg: "#16213e",
+      text: "#e0e0e0",
+      border: "#33384f"
+    };
+  const r = Rt(), o = Bt(Tt()), n = (o == null ? void 0 : o.accent) ?? (r === "dark" ? "#6366f1" : "#4f46e5"), s = (o == null ? void 0 : o.ring) ?? Ee(n, r === "dark" ? 0.16 : -0.12), c = Dt(), f = J(
+    getComputedStyle(document.body || document.documentElement).color
+  ), h = c ? je(c) : r === "dark" ? "#1a1a2e" : "#ffffff", x = f ? je(f) : r === "dark" ? "#e6e6ea" : "#1f2430", U = Ee(h, r === "dark" ? 0.06 : -0.04), E = Ee(h, r === "dark" ? 0.12 : -0.1);
+  return { mode: r, accent: n, accentRing: s, surface: h, inputBg: U, text: x, border: E };
+}
+function It(r) {
+  const [o, n] = k(st);
+  return fe(() => {
+    var U;
+    if (!r || typeof document > "u") return;
+    let s = 0;
+    const c = () => {
+      cancelAnimationFrame(s), s = requestAnimationFrame(() => n(st()));
+    }, f = new MutationObserver(c), h = ["class", "style", "data-theme", "data-bs-theme", "data-color-mode", "data-mode"];
+    f.observe(document.documentElement, { attributes: !0, attributeFilter: h }), document.body && f.observe(document.body, { attributes: !0, attributeFilter: h });
+    const x = (U = window.matchMedia) == null ? void 0 : U.call(window, "(prefers-color-scheme: dark)");
+    return x == null || x.addEventListener("change", c), () => {
+      cancelAnimationFrame(s), f.disconnect(), x == null || x.removeEventListener("change", c);
+    };
+  }, [r]), o;
+}
+const Et = "videos-managed:capture-complete", Mt = "videos-managed:capture-discarded", At = "bugout-videos-managed-recorder", Ft = "popup=yes,width=840,height=660,menubar=no,toolbar=no,location=no,status=no";
+function Ot(r) {
+  const { apiUrl: o, apiKey: n } = r, [s, c] = k(!1), [f, h] = k(null), x = F(r);
+  x.current = r;
+  const U = F(null), E = F(null);
+  fe(() => () => {
+    var m;
+    (m = E.current) == null || m.call(E);
+  }, []);
+  const i = X(async () => {
+    if (typeof window > "u") return !1;
+    let m = null;
+    try {
+      m = window.open("", At, Ft);
+    } catch {
+      m = null;
+    }
+    if (!m) return !1;
+    try {
+      m.document.write(
+        '<!doctype html><title>Opening the recorder…</title><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#050818;color:#cbd5e1;font:15px system-ui,sans-serif"><p>Opening the Videos Managed recorder…</p></body>'
+      );
+    } catch {
+    }
+    let v = null;
+    try {
+      const R = await fetch(`${o}/tickets/capture-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-BOM-API-Key": n },
+        body: JSON.stringify({ title: x.current.getTitle() || document.title, pageUrl: window.location.href })
+      });
+      R.ok && (v = await R.json());
+    } catch {
+      v = null;
+    }
+    if (!(v != null && v.captureUrl) || !v.recordingId) {
+      try {
+        m.close();
+      } catch {
+      }
+      return !1;
+    }
+    let b;
+    try {
+      b = new URL(v.captureUrl).origin;
+    } catch {
+      try {
+        m.close();
+      } catch {
+      }
+      return !1;
+    }
+    try {
+      m.location.href = v.captureUrl;
+    } catch {
+      try {
+        m.close();
+      } catch {
+      }
+      return !1;
+    }
+    U.current = m, c(!0);
+    const j = m, ae = v;
+    let he = !1, q = () => {
+    };
+    const z = (R) => {
+      var L, H, Z, se;
+      he || (he = !0, q(), c(!1), R ? (h(R), (H = (L = x.current).onAttached) == null || H.call(L, R)) : (se = (Z = x.current).onClosed) == null || se.call(Z));
+    }, Y = (R) => {
+      if (R.origin !== b) return;
+      const L = R.data;
+      !L || typeof L != "object" || L.recordingId !== ae.recordingId || (L.type === Et ? z({ recordingId: L.recordingId, shareUrl: L.shareUrl || ae.shareUrl, durationSeconds: L.durationSeconds }) : L.type === Mt && z(null));
+    };
+    window.addEventListener("message", Y);
+    const Ae = window.setInterval(() => {
+      let R = !1;
+      try {
+        R = j.closed;
+      } catch {
+        R = !0;
+      }
+      R && z(null);
+    }, 1e3);
+    return q = () => {
+      window.removeEventListener("message", Y), window.clearInterval(Ae), E.current = null, U.current = null;
+    }, E.current = q, !0;
+  }, [o, n]), p = X(() => {
+    var m;
+    try {
+      (m = U.current) == null || m.focus();
+    } catch {
+    }
+  }, []), d = X(() => {
+    var m;
+    try {
+      (m = U.current) == null || m.close();
+    } catch {
+    }
+  }, []), T = X(() => h(null), []);
+  return { capturing: s, attached: f, begin: i, focus: p, cancel: d, clear: T };
+}
+const Lt = "bom-draft", Q = "chunks";
+let De = null;
+function He() {
+  return De || (De = new Promise((r, o) => {
+    const n = indexedDB.open(Lt, 1);
+    n.onupgradeneeded = () => n.result.createObjectStore(Q, { autoIncrement: !0 }), n.onsuccess = () => r(n.result), n.onerror = () => {
+      De = null, o(n.error);
+    };
+  })), De;
+}
+function _t(r) {
+  He().then((o) => {
+    o.transaction(Q, "readwrite").objectStore(Q).add(r);
   }).catch(() => {
   });
 }
-function yt() {
-  return Fe().then(
-    (v) => new Promise((T) => {
-      const d = v.transaction($, "readonly").objectStore($).getAll();
-      d.onsuccess = () => T(d.result), d.onerror = () => T([]);
+function Pt() {
+  return He().then(
+    (r) => new Promise((o) => {
+      const n = r.transaction(Q, "readonly").objectStore(Q).getAll();
+      n.onsuccess = () => o(n.result), n.onerror = () => o([]);
     })
   ).catch(() => []);
 }
-function xe() {
-  Fe().then((v) => {
-    v.transaction($, "readwrite").objectStore($).clear();
+function Ie() {
+  He().then((r) => {
+    r.transaction(Q, "readwrite").objectStore(Q).clear();
   }).catch(() => {
   });
 }
-const ft = [
+const Wt = [
   { value: "BUG", label: "Bug Report" },
   { value: "FEATURE_REQUEST", label: "Feature Request" },
   { value: "QUESTION", label: "Question" }
-], ht = [
+], zt = [
   { value: "LOW", label: "Low" },
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },
   { value: "CRITICAL", label: "Critical" }
-], xt = (v) => {
+], Ht = (r) => {
   const {
-    apiKey: T,
-    apiUrl: d,
-    userEmail: B,
-    userName: P,
-    theme: oe = "dark",
-    position: F = "bottom-right",
-    orbSize: R = 24,
-    // Bug Out's identity is amber/orange ("we caught a bug" — warm, high contrast).
-    // Hosts can override; if they do, we treat [0]=core, [1]=ring.
-    orbColors: b = ["#fbbf24", "#fb923c"],
+    apiKey: o,
+    apiUrl: n,
+    userEmail: s,
+    userName: c,
+    position: f = "bottom-right",
+    orbSize: h = 24,
     // Tenant context
-    tenantId: L,
-    tenantName: n,
-    databaseName: i,
-    appVersion: a,
-    environment: g,
-    onApiReady: u,
-    hideOrb: x = !1
-  } = v, S = E(
+    tenantId: x,
+    tenantName: U,
+    databaseName: E,
+    appVersion: i,
+    environment: p,
+    onApiReady: d,
+    hideOrb: T = !1
+  } = r, m = F(
     `bom-orb-${Math.random().toString(36).slice(2, 9)}`
-  ), [N, C] = h(!1), [G, Me] = h(!1), [Qe, ie] = h(!1), [W, K] = h(null), [Ze, ae] = h(!1), [et, j] = h(!1), [ve, Ae] = h(""), [se, Oe] = h("BUG"), [_e, Pe] = h("MEDIUM"), [Se, ze] = h(""), [Le, We] = h(""), [J, ke] = h(!1), [tt, we] = h(!1), [$e, ce] = h(""), [nt, rt] = h(!1), [le, Ne] = h(null), [je, Q] = h(null), [de, He] = h(null), [Z, pe] = h(!1), [ue, Ue] = h([]), [ot, Ce] = h([]), Te = ge((e) => {
-    e.length !== 0 && (Ue((r) => [...r, ...e]), Ce((r) => [
-      ...r,
-      ...e.map((o) => o.type.startsWith("image/") ? URL.createObjectURL(o) : null)
+  ), [v, b] = k(!1), [j, ae] = k(!1), [he, q] = k(!1), [z, Y] = k(null), [Ae, R] = k(!1), [L, H] = k(!1), [Z, se] = k(""), [ge, Ve] = k("BUG"), [Xe, qe] = k("MEDIUM"), [be, Ye] = k(""), [Ke, Ge] = k(""), [ce, Fe] = k(!1), [lt, Oe] = k(!1), [Je, xe] = k(""), [dt, pt] = k(!1), [ve, Qe] = k(null), [Ze, le] = k(null), [Se, et] = k(null), [de, ke] = k(!1), D = Ot({
+    apiUrl: n,
+    apiKey: o,
+    getTitle: () => be.trim(),
+    onAttached: () => b(!0),
+    onClosed: () => b(!0)
+  }), [we, Le] = k([]), [ut, _e] = k([]), Pe = X((e) => {
+    e.length !== 0 && (Le((a) => [...a, ...e]), _e((a) => [
+      ...a,
+      ...e.map((l) => l.type.startsWith("image/") ? URL.createObjectURL(l) : null)
     ]));
-  }, []), it = ge((e) => {
-    Ue((r) => r.filter((o, p) => p !== e)), Ce((r) => {
-      const o = r[e];
-      return o && URL.revokeObjectURL(o), r.filter((p, l) => l !== e);
+  }, []), mt = X((e) => {
+    Le((a) => a.filter((l, S) => S !== e)), _e((a) => {
+      const l = a[e];
+      return l && URL.revokeObjectURL(l), a.filter((S, g) => g !== e);
     });
-  }, []), [Ve, ee] = h(null), [H, Xe] = h(() => ({
+  }, []), [tt, pe] = k(null), [ee, nt] = k(() => ({
     top: 24,
     left: typeof window < "u" ? Math.max(24, window.innerWidth - 280) : 24
-  })), M = E(null), me = E(null), V = E([]), X = E(null), Be = E([]), Re = E(0), De = E(null), ye = E(null), te = E(null), w = E([]), U = E([]);
-  Ee(() => {
-    u == null || u({ open: () => C(!0), close: () => C(!1) });
-  }, [u]), Ee(() => {
-    yt().then((e) => {
+  })), $ = F(null), Ce = F(null), te = F([]), ne = F(null), We = F([]), ze = F(0), $e = F(null), Ue = F(null), ue = F(null), M = F([]), A = F([]);
+  fe(() => {
+    d == null || d({ open: () => b(!0), close: () => b(!1) });
+  }, [d]), fe(() => {
+    Pt().then((e) => {
       if (e.length === 0) return;
-      const r = new Blob(e, { type: "video/webm" });
-      V.current = e, K(r), ee(URL.createObjectURL(r)), ae(!0), j(!0);
+      const a = new Blob(e, { type: "video/webm" });
+      te.current = e, Y(a), pe(URL.createObjectURL(a)), R(!0), H(!0);
     });
-  }, []), Ee(() => {
-    if (rt(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !te.current) {
-      const c = document.createElement("style");
-      c.textContent = `
+  }, []), fe(() => {
+    if (pt(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), !ue.current) {
+      const y = document.createElement("style");
+      y.textContent = `
         @keyframes bom-fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
@@ -601,78 +851,78 @@ const ft = [
           .bom-orb__halo,
           .bom-orb__scan { animation: none !important; }
         }
-      `, document.head.appendChild(c), te.current = c;
+      `, document.head.appendChild(y), ue.current = y;
     }
     const e = console.error;
-    console.error = (...c) => {
-      w.current.push({
+    console.error = (...y) => {
+      M.current.push({
         type: "console.error",
-        message: c.map((m) => typeof m == "object" ? JSON.stringify(m) : String(m)).join(" "),
+        message: y.map((w) => typeof w == "object" ? JSON.stringify(w) : String(w)).join(" "),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), w.current.length > 50 && w.current.shift(), e.apply(console, c);
+      }), M.current.length > 50 && M.current.shift(), e.apply(console, y);
     };
-    const r = (c) => {
-      w.current.push({
+    const a = (y) => {
+      M.current.push({
         type: "window.onerror",
-        message: c.message,
-        source: c.filename,
-        line: c.lineno,
-        col: c.colno,
+        message: y.message,
+        source: y.filename,
+        line: y.lineno,
+        col: y.colno,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), w.current.length > 50 && w.current.shift();
+      }), M.current.length > 50 && M.current.shift();
     };
-    window.addEventListener("error", r);
-    const o = (c) => {
-      var m;
-      w.current.push({
+    window.addEventListener("error", a);
+    const l = (y) => {
+      var w;
+      M.current.push({
         type: "unhandledrejection",
-        message: ((m = c.reason) == null ? void 0 : m.message) || String(c.reason),
+        message: ((w = y.reason) == null ? void 0 : w.message) || String(y.reason),
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }), w.current.length > 50 && w.current.shift();
+      }), M.current.length > 50 && M.current.shift();
     };
-    window.addEventListener("unhandledrejection", o);
-    const p = window.fetch;
-    window.fetch = async (...c) => {
-      var y;
-      const m = typeof c[0] == "string" ? c[0] : c[0].url, _ = (((y = c[1]) == null ? void 0 : y.method) || "GET").toUpperCase();
+    window.addEventListener("unhandledrejection", l);
+    const S = window.fetch;
+    window.fetch = async (...y) => {
+      var C;
+      const w = typeof y[0] == "string" ? y[0] : y[0].url, V = (((C = y[1]) == null ? void 0 : C.method) || "GET").toUpperCase();
       try {
-        const k = await p.apply(window, c);
-        return !k.ok && !m.includes(d) && (U.current.push({
-          method: _,
-          url: m,
-          status: k.status,
-          statusText: k.statusText,
+        const I = await S.apply(window, y);
+        return !I.ok && !w.includes(n) && (A.current.push({
+          method: V,
+          url: w,
+          status: I.status,
+          statusText: I.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), U.current.length > 30 && U.current.shift()), k;
-      } catch (k) {
-        throw m.includes(d) || (U.current.push({
-          method: _,
-          url: m,
+        }), A.current.length > 30 && A.current.shift()), I;
+      } catch (I) {
+        throw w.includes(n) || (A.current.push({
+          method: V,
+          url: w,
           status: 0,
-          statusText: k.message || "Network Error",
+          statusText: I.message || "Network Error",
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), U.current.length > 30 && U.current.shift()), k;
+        }), A.current.length > 30 && A.current.shift()), I;
       }
     };
-    const l = XMLHttpRequest.prototype.open, f = XMLHttpRequest.prototype.send;
-    return XMLHttpRequest.prototype.open = function(c, m, ..._) {
-      return this._bomMethod = c, this._bomUrl = String(m), l.apply(this, [c, m, ..._]);
-    }, XMLHttpRequest.prototype.send = function(...c) {
+    const g = XMLHttpRequest.prototype.open, B = XMLHttpRequest.prototype.send;
+    return XMLHttpRequest.prototype.open = function(y, w, ...V) {
+      return this._bomMethod = y, this._bomUrl = String(w), g.apply(this, [y, w, ...V]);
+    }, XMLHttpRequest.prototype.send = function(...y) {
       return this.addEventListener("loadend", () => {
-        var m;
-        this.status >= 400 && !((m = this._bomUrl) != null && m.includes(d)) && (U.current.push({
+        var w;
+        this.status >= 400 && !((w = this._bomUrl) != null && w.includes(n)) && (A.current.push({
           method: this._bomMethod || "GET",
           url: this._bomUrl || "",
           status: this.status,
           statusText: this.statusText,
           timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        }), U.current.length > 30 && U.current.shift());
-      }), f.apply(this, c);
+        }), A.current.length > 30 && A.current.shift());
+      }), B.apply(this, y);
     }, () => {
-      te.current && (document.head.removeChild(te.current), te.current = null), console.error = e, window.removeEventListener("error", r), window.removeEventListener("unhandledrejection", o), window.fetch = p, XMLHttpRequest.prototype.open = l, XMLHttpRequest.prototype.send = f;
+      ue.current && (document.head.removeChild(ue.current), ue.current = null), console.error = e, window.removeEventListener("error", a), window.removeEventListener("unhandledrejection", l), window.fetch = S, XMLHttpRequest.prototype.open = g, XMLHttpRequest.prototype.send = B;
     };
-  }, [d]);
-  const q = oe === "dark", fe = q ? "#1a1a2e" : "#ffffff", A = q ? "#e0e0e0" : "#333333", D = q ? "#333" : "#ddd", ne = q ? "#16213e" : "#f5f5f5", at = F === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, Ie = ge(async () => {
+  }, [n]);
+  const G = It(r.orbColors === void 0 || r.theme === void 0), O = r.orbColors ?? [G.accent, G.accentRing], re = (r.theme ?? G.mode) === "dark", Te = r.theme ? re ? "#1a1a2e" : "#ffffff" : G.surface, N = r.theme ? re ? "#e0e0e0" : "#333333" : G.text, _ = r.theme ? re ? "#333" : "#ddd" : G.border, me = r.theme ? re ? "#16213e" : "#f5f5f5" : G.inputBg, yt = f === "bottom-left" ? { bottom: 24, left: 24 } : { bottom: 24, right: 24 }, Be = X(async () => {
     try {
       const e = await navigator.mediaDevices.getDisplayMedia({
         // 'monitor' hints Chrome/Edge to pre-select "Entire Screen" in the picker.
@@ -681,163 +931,169 @@ const ft = [
         // cause Chrome to silently ignore the pre-check.
         audio: { systemAudio: "include" }
       });
-      let r = null;
+      let a = null;
       try {
-        r = await navigator.mediaDevices.getUserMedia({ audio: !0, video: !1 });
+        a = await navigator.mediaDevices.getUserMedia({ audio: !0, video: !1 });
       } catch {
       }
-      De.current = r;
-      const o = ((r == null ? void 0 : r.getAudioTracks().length) ?? 0) > 0, p = e.getAudioTracks().length > 0;
-      if (!o && !p) {
-        e.getTracks().forEach((y) => y.stop()), r == null || r.getTracks().forEach((y) => y.stop()), ie(!0), C(!1);
+      $e.current = a;
+      const l = ((a == null ? void 0 : a.getAudioTracks().length) ?? 0) > 0, S = e.getAudioTracks().length > 0;
+      if (!l && !S) {
+        e.getTracks().forEach((C) => C.stop()), a == null || a.getTracks().forEach((C) => C.stop()), q(!0), b(!1);
         return;
       }
-      const l = o ? r.getAudioTracks() : e.getAudioTracks(), f = new MediaStream([...e.getVideoTracks(), ...l]), c = new MediaRecorder(f, {
+      const g = l ? a.getAudioTracks() : e.getAudioTracks(), B = new MediaStream([...e.getVideoTracks(), ...g]), y = new MediaRecorder(B, {
         mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm"
       });
-      Be.current = [], V.current.length === 0 && xe(), c.ondataavailable = (y) => {
-        y.data.size > 0 && (Be.current.push(y.data), mt(y.data));
-      }, c.onstop = async () => {
-        var z;
-        const y = [...V.current, ...Be.current], k = new Blob(y, { type: "video/webm" });
-        let I = k;
-        const re = Re.current > 0 ? Date.now() - Re.current : 0;
-        if (re > 0)
+      We.current = [], te.current.length === 0 && Ie(), y.ondataavailable = (C) => {
+        C.data.size > 0 && (We.current.push(C.data), _t(C.data));
+      }, y.onstop = async () => {
+        var K;
+        const C = [...te.current, ...We.current], I = new Blob(C, { type: "video/webm" });
+        let W = I;
+        const ye = ze.current > 0 ? Date.now() - ze.current : 0;
+        if (ye > 0)
           try {
-            I = await pt(k, re, { logger: !1 });
+            W = await vt(I, ye, { logger: !1 });
           } catch {
-            I = k;
+            W = I;
           }
-        V.current = [], xe(), K(I), ee((Y) => (Y && URL.revokeObjectURL(Y), URL.createObjectURL(I))), ae(!1), j(!1), e.getTracks().forEach((Y) => Y.stop()), (z = De.current) == null || z.getTracks().forEach((Y) => Y.stop()), De.current = null;
-      }, Re.current = Date.now(), c.start(1e3), X.current = c;
-      const m = () => {
-        var y;
-        ((y = X.current) == null ? void 0 : y.state) === "recording" && X.current.requestData();
+        te.current = [], Ie(), Y(W), pe((oe) => (oe && URL.revokeObjectURL(oe), URL.createObjectURL(W))), R(!1), H(!1), e.getTracks().forEach((oe) => oe.stop()), (K = $e.current) == null || K.getTracks().forEach((oe) => oe.stop()), $e.current = null;
+      }, ze.current = Date.now(), y.start(1e3), ne.current = y;
+      const w = () => {
+        var C;
+        ((C = ne.current) == null ? void 0 : C.state) === "recording" && ne.current.requestData();
       };
-      window.addEventListener("beforeunload", m), me.current = m, Me(!0), C(!1);
-      const _ = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (_) {
-        const y = new _();
-        y.continuous = !0, y.interimResults = !0, y.lang = "en-US";
-        let k = "";
-        y.onresult = (I) => {
-          let re = "";
-          for (let z = I.resultIndex; z < I.results.length; z++)
-            I.results[z].isFinal ? k += I.results[z][0].transcript + " " : re += I.results[z][0].transcript;
-          Ae(k + re);
-        }, y.onerror = () => {
-        }, y.start(), ye.current = y;
+      window.addEventListener("beforeunload", w), Ce.current = w, ae(!0), b(!1);
+      const V = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (V) {
+        const C = new V();
+        C.continuous = !0, C.interimResults = !0, C.lang = "en-US";
+        let I = "";
+        C.onresult = (W) => {
+          let ye = "";
+          for (let K = W.resultIndex; K < W.results.length; K++)
+            W.results[K].isFinal ? I += W.results[K][0].transcript + " " : ye += W.results[K][0].transcript;
+          se(I + ye);
+        }, C.onerror = () => {
+        }, C.start(), Ue.current = C;
       }
     } catch (e) {
       console.error("Failed to start recording:", e);
     }
-  }, []), qe = ge(() => {
-    me.current && (window.removeEventListener("beforeunload", me.current), me.current = null), X.current && X.current.state !== "inactive" && X.current.stop(), ye.current && (ye.current.stop(), ye.current = null), Me(!1), C(!0);
-  }, []), he = () => {
-    ze(""), We(""), Oe("BUG"), Pe("MEDIUM"), Ae(""), K(null), ee((e) => (e && URL.revokeObjectURL(e), null)), Ne(null), Ue([]), Ce((e) => (e.forEach((r) => {
-      r && URL.revokeObjectURL(r);
-    }), [])), ce(""), we(!1), Q(null), He(null), pe(!1), ae(!1), j(!1), ie(!1), V.current = [], xe();
-  }, st = async () => {
-    if (!Se.trim()) {
-      ce("Title is required");
+  }, []), ft = X(async () => {
+    if (await D.begin()) {
+      b(!1);
       return;
     }
-    ke(!0), ce("");
+    await Be();
+  }, [D, Be]), rt = X(() => {
+    Ce.current && (window.removeEventListener("beforeunload", Ce.current), Ce.current = null), ne.current && ne.current.state !== "inactive" && ne.current.stop(), Ue.current && (Ue.current.stop(), Ue.current = null), ae(!1), b(!0);
+  }, []), Re = () => {
+    Ye(""), Ge(""), Ve("BUG"), qe("MEDIUM"), se(""), Y(null), pe((e) => (e && URL.revokeObjectURL(e), null)), Qe(null), Le([]), _e((e) => (e.forEach((a) => {
+      a && URL.revokeObjectURL(a);
+    }), [])), xe(""), Oe(!1), le(null), et(null), ke(!1), R(!1), H(!1), q(!1), te.current = [], Ie(), D.clear();
+  }, ht = async () => {
+    if (!be.trim()) {
+      xe("Title is required");
+      return;
+    }
+    Fe(!0), xe("");
     try {
       const e = {
-        title: Se.trim(),
-        description: Le.trim(),
-        ticketType: se,
-        priority: _e,
-        submittedBy: B || P || "Anonymous",
+        title: be.trim(),
+        description: Ke.trim(),
+        ticketType: ge,
+        priority: Xe,
+        submittedBy: s || c || "Anonymous",
         currentPageUrl: window.location.href,
         currentPageName: document.title,
         browserInfo: navigator.userAgent,
         screenWidth: window.innerWidth,
         screenHeight: window.innerHeight,
-        transcript: ve || null,
-        consoleErrors: w.current.length > 0 ? JSON.stringify(w.current) : null,
-        networkErrors: U.current.length > 0 ? JSON.stringify(U.current) : null
+        transcript: Z || null,
+        consoleErrors: M.current.length > 0 ? JSON.stringify(M.current) : null,
+        networkErrors: A.current.length > 0 ? JSON.stringify(A.current) : null
       };
-      L && (e.tenantId = L), n && (e.tenantName = n), i && (e.databaseName = i), a && (e.applicationVersion = a), g && (e.environment = g);
-      const r = await fetch(`${d}/tickets`, {
+      x && (e.tenantId = x), U && (e.tenantName = U), E && (e.databaseName = E), i && (e.applicationVersion = i), p && (e.environment = p), D.attached && (e.videoUrl = D.attached.shareUrl, e.videosManagedRecordingId = D.attached.recordingId, D.attached.durationSeconds && (e.videoDurationSeconds = D.attached.durationSeconds));
+      const a = await fetch(`${n}/tickets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-BOM-API-Key": T
+          "X-BOM-API-Key": o
         },
         body: JSON.stringify(e)
       });
-      if (!r.ok) throw new Error("Failed to submit ticket");
-      const o = await r.json();
-      if (ue.length > 0 && o.id)
-        for (const l of ue)
+      if (!a.ok) throw new Error("Failed to submit ticket");
+      const l = await a.json();
+      if (we.length > 0 && l.id)
+        for (const g of we)
           try {
-            const f = new FormData();
-            f.append("file", l, l.name || "screenshot.png");
-            const c = await fetch(`${d}/tickets/${o.id}/attachments/widget`, {
+            const B = new FormData();
+            B.append("file", g, g.name || "screenshot.png");
+            const y = await fetch(`${n}/tickets/${l.id}/attachments/widget`, {
               method: "POST",
-              headers: { "X-BOM-API-Key": T },
-              body: f
+              headers: { "X-BOM-API-Key": o },
+              body: B
             });
-            c.ok || console.warn(`[Bug Out] Screenshot upload failed (${c.status}) for ticket ${o.id}`);
-          } catch (f) {
-            console.warn("[Bug Out] Screenshot upload network error:", f);
+            y.ok || console.warn(`[Bug Out] Screenshot upload failed (${y.status}) for ticket ${l.id}`);
+          } catch (B) {
+            console.warn("[Bug Out] Screenshot upload network error:", B);
           }
-      const p = W || le;
-      if (He(o.id), p && o.id) {
-        const l = await Ge(o.id, p);
-        if (l) {
-          Q(l), ke(!1);
+      const S = D.attached ? null : z || ve;
+      if (et(l.id), S && l.id) {
+        const g = await it(l.id, S);
+        if (g) {
+          le(g), Fe(!1);
           return;
         }
       }
-      we(!0), setTimeout(() => {
-        C(!1), he();
+      Oe(!0), setTimeout(() => {
+        b(!1), Re();
       }, 2e3);
     } catch (e) {
-      ce(e.message || "Failed to submit");
+      xe(e.message || "Failed to submit");
     } finally {
-      ke(!1);
+      Fe(!1);
     }
-  }, Ye = 200 * 1024 * 1024, Ge = async (e, r) => {
-    if (r.size > Ye)
-      return `Recording is ${(r.size / 1024 / 1024).toFixed(1)} MB — exceeds the ${Ye / 1024 / 1024} MB upload limit. Stop the recording sooner next time.`;
-    pe(!0);
-    let o = null;
-    for (let p = 1; p <= 3; p++) {
+  }, ot = 200 * 1024 * 1024, it = async (e, a) => {
+    if (a.size > ot)
+      return `Recording is ${(a.size / 1024 / 1024).toFixed(1)} MB — exceeds the ${ot / 1024 / 1024} MB upload limit. Stop the recording sooner next time.`;
+    ke(!0);
+    let l = null;
+    for (let S = 1; S <= 3; S++) {
       try {
-        const l = new FormData();
-        l.append("file", r, "recording.webm");
-        const f = await fetch(`${d}/tickets/${e}/video`, {
+        const g = new FormData();
+        g.append("file", a, "recording.webm");
+        const B = await fetch(`${n}/tickets/${e}/video`, {
           method: "POST",
-          headers: { "X-BOM-API-Key": T },
-          body: l
+          headers: { "X-BOM-API-Key": o },
+          body: g
         });
-        if (f.ok)
-          return pe(!1), null;
-        if (f.status >= 400 && f.status < 500 && f.status !== 408 && f.status !== 429) {
-          const c = await f.text().catch(() => "");
-          o = `Server rejected upload (${f.status}): ${c || f.statusText}`;
+        if (B.ok)
+          return ke(!1), null;
+        if (B.status >= 400 && B.status < 500 && B.status !== 408 && B.status !== 429) {
+          const y = await B.text().catch(() => "");
+          l = `Server rejected upload (${B.status}): ${y || B.statusText}`;
           break;
         }
-        o = `Upload failed (${f.status}). Retrying…`;
-      } catch (l) {
-        o = l != null && l.message ? `Network error: ${l.message}. Retrying…` : "Network error. Retrying…";
+        l = `Upload failed (${B.status}). Retrying…`;
+      } catch (g) {
+        l = g != null && g.message ? `Network error: ${g.message}. Retrying…` : "Network error. Retrying…";
       }
-      p < 3 && await new Promise((l) => setTimeout(l, 1e3 * Math.pow(2, p - 1)));
+      S < 3 && await new Promise((g) => setTimeout(g, 1e3 * Math.pow(2, S - 1)));
     }
-    return pe(!1), o || "Video upload failed after 3 attempts.";
-  }, ct = async () => {
-    if (!de) return;
-    const e = W || le;
+    return ke(!1), l || "Video upload failed after 3 attempts.";
+  }, gt = async () => {
+    if (!Se) return;
+    const e = z || ve;
     if (!e) return;
-    Q(null);
-    const r = await Ge(de, e);
-    r ? Q(r) : (we(!0), setTimeout(() => {
-      C(!1), he();
+    le(null);
+    const a = await it(Se, e);
+    a ? le(a) : (Oe(!0), setTimeout(() => {
+      b(!1), Re();
     }, 2e3));
-  }, O = {
+  }, P = {
     padding: "8px 16px",
     border: "none",
     borderRadius: 6,
@@ -846,9 +1102,9 @@ const ft = [
     fontWeight: 600,
     transition: "opacity 0.2s"
   };
-  return /* @__PURE__ */ s(Ke, { children: [
-    !x && (() => {
-      const e = R * 2, r = b[0], o = b[1], p = `${r}8c`, l = S.current;
+  return /* @__PURE__ */ u(Ne, { children: [
+    !T && (() => {
+      const e = h * 2, a = O[0], l = O[1], S = `${a}8c`, g = m.current;
       return /* @__PURE__ */ t(
         "button",
         {
@@ -857,21 +1113,21 @@ const ft = [
           "aria-label": "Report a bug",
           title: "Report a bug or request a feature",
           onClick: () => {
-            N || he(), C(!N);
+            v || Re(), b(!v);
           },
           className: "bom-orb-wrap",
           style: {
-            ...at,
+            ...yt,
             width: e,
             height: e,
-            "--bom-core": r,
-            "--bom-ring": o,
-            "--bom-halo": p,
+            "--bom-core": a,
+            "--bom-ring": l,
+            "--bom-halo": S,
             "--bom-spin": "18s",
             "--bom-pulse": "4s"
           },
-          children: /* @__PURE__ */ s("span", { className: "bom-orb", children: [
-            /* @__PURE__ */ s(
+          children: /* @__PURE__ */ u("span", { className: "bom-orb", children: [
+            /* @__PURE__ */ u(
               "svg",
               {
                 viewBox: "0 0 100 100",
@@ -880,16 +1136,16 @@ const ft = [
                 "aria-hidden": "true",
                 className: "bom-orb__svg",
                 children: [
-                  /* @__PURE__ */ s("defs", { children: [
-                    /* @__PURE__ */ s("radialGradient", { id: `${l}-core`, cx: "50%", cy: "50%", r: "50%", children: [
-                      /* @__PURE__ */ t("stop", { offset: "0%", stopColor: r, stopOpacity: "1" }),
-                      /* @__PURE__ */ t("stop", { offset: "55%", stopColor: r, stopOpacity: "0.55" }),
+                  /* @__PURE__ */ u("defs", { children: [
+                    /* @__PURE__ */ u("radialGradient", { id: `${g}-core`, cx: "50%", cy: "50%", r: "50%", children: [
+                      /* @__PURE__ */ t("stop", { offset: "0%", stopColor: a, stopOpacity: "1" }),
+                      /* @__PURE__ */ t("stop", { offset: "55%", stopColor: a, stopOpacity: "0.55" }),
                       /* @__PURE__ */ t("stop", { offset: "100%", stopColor: "#1a0f00", stopOpacity: "0" })
                     ] }),
-                    /* @__PURE__ */ s("radialGradient", { id: `${l}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
+                    /* @__PURE__ */ u("radialGradient", { id: `${g}-iris`, cx: "50%", cy: "50%", r: "50%", children: [
                       /* @__PURE__ */ t("stop", { offset: "0%", stopColor: "#fff7dc", stopOpacity: "0.95" }),
-                      /* @__PURE__ */ t("stop", { offset: "40%", stopColor: r, stopOpacity: "0.7" }),
-                      /* @__PURE__ */ t("stop", { offset: "100%", stopColor: r, stopOpacity: "0" })
+                      /* @__PURE__ */ t("stop", { offset: "40%", stopColor: a, stopOpacity: "0.7" }),
+                      /* @__PURE__ */ t("stop", { offset: "100%", stopColor: a, stopOpacity: "0" })
                     ] })
                   ] }),
                   /* @__PURE__ */ t(
@@ -898,11 +1154,11 @@ const ft = [
                       cx: "50",
                       cy: "50",
                       r: "48",
-                      fill: `url(#${l}-core)`,
+                      fill: `url(#${g}-core)`,
                       className: "bom-orb__halo"
                     }
                   ),
-                  /* @__PURE__ */ s("g", { className: "bom-orb__spin-cw", children: [
+                  /* @__PURE__ */ u("g", { className: "bom-orb__spin-cw", children: [
                     /* @__PURE__ */ t(
                       "circle",
                       {
@@ -910,29 +1166,29 @@ const ft = [
                         cy: "50",
                         r: "44",
                         fill: "none",
-                        stroke: o,
+                        stroke: l,
                         strokeOpacity: "0.55",
                         strokeWidth: "0.5"
                       }
                     ),
-                    Array.from({ length: 36 }).map((f, c) => {
-                      const m = c * 10 * Math.PI / 180, _ = 50 + Math.cos(m) * 41, y = 50 + Math.sin(m) * 41, k = 50 + Math.cos(m) * (c % 3 === 0 ? 44 : 43), I = 50 + Math.sin(m) * (c % 3 === 0 ? 44 : 43);
+                    Array.from({ length: 36 }).map((B, y) => {
+                      const w = y * 10 * Math.PI / 180, V = 50 + Math.cos(w) * 41, C = 50 + Math.sin(w) * 41, I = 50 + Math.cos(w) * (y % 3 === 0 ? 44 : 43), W = 50 + Math.sin(w) * (y % 3 === 0 ? 44 : 43);
                       return /* @__PURE__ */ t(
                         "line",
                         {
-                          x1: _,
-                          y1: y,
-                          x2: k,
-                          y2: I,
-                          stroke: o,
-                          strokeOpacity: c % 3 === 0 ? 0.8 : 0.35,
+                          x1: V,
+                          y1: C,
+                          x2: I,
+                          y2: W,
+                          stroke: l,
+                          strokeOpacity: y % 3 === 0 ? 0.8 : 0.35,
                           strokeWidth: "0.8"
                         },
-                        c
+                        y
                       );
                     })
                   ] }),
-                  /* @__PURE__ */ s("g", { className: "bom-orb__spin-ccw", children: [
+                  /* @__PURE__ */ u("g", { className: "bom-orb__spin-ccw", children: [
                     /* @__PURE__ */ t(
                       "circle",
                       {
@@ -940,7 +1196,7 @@ const ft = [
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: o,
+                        stroke: l,
                         strokeOpacity: "0.18",
                         strokeWidth: "0.5"
                       }
@@ -952,7 +1208,7 @@ const ft = [
                         cy: "50",
                         r: "36",
                         fill: "none",
-                        stroke: o,
+                        stroke: l,
                         strokeOpacity: "0.85",
                         strokeWidth: "1.4",
                         strokeDasharray: "42 30 18 36 24 32",
@@ -967,7 +1223,7 @@ const ft = [
                       cy: "50",
                       r: "28",
                       fill: "none",
-                      stroke: r,
+                      stroke: a,
                       strokeOpacity: "0.7",
                       strokeWidth: "0.9",
                       strokeDasharray: "2 4"
@@ -979,18 +1235,18 @@ const ft = [
                       cx: "50",
                       cy: "50",
                       r: "20",
-                      fill: `url(#${l}-iris)`,
+                      fill: `url(#${g}-iris)`,
                       className: "bom-orb__core"
                     }
                   ),
-                  /* @__PURE__ */ s("g", { stroke: "#1a0f00", strokeOpacity: "0.55", strokeLinecap: "round", children: [
+                  /* @__PURE__ */ u("g", { stroke: "#1a0f00", strokeOpacity: "0.55", strokeLinecap: "round", children: [
                     /* @__PURE__ */ t("line", { x1: "50", y1: "42", x2: "50", y2: "42", strokeWidth: "3.4" }),
                     /* @__PURE__ */ t("line", { x1: "50", y1: "48", x2: "50", y2: "58", strokeWidth: "2.4" })
                   ] }),
-                  /* @__PURE__ */ t("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: o, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ t("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: o, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ t("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: o, strokeOpacity: "0.7", strokeWidth: "0.6" }),
-                  /* @__PURE__ */ t("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: o, strokeOpacity: "0.7", strokeWidth: "0.6" })
+                  /* @__PURE__ */ t("line", { x1: "50", y1: "6", x2: "50", y2: "14", stroke: l, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ t("line", { x1: "50", y1: "86", x2: "50", y2: "94", stroke: l, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ t("line", { x1: "6", y1: "50", x2: "14", y2: "50", stroke: l, strokeOpacity: "0.7", strokeWidth: "0.6" }),
+                  /* @__PURE__ */ t("line", { x1: "86", y1: "50", x2: "94", y2: "50", stroke: l, strokeOpacity: "0.7", strokeWidth: "0.6" })
                 ]
               }
             ),
@@ -999,7 +1255,7 @@ const ft = [
         }
       );
     })(),
-    Qe && /* @__PURE__ */ t(
+    he && /* @__PURE__ */ t(
       "div",
       {
         style: {
@@ -1012,9 +1268,9 @@ const ft = [
           justifyContent: "center",
           animation: "bom-fade-in 0.2s ease-out"
         },
-        children: /* @__PURE__ */ s("div", { style: {
-          background: fe,
-          color: A,
+        children: /* @__PURE__ */ u("div", { style: {
+          background: Te,
+          color: N,
           borderRadius: 12,
           padding: 28,
           width: "90%",
@@ -1025,21 +1281,21 @@ const ft = [
         }, children: [
           /* @__PURE__ */ t("div", { style: { fontSize: 40, marginBottom: 12 }, children: "🔇" }),
           /* @__PURE__ */ t("h3", { style: { margin: "0 0 10px", fontSize: 18, fontWeight: 700 }, children: "No audio detected" }),
-          /* @__PURE__ */ s("p", { style: { margin: "0 0 18px", fontSize: 14, opacity: 0.75, lineHeight: 1.5 }, children: [
+          /* @__PURE__ */ u("p", { style: { margin: "0 0 18px", fontSize: 14, opacity: 0.75, lineHeight: 1.5 }, children: [
             "Your recording would have no sound. In the screen picker, enable the",
             /* @__PURE__ */ t("strong", { children: ' "Also share system audio"' }),
             " toggle before clicking Share."
           ] }),
-          /* @__PURE__ */ s("div", { style: { display: "flex", gap: 10, justifyContent: "center" }, children: [
+          /* @__PURE__ */ u("div", { style: { display: "flex", gap: 10, justifyContent: "center" }, children: [
             /* @__PURE__ */ t(
               "div",
               {
                 onClick: () => {
-                  ie(!1), Ie();
+                  q(!1), Be();
                 },
                 style: {
-                  ...O,
-                  background: `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                  ...P,
+                  background: `linear-gradient(135deg, ${O[0]}, ${O[1]})`,
                   color: "#fff",
                   cursor: "pointer"
                 },
@@ -1050,9 +1306,9 @@ const ft = [
               "div",
               {
                 onClick: () => {
-                  ie(!1), C(!0);
+                  q(!1), b(!0);
                 },
-                style: { ...O, background: "transparent", color: A, border: `1px solid ${D}`, cursor: "pointer" },
+                style: { ...P, background: "transparent", color: N, border: `1px solid ${_}`, cursor: "pointer" },
                 children: "Skip audio"
               }
             )
@@ -1060,7 +1316,7 @@ const ft = [
         ] })
       }
     ),
-    N && /* @__PURE__ */ t(
+    v && /* @__PURE__ */ t(
       "div",
       {
         style: {
@@ -1074,14 +1330,14 @@ const ft = [
           animation: "bom-fade-in 0.2s ease-out"
         },
         onClick: (e) => {
-          e.target === e.currentTarget && C(!1);
+          e.target === e.currentTarget && b(!1);
         },
         children: /* @__PURE__ */ t(
           "div",
           {
             style: {
-              background: fe,
-              color: A,
+              background: Te,
+              color: N,
               borderRadius: 12,
               padding: 24,
               width: "90%",
@@ -1091,67 +1347,67 @@ const ft = [
               boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
             },
-            children: tt ? /* @__PURE__ */ s("div", { style: { textAlign: "center", padding: 40 }, children: [
+            children: lt ? /* @__PURE__ */ u("div", { style: { textAlign: "center", padding: 40 }, children: [
               /* @__PURE__ */ t("div", { style: { fontSize: 48, marginBottom: 16 }, children: "✓" }),
               /* @__PURE__ */ t("h3", { style: { margin: 0, fontSize: 20 }, children: "Submitted!" }),
               /* @__PURE__ */ t("p", { style: { opacity: 0.7, marginTop: 8 }, children: "Thank you for your feedback." })
-            ] }) : /* @__PURE__ */ s(Ke, { children: [
-              /* @__PURE__ */ s("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }, children: [
+            ] }) : /* @__PURE__ */ u(Ne, { children: [
+              /* @__PURE__ */ u("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }, children: [
                 /* @__PURE__ */ t("h3", { style: { margin: 0, fontSize: 18, fontWeight: 700 }, children: "Report an Issue" }),
                 /* @__PURE__ */ t(
                   "div",
                   {
-                    onClick: () => C(!1),
+                    onClick: () => b(!1),
                     style: { cursor: "pointer", fontSize: 20, opacity: 0.6, padding: "0 4px" },
                     children: "✕"
                   }
                 )
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Type" }),
-                /* @__PURE__ */ t("div", { style: { display: "flex", gap: 8 }, children: ft.map((e) => /* @__PURE__ */ t(
+                /* @__PURE__ */ t("div", { style: { display: "flex", gap: 8 }, children: Wt.map((e) => /* @__PURE__ */ t(
                   "div",
                   {
-                    onClick: () => Oe(e.value),
+                    onClick: () => Ve(e.value),
                     style: {
                       flex: 1,
                       padding: "8px 4px",
                       textAlign: "center",
                       borderRadius: 6,
-                      border: `2px solid ${se === e.value ? b[0] : D}`,
-                      background: se === e.value ? `${b[0]}22` : "transparent",
+                      border: `2px solid ${ge === e.value ? O[0] : _}`,
+                      background: ge === e.value ? `${O[0]}22` : "transparent",
                       cursor: "pointer",
                       fontSize: 12,
-                      fontWeight: se === e.value ? 700 : 400
+                      fontWeight: ge === e.value ? 700 : 400
                     },
                     children: e.label
                   },
                   e.value
                 )) })
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Priority" }),
                 /* @__PURE__ */ t(
                   "select",
                   {
-                    value: _e,
-                    onChange: (e) => Pe(e.target.value),
+                    value: Xe,
+                    onChange: (e) => qe(e.target.value),
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${D}`,
-                      background: ne,
-                      color: A,
+                      border: `1px solid ${_}`,
+                      background: me,
+                      color: N,
                       fontSize: 14,
                       outline: "none"
                     },
-                    children: ht.map((e) => /* @__PURE__ */ t("option", { value: e.value, children: e.label }, e.value))
+                    children: zt.map((e) => /* @__PURE__ */ t("option", { value: e.value, children: e.label }, e.value))
                   }
                 )
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
-                /* @__PURE__ */ s("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
+                /* @__PURE__ */ u("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: [
                   "Title ",
                   /* @__PURE__ */ t("span", { style: { color: "#e53935" }, children: "*" })
                 ] }),
@@ -1159,17 +1415,17 @@ const ft = [
                   "input",
                   {
                     type: "text",
-                    value: Se,
-                    onChange: (e) => ze(e.target.value),
+                    value: be,
+                    onChange: (e) => Ye(e.target.value),
                     placeholder: "Brief summary of the issue",
                     maxLength: 500,
                     style: {
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${D}`,
-                      background: ne,
-                      color: A,
+                      border: `1px solid ${_}`,
+                      background: me,
+                      color: N,
                       fontSize: 14,
                       outline: "none",
                       boxSizing: "border-box"
@@ -1177,17 +1433,17 @@ const ft = [
                   }
                 )
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Description" }),
                 /* @__PURE__ */ t(
                   "textarea",
                   {
-                    value: Le,
-                    onChange: (e) => We(e.target.value),
+                    value: Ke,
+                    onChange: (e) => Ge(e.target.value),
                     onPaste: (e) => {
-                      var p;
-                      const o = Array.from(((p = e.clipboardData) == null ? void 0 : p.items) || []).filter((l) => l.kind === "file" && l.type.startsWith("image/")).map((l) => l.getAsFile()).filter((l) => l != null);
-                      o.length > 0 && (e.preventDefault(), Te(o));
+                      var S;
+                      const l = Array.from(((S = e.clipboardData) == null ? void 0 : S.items) || []).filter((g) => g.kind === "file" && g.type.startsWith("image/")).map((g) => g.getAsFile()).filter((g) => g != null);
+                      l.length > 0 && (e.preventDefault(), Pe(l));
                     },
                     placeholder: "Describe the issue in detail... (you can paste a screenshot here)",
                     rows: 3,
@@ -1195,9 +1451,9 @@ const ft = [
                       width: "100%",
                       padding: "8px 12px",
                       borderRadius: 6,
-                      border: `1px solid ${D}`,
-                      background: ne,
-                      color: A,
+                      border: `1px solid ${_}`,
+                      background: me,
+                      color: N,
                       fontSize: 14,
                       outline: "none",
                       resize: "vertical",
@@ -1207,33 +1463,33 @@ const ft = [
                   }
                 )
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Files" }),
-                /* @__PURE__ */ s(
+                /* @__PURE__ */ u(
                   "div",
                   {
                     onDragOver: (e) => {
                       e.preventDefault(), e.stopPropagation();
                     },
                     onDrop: (e) => {
-                      var o;
+                      var l;
                       e.preventDefault();
-                      const r = Array.from(((o = e.dataTransfer) == null ? void 0 : o.files) || []);
-                      r.length && Te(r);
+                      const a = Array.from(((l = e.dataTransfer) == null ? void 0 : l.files) || []);
+                      a.length && Pe(a);
                     },
                     style: {
-                      border: `1px dashed ${D}`,
+                      border: `1px dashed ${_}`,
                       borderRadius: 6,
                       padding: 14,
-                      background: ne,
+                      background: me,
                       fontSize: 12,
                       opacity: 0.95,
                       textAlign: "center",
                       minHeight: 70
                     },
                     children: [
-                      /* @__PURE__ */ s("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }, children: [
-                        /* @__PURE__ */ s("label", { style: { ...O, background: "#444", color: "#fff", padding: "4px 10px", fontSize: 12, cursor: "pointer" }, children: [
+                      /* @__PURE__ */ u("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }, children: [
+                        /* @__PURE__ */ u("label", { style: { ...P, background: "#444", color: "#fff", padding: "4px 10px", fontSize: 12, cursor: "pointer" }, children: [
                           "Choose files",
                           /* @__PURE__ */ t(
                             "input",
@@ -1242,8 +1498,8 @@ const ft = [
                               accept: "*/*",
                               multiple: !0,
                               onChange: (e) => {
-                                const r = Array.from(e.target.files || []);
-                                r.length && Te(r), e.target.value = "";
+                                const a = Array.from(e.target.files || []);
+                                a.length && Pe(a), e.target.value = "";
                               },
                               style: { display: "none" }
                             }
@@ -1251,24 +1507,24 @@ const ft = [
                         ] }),
                         /* @__PURE__ */ t("span", { style: { opacity: 0.7 }, children: "or drag & drop / paste images here — any file type" })
                       ] }),
-                      ue.length > 0 && /* @__PURE__ */ t("div", { style: { display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", justifyContent: "center" }, children: ue.map((e, r) => {
-                        const o = ot[r];
-                        return /* @__PURE__ */ s("div", { style: { position: "relative" }, children: [
-                          o ? /* @__PURE__ */ t(
+                      we.length > 0 && /* @__PURE__ */ t("div", { style: { display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", justifyContent: "center" }, children: we.map((e, a) => {
+                        const l = ut[a];
+                        return /* @__PURE__ */ u("div", { style: { position: "relative" }, children: [
+                          l ? /* @__PURE__ */ t(
                             "img",
                             {
-                              src: o,
-                              alt: e.name || `file-${r + 1}`,
+                              src: l,
+                              alt: e.name || `file-${a + 1}`,
                               title: e.name,
                               style: {
                                 width: 64,
                                 height: 64,
                                 objectFit: "cover",
                                 borderRadius: 4,
-                                border: `1px solid ${D}`
+                                border: `1px solid ${_}`
                               }
                             }
-                          ) : /* @__PURE__ */ s(
+                          ) : /* @__PURE__ */ u(
                             "div",
                             {
                               title: e.name,
@@ -1276,7 +1532,7 @@ const ft = [
                                 width: 90,
                                 height: 64,
                                 borderRadius: 4,
-                                border: `1px solid ${D}`,
+                                border: `1px solid ${_}`,
                                 background: "#0d1117",
                                 color: "#9ca3af",
                                 display: "flex",
@@ -1303,7 +1559,7 @@ const ft = [
                           /* @__PURE__ */ t(
                             "div",
                             {
-                              onClick: () => it(r),
+                              onClick: () => mt(a),
                               style: {
                                 position: "absolute",
                                 top: -6,
@@ -1323,50 +1579,68 @@ const ft = [
                               children: "×"
                             }
                           )
-                        ] }, r);
+                        ] }, a);
                       }) })
                     ]
                   }
                 )
               ] }),
-              /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Screen Recording" }),
-                nt ? /* @__PURE__ */ s("div", { children: [
+                dt ? /* @__PURE__ */ u("div", { children: [
                   /* @__PURE__ */ t(
                     "input",
                     {
                       type: "file",
                       accept: "video/*",
                       onChange: (e) => {
-                        var r;
-                        return Ne(((r = e.target.files) == null ? void 0 : r[0]) || null);
+                        var a;
+                        return Qe(((a = e.target.files) == null ? void 0 : a[0]) || null);
                       },
                       style: { fontSize: 13 }
                     }
                   ),
-                  le && /* @__PURE__ */ t("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: le.name })
-                ] }) : /* @__PURE__ */ s("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-                  !G && !W && /* @__PURE__ */ t(
+                  ve && /* @__PURE__ */ t("span", { style: { fontSize: 12, opacity: 0.7, marginLeft: 8 }, children: ve.name })
+                ] }) : /* @__PURE__ */ u("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }, children: [
+                  D.capturing && /* @__PURE__ */ u(Ne, { children: [
+                    /* @__PURE__ */ t("span", { style: { display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#e53935", animation: "bom-pulse 1.4s ease-out infinite" } }),
+                    /* @__PURE__ */ t("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording in the recorder window…" }),
+                    /* @__PURE__ */ t("div", { onClick: D.focus, style: { ...P, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 }, children: "Show window" }),
+                    /* @__PURE__ */ t("div", { onClick: D.cancel, style: { ...P, background: "#444", color: "#fff", padding: "4px 10px", fontSize: 12 }, children: "Cancel" })
+                  ] }),
+                  D.attached && !D.capturing && /* @__PURE__ */ u("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }, children: [
+                    /* @__PURE__ */ t("span", { style: { fontSize: 12, color: "#22c55e", fontWeight: 600 }, children: "✓ Recording attached" }),
+                    /* @__PURE__ */ t("a", { href: D.attached.shareUrl, target: "_blank", rel: "noopener noreferrer", style: { fontSize: 12, opacity: 0.8 }, children: "view" }),
+                    /* @__PURE__ */ t(
+                      "div",
+                      {
+                        onClick: D.clear,
+                        style: { ...P, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
+                        children: "Remove"
+                      }
+                    )
+                  ] }),
+                  !j && !z && !D.capturing && !D.attached && /* @__PURE__ */ t(
                     "div",
                     {
-                      onClick: Ie,
+                      onClick: ft,
                       style: {
-                        ...O,
-                        background: `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                        ...P,
+                        background: `linear-gradient(135deg, ${O[0]}, ${O[1]})`,
                         color: "#fff"
                       },
                       children: "Start Recording"
                     }
                   ),
-                  G && /* @__PURE__ */ t(
+                  j && /* @__PURE__ */ t(
                     "div",
                     {
-                      onClick: qe,
-                      style: { ...O, background: "#e53935", color: "#fff" },
+                      onClick: rt,
+                      style: { ...P, background: "#e53935", color: "#fff" },
                       children: "Stop Recording"
                     }
                   ),
-                  Ze && /* @__PURE__ */ t("div", { style: {
+                  Ae && /* @__PURE__ */ t("div", { style: {
                     fontSize: 12,
                     color: "#fb923c",
                     background: "rgba(251,146,60,0.12)",
@@ -1375,36 +1649,36 @@ const ft = [
                     padding: "5px 10px",
                     marginBottom: 4
                   }, children: "Recording recovered after page reload — your video is intact." }),
-                  W && /* @__PURE__ */ s("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-                    /* @__PURE__ */ s("span", { style: { fontSize: 12, opacity: 0.7 }, children: [
-                      (W.size / 1024 / 1024).toFixed(1),
+                  z && /* @__PURE__ */ u("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+                    /* @__PURE__ */ u("span", { style: { fontSize: 12, opacity: 0.7 }, children: [
+                      (z.size / 1024 / 1024).toFixed(1),
                       " MB"
                     ] }),
                     /* @__PURE__ */ t(
                       "div",
                       {
                         onClick: () => {
-                          K(null), ee((e) => (e && URL.revokeObjectURL(e), null));
+                          Y(null), pe((e) => (e && URL.revokeObjectURL(e), null));
                         },
-                        style: { ...O, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
+                        style: { ...P, background: "#666", color: "#fff", padding: "4px 10px", fontSize: 12 },
                         children: "Remove"
                       }
                     )
                   ] }),
-                  G && /* @__PURE__ */ t("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
+                  j && /* @__PURE__ */ t("span", { style: { fontSize: 12, color: "#e53935", fontWeight: 600 }, children: "Recording..." })
                 ] })
               ] }),
-              Ve && /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              tt && /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Preview" }),
                 /* @__PURE__ */ t(
                   "video",
                   {
-                    src: Ve,
+                    src: tt,
                     controls: !0,
                     style: {
                       width: "100%",
                       borderRadius: 8,
-                      border: `1px solid ${D}`,
+                      border: `1px solid ${_}`,
                       background: "#000",
                       maxHeight: 220,
                       display: "block"
@@ -1413,7 +1687,7 @@ const ft = [
                 ),
                 /* @__PURE__ */ t("div", { style: { fontSize: 11, opacity: 0.5, marginTop: 4 }, children: "Make sure your audio is audible before submitting." })
               ] }),
-              ve && /* @__PURE__ */ s("div", { style: { marginBottom: 14 }, children: [
+              Z && /* @__PURE__ */ u("div", { style: { marginBottom: 14 }, children: [
                 /* @__PURE__ */ t("label", { style: { display: "block", marginBottom: 4, fontSize: 13, fontWeight: 600, opacity: 0.8 }, children: "Voice Transcript" }),
                 /* @__PURE__ */ t(
                   "div",
@@ -1421,39 +1695,39 @@ const ft = [
                     style: {
                       padding: "8px 12px",
                       borderRadius: 6,
-                      background: ne,
-                      border: `1px solid ${D}`,
+                      background: me,
+                      border: `1px solid ${_}`,
                       fontSize: 13,
                       maxHeight: 80,
                       overflowY: "auto",
                       opacity: 0.8
                     },
-                    children: ve
+                    children: Z
                   }
                 )
               ] }),
-              (w.current.length > 0 || U.current.length > 0) && /* @__PURE__ */ s("div", { style: {
+              (M.current.length > 0 || A.current.length > 0) && /* @__PURE__ */ u("div", { style: {
                 marginBottom: 14,
                 padding: "6px 12px",
                 borderRadius: 6,
-                background: q ? "#2a1a1a" : "#fff3f0",
-                border: `1px solid ${q ? "#4a2020" : "#ffccc7"}`,
+                background: re ? "#2a1a1a" : "#fff3f0",
+                border: `1px solid ${re ? "#4a2020" : "#ffccc7"}`,
                 fontSize: 12,
                 opacity: 0.8
               }, children: [
-                w.current.length > 0 && /* @__PURE__ */ s("span", { children: [
-                  w.current.length,
+                M.current.length > 0 && /* @__PURE__ */ u("span", { children: [
+                  M.current.length,
                   " console error(s) captured"
                 ] }),
-                w.current.length > 0 && U.current.length > 0 && " | ",
-                U.current.length > 0 && /* @__PURE__ */ s("span", { children: [
-                  U.current.length,
+                M.current.length > 0 && A.current.length > 0 && " | ",
+                A.current.length > 0 && /* @__PURE__ */ u("span", { children: [
+                  A.current.length,
                   " network error(s) captured"
                 ] }),
                 /* @__PURE__ */ t("span", { style: { display: "block", marginTop: 2, opacity: 0.7 }, children: "These will be included in your report automatically." })
               ] }),
-              $e && /* @__PURE__ */ t("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: $e }),
-              je && de && /* @__PURE__ */ s("div", { style: {
+              Je && /* @__PURE__ */ t("div", { style: { color: "#e53935", fontSize: 13, marginBottom: 10 }, children: Je }),
+              Ze && Se && /* @__PURE__ */ u("div", { style: {
                 background: "rgba(229, 57, 53, 0.12)",
                 border: "1px solid rgba(229, 57, 53, 0.45)",
                 color: "#ffb4ad",
@@ -1462,40 +1736,40 @@ const ft = [
                 fontSize: 13,
                 marginBottom: 10
               }, children: [
-                /* @__PURE__ */ s("div", { style: { fontWeight: 600, marginBottom: 4, color: "#ff6b66" }, children: [
+                /* @__PURE__ */ u("div", { style: { fontWeight: 600, marginBottom: 4, color: "#ff6b66" }, children: [
                   "Ticket #",
-                  de,
+                  Se,
                   " was saved — but the video upload failed."
                 ] }),
-                /* @__PURE__ */ t("div", { style: { marginBottom: 8 }, children: je }),
-                /* @__PURE__ */ s("div", { style: { display: "flex", gap: 8 }, children: [
+                /* @__PURE__ */ t("div", { style: { marginBottom: 8 }, children: Ze }),
+                /* @__PURE__ */ u("div", { style: { display: "flex", gap: 8 }, children: [
                   /* @__PURE__ */ t(
                     "div",
                     {
-                      onClick: Z ? void 0 : ct,
+                      onClick: de ? void 0 : gt,
                       style: {
-                        ...O,
-                        background: Z ? "#666" : `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                        ...P,
+                        background: de ? "#666" : `linear-gradient(135deg, ${O[0]}, ${O[1]})`,
                         color: "#fff",
                         padding: "5px 12px",
                         fontSize: 12,
-                        opacity: Z ? 0.6 : 1,
-                        cursor: Z ? "not-allowed" : "pointer"
+                        opacity: de ? 0.6 : 1,
+                        cursor: de ? "not-allowed" : "pointer"
                       },
-                      children: Z ? "Retrying…" : "Retry video upload"
+                      children: de ? "Retrying…" : "Retry video upload"
                     }
                   ),
                   /* @__PURE__ */ t(
                     "div",
                     {
                       onClick: () => {
-                        Q(null), C(!1), he();
+                        le(null), b(!1), Re();
                       },
                       style: {
-                        ...O,
+                        ...P,
                         background: "transparent",
-                        color: A,
-                        border: `1px solid ${D}`,
+                        color: N,
+                        border: `1px solid ${_}`,
                         padding: "5px 12px",
                         fontSize: 12
                       },
@@ -1504,16 +1778,16 @@ const ft = [
                   )
                 ] })
               ] }),
-              /* @__PURE__ */ s("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" }, children: [
+              /* @__PURE__ */ u("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" }, children: [
                 /* @__PURE__ */ t(
                   "div",
                   {
-                    onClick: () => C(!1),
+                    onClick: () => b(!1),
                     style: {
-                      ...O,
+                      ...P,
                       background: "transparent",
-                      color: A,
-                      border: `1px solid ${D}`
+                      color: N,
+                      border: `1px solid ${_}`
                     },
                     children: "Cancel"
                   }
@@ -1521,15 +1795,15 @@ const ft = [
                 /* @__PURE__ */ t(
                   "div",
                   {
-                    onClick: J ? void 0 : st,
+                    onClick: ce ? void 0 : ht,
                     style: {
-                      ...O,
-                      background: J ? "#666" : `linear-gradient(135deg, ${b[0]}, ${b[1]})`,
+                      ...P,
+                      background: ce ? "#666" : `linear-gradient(135deg, ${O[0]}, ${O[1]})`,
                       color: "#fff",
-                      opacity: J ? 0.6 : 1,
-                      cursor: J ? "not-allowed" : "pointer"
+                      opacity: ce ? 0.6 : 1,
+                      cursor: ce ? "not-allowed" : "pointer"
                     },
-                    children: J ? "Submitting..." : "Submit"
+                    children: ce ? "Submitting..." : "Submit"
                   }
                 )
               ] }),
@@ -1539,58 +1813,58 @@ const ft = [
         )
       }
     ),
-    G && /* @__PURE__ */ s(
+    j && /* @__PURE__ */ u(
       "div",
       {
         onMouseDown: (e) => {
           if (e.target.closest("[data-bom-stop]")) return;
-          e.preventDefault(), M.current = {
-            x: e.clientX - H.left,
-            y: e.clientY - H.top
+          e.preventDefault(), $.current = {
+            x: e.clientX - ee.left,
+            y: e.clientY - ee.top
           };
-          const r = (p) => {
-            M.current && Xe({
-              left: Math.max(0, Math.min(window.innerWidth - 240, p.clientX - M.current.x)),
-              top: Math.max(0, Math.min(window.innerHeight - 50, p.clientY - M.current.y))
+          const a = (S) => {
+            $.current && nt({
+              left: Math.max(0, Math.min(window.innerWidth - 240, S.clientX - $.current.x)),
+              top: Math.max(0, Math.min(window.innerHeight - 50, S.clientY - $.current.y))
             });
-          }, o = () => {
-            M.current = null, document.removeEventListener("mousemove", r), document.removeEventListener("mouseup", o);
+          }, l = () => {
+            $.current = null, document.removeEventListener("mousemove", a), document.removeEventListener("mouseup", l);
           };
-          document.addEventListener("mousemove", r), document.addEventListener("mouseup", o);
+          document.addEventListener("mousemove", a), document.addEventListener("mouseup", l);
         },
         onTouchStart: (e) => {
           if (e.target.closest("[data-bom-stop]")) return;
-          const r = e.touches[0];
-          M.current = {
-            x: r.clientX - H.left,
-            y: r.clientY - H.top
+          const a = e.touches[0];
+          $.current = {
+            x: a.clientX - ee.left,
+            y: a.clientY - ee.top
           };
-          const o = (l) => {
-            if (!M.current) return;
-            l.preventDefault();
-            const f = l.touches[0];
-            Xe({
-              left: Math.max(0, Math.min(window.innerWidth - 240, f.clientX - M.current.x)),
-              top: Math.max(0, Math.min(window.innerHeight - 50, f.clientY - M.current.y))
+          const l = (g) => {
+            if (!$.current) return;
+            g.preventDefault();
+            const B = g.touches[0];
+            nt({
+              left: Math.max(0, Math.min(window.innerWidth - 240, B.clientX - $.current.x)),
+              top: Math.max(0, Math.min(window.innerHeight - 50, B.clientY - $.current.y))
             });
-          }, p = () => {
-            M.current = null, document.removeEventListener("touchmove", o), document.removeEventListener("touchend", p);
+          }, S = () => {
+            $.current = null, document.removeEventListener("touchmove", l), document.removeEventListener("touchend", S);
           };
-          document.addEventListener("touchmove", o, { passive: !1 }), document.addEventListener("touchend", p);
+          document.addEventListener("touchmove", l, { passive: !1 }), document.addEventListener("touchend", S);
         },
         style: {
           position: "fixed",
-          top: H.top,
-          left: H.left,
+          top: ee.top,
+          left: ee.left,
           zIndex: 1000001,
           display: "flex",
           alignItems: "center",
           gap: 10,
           padding: "8px 12px",
-          background: fe,
-          color: A,
+          background: Te,
+          color: N,
           borderRadius: 999,
-          border: `1px solid ${D}`,
+          border: `1px solid ${_}`,
           boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: 13,
@@ -1620,7 +1894,7 @@ const ft = [
             "div",
             {
               "data-bom-stop": "true",
-              onClick: qe,
+              onClick: rt,
               style: {
                 cursor: "pointer",
                 background: "#e53935",
@@ -1637,7 +1911,7 @@ const ft = [
         ]
       }
     ),
-    et && !G && !N && W && /* @__PURE__ */ s("div", { style: {
+    L && !j && !v && z && /* @__PURE__ */ u("div", { style: {
       position: "fixed",
       bottom: 80,
       right: 24,
@@ -1646,8 +1920,8 @@ const ft = [
       alignItems: "center",
       gap: 8,
       padding: "10px 14px",
-      background: fe,
-      color: A,
+      background: Te,
+      color: N,
       borderRadius: 999,
       border: "1px solid rgba(251,146,60,0.5)",
       boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
@@ -1656,18 +1930,18 @@ const ft = [
       userSelect: "none"
     }, children: [
       /* @__PURE__ */ t("span", { style: { fontSize: 16 }, children: "🎥" }),
-      /* @__PURE__ */ s("span", { style: { fontWeight: 600, color: "#fb923c" }, children: [
+      /* @__PURE__ */ u("span", { style: { fontWeight: 600, color: "#fb923c" }, children: [
         "Recovered (",
-        (W.size / 1024 / 1024).toFixed(1),
+        (z.size / 1024 / 1024).toFixed(1),
         " MB)"
       ] }),
       /* @__PURE__ */ t(
         "div",
         {
           onClick: () => {
-            j(!1), Ie();
+            H(!1), Be();
           },
-          style: { cursor: "pointer", background: `linear-gradient(135deg, ${b[0]}, ${b[1]})`, color: "#fff", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700 },
+          style: { cursor: "pointer", background: `linear-gradient(135deg, ${O[0]}, ${O[1]})`, color: "#fff", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700 },
           children: "Continue"
         }
       ),
@@ -1675,7 +1949,7 @@ const ft = [
         "div",
         {
           onClick: () => {
-            j(!1), C(!0);
+            H(!1), b(!0);
           },
           style: { cursor: "pointer", background: "#22c55e", color: "#fff", borderRadius: 999, padding: "5px 12px", fontSize: 12, fontWeight: 700 },
           children: "Submit"
@@ -1685,7 +1959,7 @@ const ft = [
         "div",
         {
           onClick: () => {
-            j(!1), ae(!1), K(null), ee((e) => (e && URL.revokeObjectURL(e), null)), V.current = [], xe();
+            H(!1), R(!1), Y(null), pe((e) => (e && URL.revokeObjectURL(e), null)), te.current = [], Ie();
           },
           style: { cursor: "pointer", opacity: 0.5, fontSize: 12, padding: "5px 8px" },
           children: "✕"
@@ -1695,6 +1969,6 @@ const ft = [
   ] });
 };
 export {
-  xt as BugOutManagedWidget,
-  xt as BugsManagedWidget
+  Ht as BugOutManagedWidget,
+  Ht as BugsManagedWidget
 };

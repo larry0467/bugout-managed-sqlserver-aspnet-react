@@ -119,6 +119,9 @@ export interface Ticket {
   videoUrl?: string;
   videoSizeBytes?: number;
   videoDurationSeconds?: number;
+  // Set when the recording was made through Videos Managed; videoUrl is then
+  // the share link and the transcript arrives once Videos Managed has it.
+  videosManagedRecordingId?: string | null;
   visibility: 'TENANT' | 'PLATFORM';
   developerCategory?: 'UI' | 'UX' | 'FRONTEND' | 'BACKEND' | 'FULLSTACK' | 'DEVOPS' | 'DATABASE' | 'MOBILE' | 'QA' | 'SECURITY' | 'API' | 'DATA_ENGINEERING' | 'INFRASTRUCTURE';
   assignedTo?: string;
@@ -874,12 +877,20 @@ export interface AppFixSetting {
   requested: number;
   claimed: number;
   readyToTest: number;
+  // Videos Managed recorder: true when the app has a workspace API key, so its
+  // widget records in a Videos Managed window instead of in the page. Only the
+  // key's prefix ever comes back.
+  videosManagedRecorder: boolean;
+  videosManagedKeyPrefix?: string | null;
 }
 
 export const fixApi = {
   apps: () => api.get<AppFixSetting[]>('/development/fixes/apps').then(r => r.data),
   setAutoDraft: (projectId: number, enabled: boolean) =>
     api.put<AppFixSetting>(`/development/fixes/apps/${projectId}`, { enabled }).then(r => r.data),
+  // Empty / null clears the key.
+  setRecorderKey: (projectId: number, apiKey: string | null) =>
+    api.put<AppFixSetting>(`/development/fixes/apps/${projectId}/recorder`, { apiKey }).then(r => r.data),
   queue: (params: { projectSlug?: string; status?: FixStatus; take?: number } = {}) =>
     api.get<FixQueueItem[]>('/development/fixes/queue', { params }).then(r => r.data),
   get: (ticketId: number) => api.get<FixQueueItem>(`/development/fixes/${ticketId}`).then(r => r.data),

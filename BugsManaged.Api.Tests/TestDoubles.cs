@@ -25,7 +25,9 @@ public static class TestDoubles
     public static TicketController CreateTicketController(
         BugsManagedDbContext db,
         IOrgContext orgContext,
-        ITicketNotificationService? notify = null)
+        ITicketNotificationService? notify = null,
+        IVideosManagedClient? videos = null,
+        DevelopmentTrackerOptions? trackerOptions = null)
     {
         // POST /api/tickets runs BillingService.CheckTicketLimitAsync, which
         // denies with 402 when the organization row is missing. The fixtures seed
@@ -50,7 +52,9 @@ public static class TestDoubles
             new BillingService(db),
             new NoOpActivityLogger(),
             NullLogger<TicketController>.Instance,
-            notify ?? new NoOpTicketNotificationService());
+            notify ?? new NoOpTicketNotificationService(),
+            videos ?? new FakeVideosManagedClient(),
+            Microsoft.Extensions.Options.Options.Create(trackerOptions ?? new DevelopmentTrackerOptions { TimeZone = "UTC" }));
 
         controller.ControllerContext = new ControllerContext
         {
@@ -133,12 +137,36 @@ public static class TestDoubles
     // Answers like Videos Managed would for any share-shaped link, nothing for anything else.
     public sealed class FakeVideosManagedClient : IVideosManagedClient
     {
-        public Task<VideosManagedRecording?> TryGetRecordingAsync(string shareUrl, CancellationToken ct = default) =>
-            Task.FromResult(VideosManagedClient.LooksLikeShareLink(shareUrl)
-                ? new VideosManagedRecording(shareUrl, "How estimates should work", 120,
-                    "WEBVTT\n\n1\n00:00.000 --> 00:02.000\nStart from the technician's hours\n\n2\n00:02.000 --> 00:04.000\nStart from the technician's hours\n\n3\n00:04.000 --> 00:06.000\nthen add the truck fees",
-                    "Start from the technician's hours then add the truck fees")
-                : null);
+        public const string SampleVtt =
+            "WEBVTT\n\n1\n00:00.000 --> 00:02.000\nStart from the technician's hours\n\n2\n00:02.000 --> 00:04.000\nStart from the technician's hours\n\n3\n00:04.000 --> 00:06.000\nthen add the truck fees";
+
+        // What the fake recording carries. Set CaptionsVtt to null to model a
+        // recording that is Ready but has no speech; set Unreachable to model a
+        // recording still processing (404) or Videos Managed being down.
+        public string? CaptionsVtt { get; set; } = SampleVtt;
+        public bool Unreachable { get; set; }
+        public List<string> RecordingLookups { get; } = new();
+
+        // What TryCreateCaptureSessionAsync hands back (null = refused/down).
+        public VideosManagedCaptureSession? NextSession { get; set; } = new(
+            Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"), Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002"),
+            "https://videos-dev.managedplatform.com/capture/vmc_test-token", "https://videos-dev.managedplatform.com/protocall/r/abc123",
+            new DateTime(2026, 10, 9, 12, 0, 0, DateTimeKind.Utc));
+        public List<(string ApiKey, VideosManagedCaptureRequest Request)> SessionRequests { get; } = new();
+
+        public Task<VideosManagedRecording?> TryGetRecordingAsync(string shareUrl, CancellationToken ct = default)
+        {
+            RecordingLookups.Add(shareUrl);
+            if (Unreachable || !VideosManagedClient.LooksLikeShareLink(shareUrl)) return Task.FromResult<VideosManagedRecording?>(null);
+            return Task.FromResult<VideosManagedRecording?>(
+                new VideosManagedRecording(shareUrl, "How estimates should work", 120, CaptionsVtt, VideosManagedClient.VttToText(CaptionsVtt)));
+        }
+
+        public Task<VideosManagedCaptureSession?> TryCreateCaptureSessionAsync(string apiKey, VideosManagedCaptureRequest request, CancellationToken ct = default)
+        {
+            SessionRequests.Add((apiKey, request));
+            return Task.FromResult(NextSession);
+        }
     }
 
     public sealed class NoOpScreenshotBlobService : IScreenshotBlobService

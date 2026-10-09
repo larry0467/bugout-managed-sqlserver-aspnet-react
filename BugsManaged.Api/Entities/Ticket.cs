@@ -57,6 +57,12 @@ public class Ticket
     public long? VideoSizeBytes { get; set; }
     public int? VideoDurationSeconds { get; set; }
 
+    // Set when the recording was made through Videos Managed (VideoUrl is then
+    // the share link, not a blob). VideosManagedTranscriptService polls that
+    // recording until its captions exist and copies them into Transcript.
+    [MaxLength(64)]
+    public string? VideosManagedRecordingId { get; set; }
+
     [Required, MaxLength(50)]
     public string Visibility { get; set; } = "TENANT"; // TENANT, PLATFORM
 

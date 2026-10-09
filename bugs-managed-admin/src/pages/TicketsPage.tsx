@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Tabs, Divider, Checkbox, Segmented, DatePicker, Upload, Image } from 'antd';
+import { Table, Select, Tag, Button, Modal, Input, Space, Typography, Card, message, Tabs, Divider, Checkbox, Segmented, DatePicker, Upload, Image, Tooltip } from 'antd';
 import type { UploadFile } from 'antd';
 import dayjs from 'dayjs';
 import {
@@ -885,6 +885,12 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     return out.sort((a, b) => String(a.text).localeCompare(String(b.text)));
   };
 
+  // Recordings made through Videos Managed are a share page, not a blob: they
+  // embed in an iframe, cannot be downloaded from here, and their link does
+  // not expire. Blob recordings (the in-page recorder) come back as a 1-hour
+  // SAS URL and play in <video>.
+  const isExternalVideo = (url?: string | null) => !!url && !url.includes('.blob.core.windows.net');
+
   const handleVideoDownload = async (ticketId: number) => {
     setDownloadLoading(ticketId);
     try {
@@ -911,7 +917,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     try {
       const url = await ticketApi.getVideoUrl(ticketId);
       await navigator.clipboard.writeText(url);
-      message.success('Video link copied to clipboard — valid for 1 hour');
+      message.success(isExternalVideo(url) ? 'Recording link copied to clipboard' : 'Video link copied to clipboard — valid for 1 hour');
     } catch {
       message.error('Failed to copy link');
     } finally {
@@ -1245,7 +1251,7 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               Video
             </Button>
           )}
-          {record.videoUrl && (
+          {record.videoUrl && !isExternalVideo(record.videoUrl) && (
             <Button
               size="small"
               icon={<DownloadOutlined />}
@@ -1362,12 +1368,17 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               : <p style={{ marginBottom: 0, fontStyle: 'italic', color: '#888' }}>No description yet.</p>}
           </div>
         )}
-        {record.transcript && (
+        {record.transcript ? (
           <div style={{ marginBottom: 12 }}>
             <Text strong>Voice Transcript:</Text>
             <p style={{ fontStyle: 'italic' }}>{record.transcript}</p>
           </div>
-        )}
+        ) : record.videosManagedRecordingId ? (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>Voice Transcript:</Text>
+            <p style={{ fontStyle: 'italic', color: '#888' }}>Videos Managed is still transcribing the recording. It appears here within a few minutes of the recording finishing.</p>
+          </div>
+        ) : null}
         {(record.tenantId || record.databaseName || record.applicationVersion || record.environment) && (
           <div style={{ marginBottom: 12 }}>
             <Text strong>Application Context:</Text>
@@ -1599,14 +1610,16 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               >
                 Video
               </Button>
-              <Button
-                size="small"
-                icon={<DownloadOutlined />}
-                loading={downloadLoading === record.id}
-                onClick={() => handleVideoDownload(record.id)}
-              >
-                Download
-              </Button>
+              {!isExternalVideo(record.videoUrl) && (
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  loading={downloadLoading === record.id}
+                  onClick={() => handleVideoDownload(record.id)}
+                >
+                  Download
+                </Button>
+              )}
               <Button
                 size="small"
                 icon={<ShareAltOutlined />}
@@ -1615,6 +1628,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               >
                 Share
               </Button>
+              {record.videosManagedRecordingId && (
+                <Tooltip title="Recorded in the Videos Managed recorder window; the transcript is copied here once Videos Managed has produced it.">
+                  <Tag color="geekblue" style={{ fontSize: 11 }}>VIDEOS MANAGED</Tag>
+                </Tooltip>
+              )}
             </>
           ) : (
             // Explicit "no recording" chip so the user doesn't wonder
@@ -2163,13 +2181,19 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         }}
         footer={videoSasUrl && videoModal !== null ? (
           <Space>
-            <Button
-              icon={<DownloadOutlined />}
-              loading={downloadLoading === videoModal}
-              onClick={() => handleVideoDownload(videoModal)}
-            >
-              Download
-            </Button>
+            {isExternalVideo(videoSasUrl) ? (
+              <Button icon={<PlayCircleOutlined />} href={videoSasUrl} target="_blank" rel="noopener noreferrer">
+                Open in Videos Managed
+              </Button>
+            ) : (
+              <Button
+                icon={<DownloadOutlined />}
+                loading={downloadLoading === videoModal}
+                onClick={() => handleVideoDownload(videoModal)}
+              >
+                Download
+              </Button>
+            )}
             <Button
               icon={<ShareAltOutlined />}
               loading={shareLoading === videoModal}
@@ -2182,7 +2206,18 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         width={800}
       >
         {videoLoading && <div style={{ textAlign: 'center', padding: 32 }}>Loading video…</div>}
-        {videoSasUrl && (
+        {videoSasUrl && isExternalVideo(videoSasUrl) && (
+          // Videos Managed share page in embed mode (player + captions, no
+          // comments or sign-up chrome). ?embed=1 is Videos Managed's own switch.
+          <iframe
+            title="Screen recording (Videos Managed)"
+            src={`${videoSasUrl}${videoSasUrl.includes('?') ? '&' : '?'}embed=1`}
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+            style={{ width: '100%', height: 480, border: 0, borderRadius: 8, background: '#000' }}
+          />
+        )}
+        {videoSasUrl && !isExternalVideo(videoSasUrl) && (
           <video
             src={videoSasUrl}
             controls

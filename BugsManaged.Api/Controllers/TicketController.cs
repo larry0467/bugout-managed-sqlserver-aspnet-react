@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BugsManaged.Api.Controllers;
 
@@ -24,8 +25,11 @@ public class TicketController : ControllerBase
     private readonly ITicketActivityLogger _activity;
     private readonly ILogger<TicketController> _log;
     private readonly ITicketNotificationService _notify;
+    private readonly IVideosManagedClient _videosManaged;
+    private readonly DevelopmentTrackerOptions _trackerOpts;
 
-    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ITicketActivityLogger activity, ILogger<TicketController> log, ITicketNotificationService notify)
+    public TicketController(BugsManagedDbContext db, TicketClassifierService classifier, IOrgContext org, IAuditLogger audit, IClaudeAgentClient sidecar, IVideoBlobService blobs, BillingService billing, ITicketActivityLogger activity, ILogger<TicketController> log, ITicketNotificationService notify,
+        IVideosManagedClient videosManaged, IOptions<DevelopmentTrackerOptions> trackerOpts)
     {
         _db = db;
         _classifier = classifier;
@@ -37,7 +41,14 @@ public class TicketController : ControllerBase
         _activity = activity;
         _log = log;
         _notify = notify;
+        _videosManaged = videosManaged;
+        _trackerOpts = trackerOpts.Value;
     }
+
+    // Blob recordings (the in-page recorder) live in our storage account and
+    // are served through a short-lived SAS; anything else on VideoUrl is a
+    // Videos Managed share link the UI opens or embeds as-is.
+    private static bool IsBlobVideo(string url) => url.Contains(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase);
 
     // Roles that can see every ticket in the org. Anyone else is auto-scoped
     // to tickets they're personally assigned to via GetAll. Centralised here
@@ -143,6 +154,27 @@ public class TicketController : ControllerBase
                 ticket.DeveloperCategory = result.Category;
         }
 
+        // A recording made through Videos Managed arrives here as its share
+        // link (the widget opened our recorder window instead of capturing in
+        // the page; see CreateCaptureSession). Only a link on our Videos
+        // Managed host is accepted: the admin UI embeds it, so a caller must
+        // not be able to point a ticket at an arbitrary page. In-page
+        // recordings still arrive as a file on POST {id}/video afterwards.
+        // The transcript follows later (VideosManagedTranscriptService).
+        if (!string.IsNullOrWhiteSpace(ticket.VideoUrl) && VideosManagedClient.IsTrustedShareLink(ticket.VideoUrl, _trackerOpts))
+        {
+            ticket.VideoUrl = ticket.VideoUrl.Trim();
+            ticket.VideosManagedRecordingId = string.IsNullOrWhiteSpace(ticket.VideosManagedRecordingId) ? null : ticket.VideosManagedRecordingId.Trim();
+            ticket.VideoSizeBytes = null;
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(ticket.VideoUrl))
+                _log.LogWarning("Ticket from project {ProjectId} carried an untrusted VideoUrl; dropped", ticket.ProjectId);
+            ticket.VideoUrl = null;
+            ticket.VideosManagedRecordingId = null;
+        }
+
         _db.Tickets.Add(ticket);
         await _db.SaveChangesAsync();
 
@@ -236,13 +268,66 @@ public class TicketController : ControllerBase
 
         ticket.VideoUrl = blobUri;
         ticket.VideoSizeBytes = file.Length;
+        ticket.VideosManagedRecordingId = null;
         await _db.SaveChangesAsync();
 
         return Ok(new { videoSizeBytes = ticket.VideoSizeBytes });
     }
 
-    // Returns a short-lived SAS URL the admin UI can use directly as <video src>.
-    // JWT-gated so only authenticated dashboard users can fetch it.
+    public record CaptureSessionRequest(string? Title, string? PageUrl);
+
+    // Widget path. The reporter clicked Record and this app has a Videos
+    // Managed workspace key: ask Videos Managed for a one-time capture link
+    // and hand it back. The widget opens it in its own window, so the
+    // recording survives whatever the reporter does to the host page, and
+    // the share link comes back on the ticket (VideoUrl) when they stop.
+    //
+    // 409 means "not enabled for this app" and the widget records in the page
+    // as before; 502 means Videos Managed did not answer, same fallback.
+    // Reporters never need a Videos Managed login: the workspace key is the
+    // licence, scoped to that one new recording.
+    [HttpPost("capture-session")]
+    [AllowAnonymous]
+    [EnableCors("WidgetPolicy")]
+    [EnableRateLimiting("widget-submit")]
+    public async Task<IActionResult> CreateCaptureSession([FromBody] CaptureSessionRequest? body, CancellationToken ct)
+    {
+        if (_org.CurrentProjectId == null || _org.CurrentOrganizationId == null)
+            return Unauthorized(new { message = "Missing or invalid X-BOM-API-Key header" });
+
+        var project = await _db.Projects.FirstOrDefaultAsync(p => p.Id == _org.CurrentProjectId.Value, ct);
+        if (project == null || string.IsNullOrWhiteSpace(project.VideosManagedApiKey))
+            return StatusCode(409, new { code = "recorder.not_enabled", message = "Videos Managed recording is not enabled for this application." });
+
+        var title = string.IsNullOrWhiteSpace(body?.Title) ? $"{project.Name} bug report" : body!.Title!.Trim();
+        if (title.Length > 200) title = title[..200];
+        var origin = Request.Headers.Origin.FirstOrDefault();
+        var pageUrl = string.IsNullOrWhiteSpace(body?.PageUrl) ? null : body!.PageUrl!.Trim();
+        var externalRef = $"bugout:{project.Slug}" + (pageUrl is null ? "" : $":{Truncate(pageUrl, 200)}");
+
+        var session = await _videosManaged.TryCreateCaptureSessionAsync(project.VideosManagedApiKey, new VideosManagedCaptureRequest(
+            Title: title, Source: "bugout", ExternalRef: Truncate(externalRef, 256), ReturnOrigin: origin,
+            MaxDurationSeconds: 30 * 60, ExpiresInMinutes: 120), ct);
+        if (session == null)
+            return StatusCode(502, new { code = "recorder.unavailable", message = "Videos Managed did not answer. Record in the page instead." });
+
+        _log.LogInformation("Capture session {SessionId} created for project {ProjectId} (recording {RecordingId})", session.SessionId, project.Id, session.RecordingId);
+        return Ok(new
+        {
+            sessionId = session.SessionId,
+            recordingId = session.RecordingId,
+            captureUrl = session.CaptureUrl,
+            shareUrl = session.ShareUrl,
+            expiresAt = session.ExpiresAt,
+        });
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    // Returns the URL the admin UI plays: a short-lived SAS for blob recordings
+    // (used directly as <video src>), or the Videos Managed share link as-is
+    // (`external: true`; the UI embeds the share page). JWT-gated so only
+    // authenticated dashboard users can fetch it.
     [HttpGet("{id}/video-url")]
     [Authorize]
     public async Task<IActionResult> GetVideoUrl(long id)
@@ -252,8 +337,11 @@ public class TicketController : ControllerBase
         if (string.IsNullOrEmpty(ticket.VideoUrl))
             return NotFound(new { message = "No video for this ticket" });
 
+        if (!IsBlobVideo(ticket.VideoUrl))
+            return Ok(new { url = ticket.VideoUrl, external = true });
+
         var sasUri = await _blobs.GenerateSasUriAsync(ticket.VideoUrl, TimeSpan.FromHours(1));
-        return Ok(new { url = sasUri.ToString() });
+        return Ok(new { url = sasUri.ToString(), external = false });
     }
 
     [HttpGet]

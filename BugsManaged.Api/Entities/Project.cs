@@ -66,6 +66,15 @@ public class Project
     // against dev and reports back; nothing is merged or published by it.
     public bool AutoDraftFixes { get; set; } = false;
 
+    // Videos Managed workspace API key (vm_live_...). When set, the widget
+    // records through Videos Managed instead of in the page: Bug Out asks
+    // Videos Managed for a one-time capture link with this key, the reporter
+    // records in a separate window (so navigating or reloading the app no
+    // longer kills the recording), and the share link + transcript land on
+    // the ticket. The workspace is the licence: reporters need no login.
+    [MaxLength(255)]
+    public string? VideosManagedApiKey { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

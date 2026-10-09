@@ -19,11 +19,30 @@ export declare interface BugOutManagedConfig {
         close: () => void;
     }) => void;
     hideOrb?: boolean;
+    actions?: BugOutMenuAction[];
 }
 
 declare const BugOutManagedWidget: default_2.FC<BugOutManagedConfig>;
 export { BugOutManagedWidget }
 export { BugOutManagedWidget as BugsManagedWidget }
+
+/**
+ * A custom entry the host app adds to the launcher orb menu (e.g. "Take a tour of
+ * this page"). Rendered alongside the built-in Bug Out tool; selecting it runs the
+ * host-provided `onSelect`. Because actions surface through the shared launcher,
+ * passing one (or more) guarantees the orb shows its menu even when Bug Out is the
+ * only other tool present.
+ */
+declare interface BugOutMenuAction {
+    /** Stable id, unique per host app. Used for (un)registration. */
+    id: string;
+    /** Menu label shown to the user. */
+    label: string;
+    /** Optional emoji/glyph shown left of the label (matches the orb's tool icons). */
+    icon?: string;
+    /** Invoked when the user selects the item. The host owns what it does. */
+    onSelect: () => void;
+}
 
 export { }
 

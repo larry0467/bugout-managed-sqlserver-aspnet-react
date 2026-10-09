@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker, Checkbox, Modal } from 'antd';
-import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons';
+import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined, DownloadOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { projectApi, statusApi, serviceKeyApi, serviceKeyScopes, fixApi, type Project, type TicketStatusDef, type ServiceKey, type CreatedServiceKey, type AuthUser, type AppFixSetting } from '../api';
 
 const { Title, Text, Paragraph } = Typography;
@@ -58,6 +58,39 @@ const SettingsPage: React.FC = () => {
       message.success(enabled ? `Auto-draft fixes on for ${app.name}` : `Auto-draft fixes off for ${app.name}`);
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Could not change the setting');
+    }
+  };
+
+  // ----- Videos Managed recorder key per app -----
+  const [recorderKeyApp, setRecorderKeyApp] = useState<AppFixSetting | null>(null);
+  const [recorderKeyValue, setRecorderKeyValue] = useState('');
+  const [recorderKeySaving, setRecorderKeySaving] = useState(false);
+
+  const saveRecorderKey = async () => {
+    if (!recorderKeyApp) return;
+    const key = recorderKeyValue.trim();
+    if (!key.startsWith('vm_live_')) { message.error('Paste the Videos Managed API key; it starts with vm_live_'); return; }
+    setRecorderKeySaving(true);
+    try {
+      await fixApi.setRecorderKey(recorderKeyApp.id, key);
+      await loadFixApps();
+      message.success(`${recorderKeyApp.name} now records through Videos Managed`);
+      setRecorderKeyApp(null);
+      setRecorderKeyValue('');
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not save the key');
+    } finally {
+      setRecorderKeySaving(false);
+    }
+  };
+
+  const clearRecorderKey = async (app: AppFixSetting) => {
+    try {
+      await fixApi.setRecorderKey(app.id, null);
+      await loadFixApps();
+      message.success(`${app.name} records in the page again`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Could not clear the key');
     }
   };
 
@@ -499,6 +532,78 @@ const SettingsPage: React.FC = () => {
                 { title: 'Ready to test', dataIndex: 'readyToTest', width: 120, render: (v: number) => (v ? <Tag color="purple">{v}</Tag> : <Text type="secondary">0</Text>) },
               ]}
             />
+          </Card>
+        )}
+
+        {/* Screen recorder — Videos Managed as the widget's recorder */}
+        {isOrgAdmin && (
+          <Card title={<><VideoCameraOutlined /> Screen Recorder (Videos Managed)</>}>
+            <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              The widget's own recorder stops the moment the reporter changes pages or reloads, which is exactly what
+              people do while showing a bug. With a Videos Managed workspace key, the widget opens the{' '}
+              <Text strong>Videos Managed recorder in its own window</Text> instead: the recording survives anything the
+              reporter does in the app, lands in that workspace, and the share link and transcript come back on the ticket.
+              Reporters do not need a Videos Managed login. The key is the licence, and each recording link can only create
+              its one recording. Mint the key in Videos Managed → Settings → Developers with the{' '}
+              <Text code>recordings:write</Text> scope. Apps without a key keep recording in the page.
+            </Paragraph>
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={false}
+              dataSource={fixApps}
+              locale={{ emptyText: 'No applications yet' }}
+              columns={[
+                { title: 'Application', dataIndex: 'name' },
+                {
+                  title: 'Recorder',
+                  dataIndex: 'videosManagedRecorder',
+                  width: 170,
+                  render: (v: boolean) => v
+                    ? <Tag color="geekblue" icon={<VideoCameraOutlined />}>Videos Managed</Tag>
+                    : <Tag color="default">In the page</Tag>,
+                },
+                { title: 'Key', dataIndex: 'videosManagedKeyPrefix', width: 160, render: (v?: string | null) => (v ? <Text code>{v}</Text> : <Text type="secondary">none</Text>) },
+                {
+                  title: '',
+                  key: 'actions',
+                  render: (_: any, app: AppFixSetting) => (
+                    <Space size="small">
+                      <Button size="small" icon={<KeyOutlined />} onClick={() => { setRecorderKeyApp(app); setRecorderKeyValue(''); }}>
+                        {app.videosManagedRecorder ? 'Replace key' : 'Set key'}
+                      </Button>
+                      {app.videosManagedRecorder && (
+                        <Popconfirm title={`Stop recording through Videos Managed for ${app.name}? The widget records in the page again.`} onConfirm={() => clearRecorderKey(app)}>
+                          <Button size="small" danger icon={<DeleteOutlined />}>Clear</Button>
+                        </Popconfirm>
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+            <Modal
+              title={recorderKeyApp ? `Videos Managed key for ${recorderKeyApp.name}` : ''}
+              open={!!recorderKeyApp}
+              onOk={saveRecorderKey}
+              onCancel={() => { setRecorderKeyApp(null); setRecorderKeyValue(''); }}
+              okText="Save key"
+              confirmLoading={recorderKeySaving}
+              okButtonProps={{ disabled: !recorderKeyValue.trim() }}
+              destroyOnClose
+            >
+              <Paragraph type="secondary">
+                Paste the API key from Videos Managed → Settings → Developers (scope <Text code>recordings:write</Text>).
+                Bug Out keeps it to open recording sessions on the app's behalf and never shows it again; only its prefix is listed.
+              </Paragraph>
+              <Input.Password
+                placeholder="vm_live_…"
+                value={recorderKeyValue}
+                onChange={(e) => setRecorderKeyValue(e.target.value)}
+                onPressEnter={saveRecorderKey}
+                autoFocus
+              />
+            </Modal>
           </Card>
         )}
 

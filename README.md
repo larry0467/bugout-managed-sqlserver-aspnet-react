@@ -239,6 +239,31 @@ The widget file is served by the API at `/widget.iife.js` (no CDN, no npm). It s
 - Network errors (failed API calls)
 - Screen recording + voice transcript (optional)
 
+### Recording through Videos Managed (per app)
+
+The widget's own recorder (`getDisplayMedia` + `MediaRecorder` inside the host page) stops the
+moment the reporter navigates or reloads, which is what people do while showing a bug. Give an
+app a **Videos Managed workspace API key** (Settings → *Screen Recorder (Videos Managed)*; mint
+the key in Videos Managed → Settings → Developers with the `recordings:write` scope) and its
+widget records through Videos Managed instead:
+
+1. **Start Recording** opens a window synchronously, then calls `POST /api/tickets/capture-session`
+   (widget key). Bug Out asks Videos Managed for a one-time capture link
+   (`POST /api/v1/capture/sessions` with the workspace key) and the window navigates to it.
+2. The reporter records in that window (`videos-dev.managedplatform.com/capture/<token>`). It is
+   authenticated by the token alone, which Videos Managed confines to that one recording. No
+   Videos Managed login: the workspace is the licence.
+3. On **Stop** the recorder uploads, posts `videos-managed:capture-complete` (share link,
+   recording id) to the opener and closes. The ticket is submitted with `videoUrl` = share link
+   and `videosManagedRecordingId`; nothing is uploaded to Bug Out's blob storage.
+4. `VideosManagedTranscriptWorker` polls the recording's public JSON every
+   `DevelopmentTracker:TranscriptPollMinutes` and copies the captions into `Ticket.Transcript`
+   once Videos Managed has transcribed it. The admin UI embeds the share page (`?embed=1`).
+
+Only share links on our Videos Managed host are accepted on `videoUrl`; anything else is dropped.
+Apps without a key, a blocked popup, or Videos Managed being unreachable (409 / 502 from
+`capture-session`) all fall back to the in-page recorder.
+
 ### Imperative API
 
 After the script loads you can control the widget programmatically:

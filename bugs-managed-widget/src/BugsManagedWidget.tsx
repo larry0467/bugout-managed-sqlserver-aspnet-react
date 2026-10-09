@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import fixWebmDuration from 'fix-webm-duration';
 import type { BugOutManagedConfig } from './types';
 import { useHostTheme } from './launcher/hostTheme';
+import { useVideosManagedCapture } from './videosManagedCapture';
 
 // ─── Recording draft persistence (IndexedDB) ────────────────────────────────
 // Chunks are written to IndexedDB as they arrive so a page refresh during
@@ -136,6 +137,16 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
   const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<number | null>(null);
   const [videoUploading, setVideoUploading] = useState(false);
+  // Recording through Videos Managed (separate window) when the app has a
+  // workspace key. The modal gets out of the way while the recorder window
+  // is up and comes back when it reports in — same as the in-page recorder.
+  const vmCapture = useVideosManagedCapture({
+    apiUrl,
+    apiKey,
+    getTitle: () => title.trim(),
+    onAttached: () => setIsOpen(true),
+    onClosed: () => setIsOpen(true),
+  });
   // Screenshots collected from drop / paste / file picker. Uploaded after
   // ticket creation succeeds (parallel to the video upload path).
   // Generic file attachments. Started as image-only ("screenshots") but
@@ -598,6 +609,19 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     }
   }, []);
 
+  // "Start Recording": prefer the Videos Managed recorder window; when the app
+  // has no workspace key (or the window was blocked) record in the page as
+  // before. The window is opened inside this click, so the hook must run
+  // before anything awaits.
+  const beginRecording = useCallback(async () => {
+    const viaVideosManaged = await vmCapture.begin();
+    if (viaVideosManaged) {
+      setIsOpen(false);
+      return;
+    }
+    await startRecording();
+  }, [vmCapture, startRecording]);
+
   const stopRecording = useCallback(() => {
     if (beforeUnloadRef.current) {
       window.removeEventListener('beforeunload', beforeUnloadRef.current);
@@ -637,6 +661,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
     setNoAudioWarning(false);
     recoveredChunksRef.current = [];
     dbClearChunks();
+    vmCapture.clear();
   };
 
   const handleSubmit = async () => {
@@ -673,6 +698,15 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       if (databaseName) ticketData.databaseName = databaseName;
       if (appVersion) ticketData.applicationVersion = appVersion;
       if (environment) ticketData.environment = environment;
+
+      // Recorded through Videos Managed: the ticket carries the share link and
+      // recording id; there is no blob to upload. The transcript is copied
+      // onto the ticket by Bug Out once Videos Managed has produced it.
+      if (vmCapture.attached) {
+        ticketData.videoUrl = vmCapture.attached.shareUrl;
+        ticketData.videosManagedRecordingId = vmCapture.attached.recordingId;
+        if (vmCapture.attached.durationSeconds) ticketData.videoDurationSeconds = vmCapture.attached.durationSeconds;
+      }
 
       const res = await fetch(`${apiUrl}/tickets`, {
         method: 'POST',
@@ -715,7 +749,7 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
       // recordings (the ticket creates fine, video falls through). Keep
       // createdTicketId so the user can retry from the post-submit panel
       // if all attempts fail.
-      const videoToUpload = recordedBlob || uploadFile;
+      const videoToUpload = vmCapture.attached ? null : (recordedBlob || uploadFile);
       setCreatedTicketId(ticket.id);
       if (videoToUpload && ticket.id) {
         const uploadErr = await uploadVideoWithRetry(ticket.id, videoToUpload);
@@ -1309,10 +1343,36 @@ const BugOutManagedWidget: React.FC<BugOutManagedConfig> = (props) => {
                       )}
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      {!isRecording && !recordedBlob && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {vmCapture.capturing && (
+                        <>
+                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#e53935', animation: 'bom-pulse 1.4s ease-out infinite' }} />
+                          <span style={{ fontSize: 12, color: '#e53935', fontWeight: 600 }}>Recording in the recorder window…</span>
+                          <div onClick={vmCapture.focus} style={{ ...btnStyle, background: '#666', color: '#fff', padding: '4px 10px', fontSize: 12 }}>
+                            Show window
+                          </div>
+                          <div onClick={vmCapture.cancel} style={{ ...btnStyle, background: '#444', color: '#fff', padding: '4px 10px', fontSize: 12 }}>
+                            Cancel
+                          </div>
+                        </>
+                      )}
+                      {vmCapture.attached && !vmCapture.capturing && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>&#10003; Recording attached</span>
+                          <a href={vmCapture.attached.shareUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, opacity: 0.8 }}>
+                            view
+                          </a>
+                          <div
+                            onClick={vmCapture.clear}
+                            style={{ ...btnStyle, background: '#666', color: '#fff', padding: '4px 10px', fontSize: 12 }}
+                          >
+                            Remove
+                          </div>
+                        </div>
+                      )}
+                      {!isRecording && !recordedBlob && !vmCapture.capturing && !vmCapture.attached && (
                         <div
-                          onClick={startRecording}
+                          onClick={beginRecording}
                           style={{
                             ...btnStyle,
                             background: `linear-gradient(135deg, ${orbColors[0]}, ${orbColors[1]})`,
