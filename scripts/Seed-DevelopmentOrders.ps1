@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Seeds the Development board: one application per Managed Platform app, and the
   first development orders (the Service Managed work from the 2026-10-08 session).

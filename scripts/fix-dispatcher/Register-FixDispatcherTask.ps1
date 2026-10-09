@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Registers (or refreshes) the Windows scheduled task that runs the Bug Out fix
   dispatcher every few minutes while this user is logged on.

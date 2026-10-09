@@ -1,4 +1,4 @@
-# BugOutDev.psm1 - talk to the Bug Out Managed development tracker from PowerShell.
+﻿# BugOutDev.psm1 - talk to the Bug Out Managed development tracker from PowerShell.
 #
 # For Claude Code sessions (and humans) that log development orders: the video
 # that ordered the work, the branches and PRs, the stage, the session log.
