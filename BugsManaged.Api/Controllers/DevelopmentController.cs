@@ -31,6 +31,7 @@ public class DevelopmentController : ControllerBase
     private readonly BillingService _billing;
     private readonly IAuditLogger _audit;
     private readonly DevelopmentTrackerOptions _opts;
+    private readonly DevelopmentOrderService _orders;
 
     public DevelopmentController(
         BugsManagedDbContext db,
@@ -38,7 +39,8 @@ public class DevelopmentController : ControllerBase
         ITicketActivityLogger activity,
         BillingService billing,
         IAuditLogger audit,
-        IOptions<DevelopmentTrackerOptions> opts)
+        IOptions<DevelopmentTrackerOptions> opts,
+        DevelopmentOrderService orders)
     {
         _db = db;
         _org = org;
@@ -46,21 +48,14 @@ public class DevelopmentController : ControllerBase
         _billing = billing;
         _audit = audit;
         _opts = opts.Value;
+        _orders = orders;
     }
 
     // ===== Caller identity =====
 
-    private static readonly string[] WriterRoles = { "PLATFORM_OWNER", "SUPER_ADMIN", "DEVELOPER" };
-
     private bool IsService() => User.IsInRole(ServiceKeys.Role);
 
-    // VIEWER users and read-only keys can look at the board; everyone else
-    // in the org, and keys with development:write, can change it.
-    private bool CanWrite()
-    {
-        if (IsService()) return User.HasClaim(ServiceKeys.ScopeClaim, ServiceKeys.ScopeDevelopmentWrite);
-        return WriterRoles.Any(r => User.IsInRole(r));
-    }
+    private bool CanWrite() => DevelopmentOrderService.CanWrite(User);
 
     private IActionResult Forbidden() =>
         StatusCode(403, new { message = IsService()
@@ -114,12 +109,7 @@ public class DevelopmentController : ControllerBase
     public record EnsureProjectRequest(string Name, string? Slug);
 
     private static readonly string[] Priorities = { "CRITICAL", "HIGH", "MEDIUM", "LOW" };
-    private static readonly string[] LinkKinds = { "BRANCH", "PR", "COMMIT", "DOC", "VIDEO" };
-
-    // Mirrors TicketStatusController.Defaults for orgs that have never opened
-    // the Statuses page (the dictionary is seeded lazily on first read).
-    private static readonly string[] DefaultStatusKeys =
-        { "OPEN", "IN_PROGRESS", "IN_REVIEW", "READY_FOR_TESTING", "VERIFIED", "RESOLVED", "CLOSED" };
+    private static string[] LinkKinds => DevelopmentOrderService.LinkKinds;
 
     // ===== Reference data =====
 
@@ -557,10 +547,29 @@ public class DevelopmentController : ControllerBase
     }
 
     // ===== Internals =====
+    // The stage / link / status rules are in DevelopmentOrderService so the
+    // Azure DevOps webhook applies exactly the same ones.
 
-    private Task<Ticket?> FindOrderAsync(long id) =>
-        // Org-scoped by the global query filter; another org's id is a 404.
-        _db.Tickets.FirstOrDefaultAsync(t => t.Id == id && t.IsDevelopmentOrder);
+    private Task<Ticket?> FindOrderAsync(long id) => _orders.FindOrderAsync(id);
+
+    private Task<HashSet<string>> StatusKeysAsync() => _orders.StatusKeysAsync();
+
+    private static string OpenStatus(HashSet<string> statusKeys) => DevelopmentOrderService.OpenStatus(statusKeys);
+
+    private void MoveStage(Ticket ticket, string toStage, string actorEmail, string actorName, DateTime now,
+        HashSet<string> statusKeys, string? note) =>
+        _orders.MoveStage(ticket, toStage, actorEmail, actorName, now, statusKeys, note);
+
+    private static void ApplyStageSideEffects(Ticket ticket, string? from, string to, DateTime now, HashSet<string> statusKeys) =>
+        DevelopmentOrderService.ApplyStageSideEffects(ticket, from, to, now, statusKeys);
+
+    private void RecordStage(Ticket ticket, string? from, string to, string changedBy, DateTime at, string? note) =>
+        _orders.RecordStage(ticket, from, to, changedBy, at, note);
+
+    private static TicketDevelopmentLink NewLink(Ticket ticket, LinkRequest l, string createdBy) =>
+        DevelopmentOrderService.NewLink(ticket, l.Kind, l.Repo, l.Name, l.Url, l.Note, createdBy);
+
+    private static string? Clean(string? value) => DevelopmentOrderService.Clean(value);
 
     private async Task<Project?> ResolveProjectAsync(long? projectId, string? projectSlug)
     {
@@ -574,87 +583,6 @@ public class DevelopmentController : ControllerBase
         }
         return null;
     }
-
-    private async Task<HashSet<string>> StatusKeysAsync()
-    {
-        var keys = await _db.TicketStatusDefs.Select(s => s.Key).ToListAsync();
-        return new HashSet<string>(keys.Count > 0 ? keys : DefaultStatusKeys, StringComparer.Ordinal);
-    }
-
-    private static string OpenStatus(HashSet<string> statusKeys) =>
-        statusKeys.Contains("OPEN") ? "OPEN" : statusKeys.First();
-
-    // Moves the stage and records it in both audit streams. Caller saves.
-    private void MoveStage(Ticket ticket, string toStage, string actorEmail, string actorName, DateTime now,
-        HashSet<string> statusKeys, string? note)
-    {
-        var from = ticket.DevelopmentStage;
-        ticket.DevelopmentStage = toStage;
-        ticket.UpdatedAt = now;
-        ApplyStageSideEffects(ticket, from, toStage, now, statusKeys);
-        RecordStage(ticket, from, toStage, actorEmail, now, note);
-
-        var fromLabel = from != null && DevelopmentStages.Labels.TryGetValue(from, out var fl) ? fl : (from ?? "none");
-        _activity.Log(ticket, "DEV_STAGE_CHANGED",
-            $"{actorName} moved stage {fromLabel} → {DevelopmentStages.Labels[toStage]}" + (note != null ? $" — {note}" : ""),
-            actorEmail, actorName, payload: new { fromStage = from, toStage, note });
-    }
-
-    // Timestamps and the bug-board Status that follow a stage. Shared by
-    // create, promote and move so the rules live in one place.
-    private static void ApplyStageSideEffects(Ticket ticket, string? from, string to, DateTime now, HashSet<string> statusKeys)
-    {
-        var reachedProduction = DevelopmentStages.IsAtOrPast(to, DevelopmentStages.Production);
-
-        if (reachedProduction)
-        {
-            ticket.ProductionAt ??= now;
-            if (to == DevelopmentStages.Announced) ticket.AnnouncedAt ??= now;
-            else ticket.AnnouncedAt = null;
-        }
-        else
-        {
-            // Rolled back below production: the item has to ship again, and
-            // the digest should announce it again when it does.
-            ticket.ProductionAt = null;
-            ticket.AnnouncedAt = null;
-            ticket.DigestSentAt = null;
-        }
-
-        var status = DevelopmentStages.StatusFor(to);
-        if (status != null && statusKeys.Contains(status))
-        {
-            ticket.Status = status;
-            if (status == "RESOLVED" || status == "CLOSED") ticket.ResolvedAt ??= now;
-            else ticket.ResolvedAt = null;
-        }
-    }
-
-    private void RecordStage(Ticket ticket, string? from, string to, string changedBy, DateTime at, string? note)
-    {
-        _db.TicketStageHistory.Add(new TicketStageHistory
-        {
-            TicketId = ticket.Id,
-            OrganizationId = ticket.OrganizationId,
-            FromStage = from,
-            ToStage = to,
-            ChangedBy = changedBy,
-            ChangedAt = at,
-            Note = note,
-        });
-    }
-
-    private static TicketDevelopmentLink NewLink(Ticket ticket, LinkRequest l, string createdBy) => new()
-    {
-        TicketId = ticket.Id,
-        OrganizationId = ticket.OrganizationId,
-        Kind = l.Kind.Trim().ToUpperInvariant(),
-        Repo = Clean(l.Repo),
-        Name = l.Name.Trim(),
-        Url = Clean(l.Url),
-        Note = Clean(l.Note),
-        CreatedBy = createdBy,
-    };
 
     private static string? ValidateLinks(List<LinkRequest>? links)
     {
@@ -679,9 +607,6 @@ public class DevelopmentController : ControllerBase
         var p = priority.Trim().ToUpperInvariant();
         return Priorities.Contains(p) ? p : null;
     }
-
-    private static string? Clean(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // PATCH semantics: null leaves the field, "" clears it.
     private static void Set(string? incoming, Func<string?> current, Action<string?> apply, string field, List<string> changed)

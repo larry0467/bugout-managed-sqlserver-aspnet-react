@@ -101,6 +101,8 @@ builder.Services.PostConfigure<DevelopmentTrackerOptions>(o =>
         o.BoardBaseUrl = builder.Configuration["BugsManaged:DashboardBaseUrl"] ?? "https://bugout.managedplatform.com";
 });
 builder.Services.AddScoped<ProductionDigestService>();
+builder.Services.AddScoped<DevelopmentOrderService>();
+builder.Services.AddScoped<AzureDevOpsWebhookService>();
 // Comms Managed notification bridge — replaces the no-op NotificationService.
 var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
     ?? new CommsManagedOptions();

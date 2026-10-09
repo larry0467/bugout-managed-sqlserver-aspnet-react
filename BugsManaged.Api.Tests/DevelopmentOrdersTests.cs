@@ -40,7 +40,9 @@ public class DevelopmentOrdersTests
         }
 
         var opts = Options.Create(new DevelopmentTrackerOptions { BoardBaseUrl = "https://board.test", TimeZone = "UTC" });
-        var ctrl = new DevelopmentController(db, org, new TicketActivityLogger(db), new BillingService(db), new TestDoubles.NoOpAuditLogger(), opts);
+        var activity = new TicketActivityLogger(db);
+        var ctrl = new DevelopmentController(db, org, activity, new BillingService(db), new TestDoubles.NoOpAuditLogger(), opts,
+            new DevelopmentOrderService(db, activity));
 
         var claims = new List<Claim>
         {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Typography, Space, Switch, Form, Alert, Input, Button, Select, message, Divider, Tag, Steps, Table, Popconfirm, ColorPicker, Checkbox, Modal } from 'antd';
-import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined } from '@ant-design/icons';
+import { BellOutlined, SkinOutlined, KeyOutlined, SlackOutlined, CheckCircleOutlined, LinkOutlined, GoogleOutlined, OrderedListOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { projectApi, statusApi, serviceKeyApi, serviceKeyScopes, type Project, type TicketStatusDef, type ServiceKey, type CreatedServiceKey, type AuthUser } from '../api';
 
 const { Title, Text, Paragraph } = Typography;
@@ -75,6 +75,22 @@ const SettingsPage: React.FC = () => {
   const keyFileJson = createdKey
     ? JSON.stringify({ key: createdKey.key, apiBase, org: localStorage.getItem('bom_org') ? JSON.parse(localStorage.getItem('bom_org')!).slug : undefined }, null, 2)
     : '';
+
+  // A page cannot write to a chosen folder (browser sandbox), but it can hand
+  // the file to the browser's Downloads folder with the right name.
+  const downloadKeyFile = () => {
+    if (!keyFileJson) return;
+    const blob = new Blob([keyFileJson + '\n'], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'service-key.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    message.success('service-key.json downloaded — move it to %USERPROFILE%\\.bugout\\ on the devbox');
+  };
 
   useEffect(() => {
     projectApi.list().then((data) => {
@@ -446,6 +462,15 @@ const SettingsPage: React.FC = () => {
               <Text code>/api/development/*</Text>: it cannot read bug reports, manage users or create other keys.
               The key is shown once; only its hash is stored. Revoke and re-issue if it leaks.
             </Paragraph>
+            <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              The same kind of key authenticates the <Text strong>Azure DevOps</Text> service hooks (use a separate key named for
+              them). In Azure DevOps project settings, add Web Hooks for <Text italic>pull request created</Text>,{' '}
+              <Text italic>pull request updated</Text> and <Text italic>release deployment completed</Text> (or{' '}
+              <Text italic>run stage state changed</Text>) pointing at{' '}
+              <Text code>{apiBase}/api/development/webhooks/azure-devops</Text> with the HTTP header{' '}
+              <Text code>X-BOM-Service-Key</Text>. PRs then appear on the Development board, merges move items to
+              Merged to dev, and beta / production deployments move them on.
+            </Paragraph>
 
             <Table
               size="small"
@@ -529,9 +554,18 @@ const SettingsPage: React.FC = () => {
                     On the devbox, save it as <Text code>%USERPROFILE%\.bugout\service-key.json</Text> (never commit it):
                   </Paragraph>
                   <pre style={{ background: '#0d1117', padding: 12, borderRadius: 8, fontSize: 12, overflow: 'auto' }}>{keyFileJson}</pre>
-                  <Button size="small" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(keyFileJson); message.success('JSON copied'); }}>
-                    Copy JSON
-                  </Button>
+                  <Space>
+                    <Button type="primary" size="small" icon={<DownloadOutlined />} onClick={downloadKeyFile}>
+                      Download service-key.json
+                    </Button>
+                    <Button size="small" icon={<CopyOutlined />} onClick={() => { navigator.clipboard.writeText(keyFileJson); message.success('JSON copied'); }}>
+                      Copy JSON
+                    </Button>
+                  </Space>
+                  <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                    The download goes to this browser's Downloads folder; the sessions read it from the devbox, so move it
+                    there if you are browsing from another machine.
+                  </Paragraph>
                 </div>
               )}
             </Modal>

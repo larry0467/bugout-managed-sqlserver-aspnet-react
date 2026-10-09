@@ -293,6 +293,22 @@ and the scopes `development:read` / `development:write`. On the devbox it lives 
 Writes need `PLATFORM_OWNER` / `SUPER_ADMIN` / `DEVELOPER` or a key with `development:write`; `VIEWER` and
 read-only keys can only read. Everything is organization-scoped like tickets.
 
+### Azure DevOps webhook (the team's own work, hands-free stages)
+
+`POST /api/development/webhooks/azure-devops` accepts Azure DevOps service-hook payloads, authenticated with a
+service key in the `X-BOM-Service-Key` header (create a dedicated key for it). Subscribe, per repository, to
+*Pull request created*, *Pull request updated* and *Release deployment completed* (or *Run stage state changed*).
+
+| Event | Effect |
+|-------|--------|
+| PR created | matched to an order by PR link, branch link or a `/development/{id}` url in the PR description; otherwise a new order is created in the app the repo maps to (`DevelopmentTracker:RepoProjects`, or any order that already links that repo). Adds PR + branch links, stage `PR_OPEN`. |
+| PR completed | target branch -> stage via `DevelopmentTracker:BranchStages` (`dev` -> `MERGED_DEV`, `beta` -> `BETA`, `master`/`main`/`prod` -> `PRODUCTION`); unmapped branches only get a note. |
+| PR abandoned | activity note, stage unchanged. |
+| Deployment succeeded | environment / stage name keyword -> stage via `DeployEnvironments` (`beta`, `demo`, `staging`, `qa` -> `BETA`; `prod`, `production`, `live` -> `PRODUCTION`); every order of that app waiting at the previous stage moves. App resolved from the artifact repository, else `PipelineProjects` keywords in the pipeline / release name. |
+
+Deliveries are idempotent (Azure DevOps retries); events that are not acted on return `202` with the reason so the
+subscription never shows as failing. Defaults map `ServiceManagerUI` / `ServiceManagedWeb` to `service-managed`.
+
 ### From PowerShell (what a Claude Code session does)
 
 ```powershell

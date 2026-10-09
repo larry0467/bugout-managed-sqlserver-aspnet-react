@@ -90,6 +90,52 @@ public class DevelopmentTrackerOptions
     // BugsManaged:DashboardBaseUrl at startup when empty.
     public string BoardBaseUrl { get; set; } = string.Empty;
 
+    // ----- Azure DevOps webhook (POST /api/development/webhooks/azure-devops) -----
+
+    // Repository name -> application slug, for PRs the webhook sees before any
+    // session logged an order ("the team's own work"). Repos not listed here are
+    // still matched when an existing order already links that repo.
+    public Dictionary<string, string> RepoProjects { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ServiceManagerUI"] = "service-managed",
+        ["ServiceManagedWeb"] = "service-managed",
+    };
+
+    // Target branch of a completed PR -> stage the order moves to.
+    public Dictionary<string, string> BranchStages { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["dev"] = DevelopmentStages.MergedDev,
+        ["develop"] = DevelopmentStages.MergedDev,
+        ["beta"] = DevelopmentStages.Beta,
+        ["staging"] = DevelopmentStages.Beta,
+        ["demo"] = DevelopmentStages.Beta,
+        ["master"] = DevelopmentStages.Production,
+        ["main"] = DevelopmentStages.Production,
+        ["prod"] = DevelopmentStages.Production,
+        ["production"] = DevelopmentStages.Production,
+    };
+
+    // Keyword in a release environment / pipeline stage name -> stage reached
+    // by every order of that application that was waiting for it.
+    public Dictionary<string, string> DeployEnvironments { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["beta"] = DevelopmentStages.Beta,
+        ["demo"] = DevelopmentStages.Beta,
+        ["staging"] = DevelopmentStages.Beta,
+        ["qa"] = DevelopmentStages.Beta,
+        ["prod"] = DevelopmentStages.Production,
+        ["production"] = DevelopmentStages.Production,
+        ["live"] = DevelopmentStages.Production,
+    };
+
+    // Keyword in a release definition / pipeline name -> application slug, for
+    // deployments whose payload does not name a repository.
+    public Dictionary<string, string> PipelineProjects { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ServiceManager"] = "service-managed",
+        ["ServiceManaged"] = "service-managed",
+    };
+
     public TimeZoneInfo ResolveTimeZone() => ResolveTimeZone(TimeZone);
 
     public static TimeZoneInfo ResolveTimeZone(string? id)
