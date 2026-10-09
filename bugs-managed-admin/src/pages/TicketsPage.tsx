@@ -32,6 +32,9 @@ import {
   ToolOutlined,
   LikeOutlined,
   DislikeOutlined,
+  EyeOutlined,
+  VideoCameraAddOutlined,
+  StopOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -51,7 +54,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import 'react-resizable/css/styles.css';
-import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, developmentApi, fixApi, fixStatusMeta, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef } from '../api';
+import { projectApi, ticketApi, ticketAssignApi, noteApi, teamApi, labelApi, checklistApi, attachmentApi, statusApi, developmentApi, fixApi, fixStatusMeta, triageDecisionMeta, type Project, type Ticket, type TicketNote, type TeamMember, type AuthUser, type EscalationStage, type TicketLabel, type TicketStatusDef, type TriageDecision } from '../api';
 import EscalationPanel from '../components/EscalationPanel';
 import ClaudeActivityTab from '../components/ClaudeActivityTab';
 import LabelChips from '../components/LabelChips';
@@ -346,6 +349,11 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [rejectFixModal, setRejectFixModal] = useState<Ticket | null>(null);
   const [rejectFixReason, setRejectFixReason] = useState('');
   const [rejectFixRequeue, setRejectFixRequeue] = useState(true);
+  // Triage: a human watches the video first and decides. Nothing is drafted
+  // before this; "Develop with Claude" is the only decision that queues work.
+  const [triageModal, setTriageModal] = useState<{ ticket: Ticket; decision: TriageDecision } | null>(null);
+  const [triageNote, setTriageNote] = useState('');
+  const [triageVideoUrl, setTriageVideoUrl] = useState('');
   const canDecideFix = (() => {
     try {
       const raw = localStorage.getItem('bom_user');
@@ -650,13 +658,28 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     }
   };
 
-  const handleRequestFix = async (t: Ticket) => {
+  const openTriage = (t: Ticket, decision: TriageDecision) => {
+    setTriageModal({ ticket: t, decision });
+    setTriageNote('');
+    setTriageVideoUrl(t.guidanceVideoUrl ?? '');
+  };
+
+  const handleTriage = async () => {
+    if (!triageModal) return;
+    const { ticket, decision } = triageModal;
     try {
-      await fixApi.request(t.id);
-      message.success(`#${t.id} queued for a drafted fix — the devbox picks it up on its next pass`);
+      await fixApi.triage(ticket.id, decision, triageNote.trim() || undefined, triageVideoUrl.trim() || undefined);
+      const done: Record<TriageDecision, string> = {
+        DEVELOP: `#${ticket.id} sent to Claude — the devbox picks it up on its next pass`,
+        RERECORD: `#${ticket.id} marked as needing a better video`,
+        USER_ERROR: `#${ticket.id} resolved as user error; the reporter gets your note`,
+        DECLINED: `#${ticket.id} declined; the reporter gets your reason`,
+      };
+      message.success(done[decision]);
+      setTriageModal(null);
       loadTickets();
     } catch (err: any) {
-      message.error(err?.response?.data?.message || 'Could not queue the fix');
+      message.error(err?.response?.data?.message || 'Could not save the triage decision');
     }
   };
 
@@ -1608,11 +1631,6 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               {fixStatusMeta[record.fixStatus].label}
             </Tag>
           )}
-          {(!record.fixStatus || record.fixStatus === 'FAILED' || record.fixStatus === 'REJECTED') && (
-            <Button size="small" icon={<ToolOutlined />} onClick={() => handleRequestFix(record)}>
-              {record.fixStatus ? 'Request fix again' : 'Request Claude fix'}
-            </Button>
-          )}
           {record.fixStatus === 'READY_TO_TEST' && canDecideFix && (
             <>
               <Button size="small" type="primary" ghost icon={<LikeOutlined />} onClick={() => handleApproveFix(record)}>
@@ -1657,6 +1675,58 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             Resolve
           </Button>
         </Space>
+
+        {/* Triage — somebody watches the video, then decides. Nothing is
+            drafted before this; only "Develop with Claude" queues work. */}
+        <Card
+          size="small"
+          style={{ marginBottom: 12 }}
+          title={
+            <Space wrap>
+              <EyeOutlined /> After watching the video
+              {record.triageDecision && triageDecisionMeta[record.triageDecision] && (
+                <Tag color={triageDecisionMeta[record.triageDecision].color}>
+                  {triageDecisionMeta[record.triageDecision].label}
+                  {record.triagedBy ? ` · ${record.triagedBy}` : ''}
+                  {record.triagedAt ? ` · ${dayjs(record.triagedAt).format('MMM D, h:mm A')}` : ''}
+                </Tag>
+              )}
+            </Space>
+          }
+        >
+          <Space wrap>
+            <Button
+              size="small"
+              type="primary"
+              icon={<ToolOutlined />}
+              disabled={record.fixStatus === 'REQUESTED' || record.fixStatus === 'CLAIMED'}
+              onClick={() => openTriage(record, 'DEVELOP')}
+            >
+              {record.fixStatus === 'REQUESTED' ? 'Queued for Claude'
+                : record.fixStatus === 'CLAIMED' ? 'Claude is working on it'
+                : record.fixStatus === 'FAILED' || record.fixStatus === 'REJECTED' ? 'Send to Claude again'
+                : 'Develop with Claude'}
+            </Button>
+            <Button size="small" icon={<VideoCameraAddOutlined />} onClick={() => openTriage(record, 'RERECORD')}>
+              Needs a better video
+            </Button>
+            <Button size="small" icon={<UserOutlined />} onClick={() => openTriage(record, 'USER_ERROR')}>
+              User error — retrain
+            </Button>
+            <Button size="small" danger icon={<StopOutlined />} onClick={() => openTriage(record, 'DECLINED')}>
+              Not doing this
+            </Button>
+          </Space>
+          {record.guidanceVideoUrl && (
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              <Text type="secondary">How it should work: </Text>
+              <a href={record.guidanceVideoUrl} target="_blank" rel="noopener noreferrer">
+                <PlayCircleOutlined /> {record.guidanceVideoUrl}
+              </a>
+              {record.guidanceTranscript && <Text type="secondary"> (transcript on file for Claude)</Text>}
+            </div>
+          )}
+        </Card>
 
         {/* What the drafted fix found, and feedback from a rejection. */}
         {(record.fixSummary || record.fixFeedback) && (
@@ -2135,6 +2205,38 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
             }}
             style={{ width: '100%', borderRadius: 8 }}
           />
+        )}
+      </Modal>
+
+      {/* Triage decision */}
+      <Modal
+        title={triageModal ? `${triageDecisionMeta[triageModal.decision].label} — #${triageModal.ticket.id}` : ''}
+        open={!!triageModal}
+        onOk={handleTriage}
+        onCancel={() => setTriageModal(null)}
+        okText={triageModal ? triageDecisionMeta[triageModal.decision].okText : 'OK'}
+        okButtonProps={{ danger: triageModal?.decision === 'DECLINED' }}
+      >
+        {triageModal && (
+          <>
+            <Text type="secondary">{triageDecisionMeta[triageModal.decision].help}</Text>
+            {(triageModal.decision === 'DEVELOP' || triageModal.decision === 'RERECORD') && (
+              <Input
+                style={{ marginTop: 12 }}
+                prefix={<PlayCircleOutlined />}
+                placeholder="Videos Managed link of how it should work (optional)"
+                value={triageVideoUrl}
+                onChange={(e) => setTriageVideoUrl(e.target.value)}
+              />
+            )}
+            <Input.TextArea
+              style={{ marginTop: 12 }}
+              rows={3}
+              placeholder={triageDecisionMeta[triageModal.decision].notePlaceholder}
+              value={triageNote}
+              onChange={(e) => setTriageNote(e.target.value)}
+            />
+          </>
         )}
       </Modal>
 

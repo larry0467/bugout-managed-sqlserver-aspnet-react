@@ -103,6 +103,8 @@ builder.Services.PostConfigure<DevelopmentTrackerOptions>(o =>
 builder.Services.AddScoped<ProductionDigestService>();
 builder.Services.AddScoped<DevelopmentOrderService>();
 builder.Services.AddScoped<AzureDevOpsWebhookService>();
+// Reads guidance-video transcripts from Videos Managed during triage.
+builder.Services.AddHttpClient<IVideosManagedClient, VideosManagedClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
 // Comms Managed notification bridge — replaces the no-op NotificationService.
 var commsOpts = builder.Configuration.GetSection("CommsManaged").Get<CommsManagedOptions>()
     ?? new CommsManagedOptions();

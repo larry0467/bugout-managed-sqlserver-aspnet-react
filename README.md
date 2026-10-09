@@ -311,8 +311,13 @@ subscription never shows as failing. Defaults map `ServiceManagerUI` / `ServiceM
 
 ### Drafted fixes (Claude Code on the devbox, not the API sidecar)
 
-Settings → **Auto-draft Fixes** turns the queue on per application. Every `BUG` that arrives through that app's widget
-gets `FixStatus = REQUESTED`; any ticket can also be queued with **Request Claude fix**. The devbox dispatcher
+**A person watches the video first.** On every ticket the "After watching the video" card offers four decisions
+(`POST /api/development/fixes/{id}/triage { decision, note, guidanceVideoUrl }`): **Develop with Claude** (queues it,
+optionally with a re-recorded "how it should work" Videos Managed link whose captions are stored as
+`GuidanceTranscript` and fed to the drafting run), **Needs a better video** (parks it), **User error — retrain**
+(resolves it; the reporter gets the note) and **Not doing this** (closes it with the reason). Who decided and when is
+kept on the ticket. Settings → **Auto-draft Fixes** can skip that gate per application (every incoming `BUG` gets
+`FixStatus = REQUESTED`); it is off by default and meant to stay off. The devbox dispatcher
 (`scripts\fix-dispatcher\BugOutFixDispatcher.ps1`, scheduled every 10 minutes by `Register-FixDispatcherTask.ps1`,
 config `%USERPROFILE%\.bugout\fix-dispatcher.json`) polls `GET /api/development/fixes/queue`, claims the oldest ticket,
 checks out git worktrees of the app's repos on `BugOut_Fix_{ticketId}` from `origin/dev`, writes `TICKET.md`

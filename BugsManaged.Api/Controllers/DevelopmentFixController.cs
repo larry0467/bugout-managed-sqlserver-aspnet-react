@@ -32,11 +32,14 @@ public class DevelopmentFixController : ControllerBase
     private readonly IAuditLogger _audit;
     private readonly DevelopmentTrackerOptions _opts;
     private readonly ILogger<DevelopmentFixController> _log;
+    private readonly IVideosManagedClient _videosManaged;
+    private readonly ITicketNotificationService _notify;
 
     public DevelopmentFixController(
         BugsManagedDbContext db, IOrgContext org, ITicketActivityLogger activity, DevelopmentOrderService orders,
         TicketNoteService notes, IVideoBlobService videos, IScreenshotBlobService screenshots, IAuditLogger audit,
-        IOptions<DevelopmentTrackerOptions> opts, ILogger<DevelopmentFixController> log)
+        IOptions<DevelopmentTrackerOptions> opts, ILogger<DevelopmentFixController> log,
+        IVideosManagedClient videosManaged, ITicketNotificationService notify)
     {
         _db = db;
         _org = org;
@@ -48,6 +51,8 @@ public class DevelopmentFixController : ControllerBase
         _audit = audit;
         _opts = opts.Value;
         _log = log;
+        _videosManaged = videosManaged;
+        _notify = notify;
     }
 
     // ===== identity =====
@@ -76,12 +81,15 @@ public class DevelopmentFixController : ControllerBase
         string? TenantId, string? TenantName, string? DatabaseName, string? ApplicationVersion, string? Environment,
         string? FixStatus, string? FixStatusLabel, DateTime? FixRequestedAt, DateTime? FixClaimedAt, string? FixClaimedBy,
         DateTime? FixCompletedAt, string? FixSummary, string? FixFeedback, string? TestingNotes,
+        string? TriageDecision, string? TriageDecisionLabel, string? TriagedBy, DateTime? TriagedAt,
+        string? GuidanceVideoUrl, string? GuidanceTranscript,
         bool IsDevelopmentOrder, string? DevelopmentStage, string BoardUrl,
         List<DevelopmentController.LinkDto> Links, List<FixAttachmentDto> Attachments);
 
     public record AppFixSettingDto(long Id, string Name, string Slug, bool AutoDraftFixes, int Requested, int Claimed, int ReadyToTest);
     public record AutoDraftRequest(bool Enabled);
     public record RequestFixRequest(string? Note);
+    public record TriageRequest(string Decision, string? Note, string? GuidanceVideoUrl);
     public record ClaimRequest(string? Worker);
     public record FixResultRequest(string Outcome, string? Summary, List<DevelopmentController.LinkRequest>? Links, string? TestingNotes);
     public record RejectRequest(string? Reason, bool Requeue);
@@ -166,20 +174,120 @@ public class DevelopmentFixController : ControllerBase
         if (ticket.FixStatus == FixStatuses.Claimed)
             return Conflict(new { message = "A fix is being drafted right now; release it first", fixStatus = ticket.FixStatus });
 
-        var now = DateTime.UtcNow;
         var note = DevelopmentOrderService.Clean(body?.Note);
+        QueueForFix(ticket, note, DateTime.UtcNow);
+        _activity.Log(ticket, "FIX_REQUESTED",
+            $"{CallerName()} requested a drafted fix" + (note != null ? $" — {note}" : ""),
+            CallerEmail(), CallerName(), payload: new { auto = false, note });
+        await _db.SaveChangesAsync();
+        return Ok(await ToItemAsync(ticket, withBlobUrls: false));
+    }
+
+    // The human gate: somebody watched the video and decided. Only DEVELOP puts
+    // the ticket in front of Claude; the other three decisions end or park it.
+    [HttpPost("{ticketId}/triage")]
+    public async Task<IActionResult> Triage(long ticketId, [FromBody] TriageRequest body)
+    {
+        if (!CanWrite()) return Forbidden("Your role or key cannot triage tickets");
+        var decision = TriageDecisions.Normalize(body?.Decision);
+        if (decision == null)
+            return BadRequest(new { message = $"decision must be one of {string.Join(", ", TriageDecisions.All)}" });
+        if (body!.Note != null && body.Note.Length > 4000)
+            return BadRequest(new { message = "note must be 4000 characters or fewer" });
+        var guidanceUrl = DevelopmentOrderService.Clean(body.GuidanceVideoUrl);
+        if (guidanceUrl != null && guidanceUrl.Length > 2000)
+            return BadRequest(new { message = "guidanceVideoUrl must be 2000 characters or fewer" });
+
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == ticketId);
+        if (ticket == null) return NotFound(new { message = "Ticket not found" });
+        if (decision == TriageDecisions.Develop && ticket.FixStatus == FixStatuses.Claimed)
+            return Conflict(new { message = "A fix is being drafted right now; release it first", fixStatus = ticket.FixStatus });
+
+        var now = DateTime.UtcNow;
+        var actorEmail = CallerEmail();
+        var actorName = CallerName();
+        var note = DevelopmentOrderService.Clean(body.Note);
+
+        // A re-recorded "how it should work" video: keep the link and its
+        // captions so the drafting run reads the intent, not only the bug.
+        string? guidanceTitle = null;
+        if (guidanceUrl != null && guidanceUrl != ticket.GuidanceVideoUrl)
+        {
+            ticket.GuidanceVideoUrl = guidanceUrl;
+            var rec = await _videosManaged.TryGetRecordingAsync(guidanceUrl);
+            ticket.GuidanceTranscript = rec?.TranscriptText;
+            guidanceTitle = rec?.Title;
+            if (!await _db.TicketDevelopmentLinks.AnyAsync(l => l.TicketId == ticket.Id && l.Kind == "VIDEO" && l.Url == guidanceUrl))
+                _db.TicketDevelopmentLinks.Add(DevelopmentOrderService.NewLink(ticket, "VIDEO", null,
+                    guidanceTitle != null ? $"How it should work: {Truncate(guidanceTitle, 200)}" : "How it should work (video)", guidanceUrl, null, actorEmail));
+            _activity.Log(ticket, "GUIDANCE_VIDEO_ADDED",
+                $"{actorName} attached a video of how it should work" + (guidanceTitle != null ? $": {guidanceTitle}" : "") + (rec?.TranscriptText != null ? " (transcript read)" : " (no transcript available)"),
+                actorEmail, actorName, payload: new { guidanceUrl, title = guidanceTitle, transcriptChars = rec?.TranscriptText?.Length ?? 0 });
+        }
+
+        ticket.TriageDecision = decision;
+        ticket.TriagedBy = Truncate(actorName, 255);
+        ticket.TriagedAt = now;
+
+        var statusKeys = await _orders.StatusKeysAsync();
+        var label = TriageDecisions.Labels[decision];
+        switch (decision)
+        {
+            case TriageDecisions.Develop:
+                QueueForFix(ticket, note, now);
+                _activity.Log(ticket, "TRIAGE_DEVELOP",
+                    $"{actorName} watched the video and sent this to Claude to develop" + (note != null ? $" — {note}" : ""),
+                    actorEmail, actorName, payload: new { decision, note, guidanceUrl });
+                break;
+
+            case TriageDecisions.Rerecord:
+                _activity.Log(ticket, "TRIAGE_RERECORD",
+                    $"{actorName} decided this needs a better video before anything is built" + (note != null ? $" — {note}" : ""),
+                    actorEmail, actorName, payload: new { decision, note });
+                break;
+
+            case TriageDecisions.UserError:
+                ticket.Resolution = note ?? "Works as designed — the reporter needs a walkthrough of this screen.";
+                ticket.FixStatus = null;
+                if (statusKeys.Contains("RESOLVED")) ticket.Status = "RESOLVED";
+                ticket.ResolvedAt = now;
+                _activity.Log(ticket, "TRIAGE_USER_ERROR",
+                    $"{actorName} watched the video: user error, retrain — {ticket.Resolution}",
+                    actorEmail, actorName, payload: new { decision, note });
+                break;
+
+            case TriageDecisions.Declined:
+                ticket.Resolution = note ?? "Not planned.";
+                ticket.FixStatus = null;
+                ticket.Status = statusKeys.Contains("CLOSED") ? "CLOSED" : (statusKeys.Contains("RESOLVED") ? "RESOLVED" : ticket.Status);
+                ticket.ResolvedAt = now;
+                _activity.Log(ticket, "TRIAGE_DECLINED",
+                    $"{actorName} watched the video and declined it — {ticket.Resolution}",
+                    actorEmail, actorName, payload: new { decision, note });
+                break;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // The reporter hears the outcome the same way they hear a resolution
+        // today (Comms email with the resolution text); best effort.
+        if (decision == TriageDecisions.UserError || decision == TriageDecisions.Declined)
+            _ = _notify.NotifyReporterResolvedAsync(ticket);
+
+        _audit.Record(action: "development.triage", outcome: "success", actorEmail: actorEmail, organizationId: ticket.OrganizationId,
+            targetTicketId: ticket.Id, extra: new Dictionary<string, object?> { ["decision"] = decision, ["label"] = label, ["guidanceVideo"] = guidanceUrl != null });
+
+        return Ok(await ToItemAsync(ticket, withBlobUrls: false));
+    }
+
+    private static void QueueForFix(Ticket ticket, string? note, DateTime now)
+    {
         ticket.FixStatus = FixStatuses.Requested;
         ticket.FixRequestedAt = now;
         ticket.FixClaimedAt = null;
         ticket.FixClaimedBy = null;
         ticket.FixCompletedAt = null;
         if (note != null) ticket.FixFeedback = note;
-
-        _activity.Log(ticket, "FIX_REQUESTED",
-            $"{CallerName()} requested a drafted fix" + (note != null ? $" — {note}" : ""),
-            CallerEmail(), CallerName(), payload: new { auto = false, note });
-        await _db.SaveChangesAsync();
-        return Ok(await ToItemAsync(ticket, withBlobUrls: false));
     }
 
     [HttpPost("{ticketId}/claim")]
@@ -402,6 +510,8 @@ public class DevelopmentFixController : ControllerBase
             t.TenantId, t.TenantName, t.DatabaseName, t.ApplicationVersion, t.Environment,
             t.FixStatus, t.FixStatus != null && FixStatuses.Labels.TryGetValue(t.FixStatus, out var label) ? label : null,
             t.FixRequestedAt, t.FixClaimedAt, t.FixClaimedBy, t.FixCompletedAt, t.FixSummary, t.FixFeedback, t.TestingNotes,
+            t.TriageDecision, t.TriageDecision != null && TriageDecisions.Labels.TryGetValue(t.TriageDecision, out var tl) ? tl : null,
+            t.TriagedBy, t.TriagedAt, t.GuidanceVideoUrl, t.GuidanceTranscript,
             t.IsDevelopmentOrder, t.DevelopmentStage, BoardUrl(t.Id),
             links, attachmentDtos);
     }

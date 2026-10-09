@@ -471,7 +471,9 @@ const SettingsPage: React.FC = () => {
         {isOrgAdmin && (
           <Card title={<><RobotOutlined /> Auto-draft Fixes (Claude Code on the devbox)</>}>
             <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              When on for an app, every <Text strong>bug</Text> reported through its widget is queued for a drafted fix.
+              <Text strong>Off by default, and meant to stay off:</Text> the rule is that a person watches the video first and
+              decides on the ticket (Develop with Claude, needs a better video, user error, or not doing this).
+              When on for an app, every <Text strong>bug</Text> reported through its widget skips that gate and is queued for a drafted fix.
               The dispatcher on the devbox picks it up, runs Claude Code against the app's repos with the recording's
               transcript and console errors, opens pull requests against <Text code>dev</Text>, and marks the ticket{' '}
               <Text strong>Fix ready to test</Text>. Nothing is merged or published by it: approve or reject the fix on the

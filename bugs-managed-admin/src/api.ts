@@ -168,6 +168,12 @@ export interface Ticket {
   fixCompletedAt?: string | null;
   fixSummary?: string | null;
   fixFeedback?: string | null;
+  // Triage: a human watched the video and decided (see fixApi.triage)
+  triageDecision?: TriageDecision | null;
+  triagedBy?: string | null;
+  triagedAt?: string | null;
+  guidanceVideoUrl?: string | null;
+  guidanceTranscript?: string | null;
 }
 
 export interface TicketLabel {
@@ -641,6 +647,8 @@ export interface DevelopmentOrder {
   orderedAt: string;
   videoUrl?: string | null;
   hasTranscript: boolean;
+  // A re-recorded "how it should work" video attached at triage.
+  guidanceVideoUrl?: string | null;
   sessionLogUrl?: string | null;
   sessionId?: string | null;
   productionAt?: string | null;
@@ -770,6 +778,41 @@ export const fixStatusMeta: Record<FixStatus, { label: string; color: string }> 
   REJECTED: { label: 'Fix rejected', color: 'default' },
 };
 
+// What a human decided after watching the video. Nothing is drafted before
+// someone picks DEVELOP.
+export type TriageDecision = 'DEVELOP' | 'RERECORD' | 'USER_ERROR' | 'DECLINED';
+
+export const triageDecisionMeta: Record<TriageDecision, { label: string; color: string; okText: string; help: string; notePlaceholder: string }> = {
+  DEVELOP: {
+    label: 'Develop with Claude',
+    color: 'green',
+    okText: 'Send to Claude',
+    help: 'Queues this ticket for the devbox. Claude drafts a fix on a branch and opens PRs against dev; nothing is merged until a human approves. Attach a re-recorded video if the original does not say how it should work.',
+    notePlaceholder: 'Guidance for Claude: what exactly to build or fix, what to leave alone',
+  },
+  RERECORD: {
+    label: 'Needs a better video',
+    color: 'gold',
+    okText: 'Mark it',
+    help: 'Parks the ticket until someone records a clearer video of how it should work. Paste the link here when it exists, or later with Develop with Claude.',
+    notePlaceholder: 'What the new video should show',
+  },
+  USER_ERROR: {
+    label: 'User error — retrain',
+    color: 'blue',
+    okText: 'Resolve as user error',
+    help: 'Resolves the ticket. The reporter receives this explanation in the resolution email.',
+    notePlaceholder: 'What to tell the reporter: how the screen is meant to be used',
+  },
+  DECLINED: {
+    label: 'Not doing this',
+    color: 'default',
+    okText: 'Decline',
+    help: 'Closes the ticket. The reporter receives this reason in the resolution email.',
+    notePlaceholder: 'Why not',
+  },
+};
+
 export interface FixAttachment {
   id: number;
   fileName: string;
@@ -810,6 +853,12 @@ export interface FixQueueItem {
   fixSummary?: string | null;
   fixFeedback?: string | null;
   testingNotes?: string | null;
+  triageDecision?: TriageDecision | null;
+  triageDecisionLabel?: string | null;
+  triagedBy?: string | null;
+  triagedAt?: string | null;
+  guidanceVideoUrl?: string | null;
+  guidanceTranscript?: string | null;
   isDevelopmentOrder: boolean;
   developmentStage?: DevelopmentStage | null;
   boardUrl: string;
@@ -836,6 +885,8 @@ export const fixApi = {
   get: (ticketId: number) => api.get<FixQueueItem>(`/development/fixes/${ticketId}`).then(r => r.data),
   request: (ticketId: number, note?: string) =>
     api.post<FixQueueItem>(`/development/fixes/${ticketId}/request`, { note }).then(r => r.data),
+  triage: (ticketId: number, decision: TriageDecision, note?: string, guidanceVideoUrl?: string) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/triage`, { decision, note, guidanceVideoUrl }).then(r => r.data),
   claim: (ticketId: number, worker?: string) =>
     api.post<FixQueueItem>(`/development/fixes/${ticketId}/claim`, { worker }).then(r => r.data),
   release: (ticketId: number) => api.post<FixQueueItem>(`/development/fixes/${ticketId}/release`).then(r => r.data),

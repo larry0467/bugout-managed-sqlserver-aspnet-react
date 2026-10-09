@@ -202,6 +202,26 @@ public class Ticket
     // Why a fix was rejected; fed back into the prompt when it is re-queued.
     public string? FixFeedback { get; set; }
 
+    // ===== Triage: a human watches the video and decides =====
+    // One of TriageDecisions: DEVELOP (send to Claude), RERECORD (needs a
+    // better video first), USER_ERROR (works as designed; retrain the user),
+    // DECLINED (not doing this). Nothing is drafted before this.
+    [MaxLength(30)]
+    public string? TriageDecision { get; set; }
+
+    [MaxLength(255)]
+    public string? TriagedBy { get; set; }
+
+    public DateTime? TriagedAt { get; set; }
+
+    // A second Videos Managed recording explaining how the thing should
+    // actually work (Larry or a developer re-recording the ask). Its captions
+    // are stored so the drafting run reads the intent, not just the bug.
+    [MaxLength(2000)]
+    public string? GuidanceVideoUrl { get; set; }
+
+    public string? GuidanceTranscript { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

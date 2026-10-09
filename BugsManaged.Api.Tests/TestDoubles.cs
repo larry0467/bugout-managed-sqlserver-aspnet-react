@@ -130,6 +130,17 @@ public static class TestDoubles
             => Task.FromResult(new Uri(blobUri + "?sas=1"));
     }
 
+    // Answers like Videos Managed would for any share-shaped link, nothing for anything else.
+    public sealed class FakeVideosManagedClient : IVideosManagedClient
+    {
+        public Task<VideosManagedRecording?> TryGetRecordingAsync(string shareUrl, CancellationToken ct = default) =>
+            Task.FromResult(VideosManagedClient.LooksLikeShareLink(shareUrl)
+                ? new VideosManagedRecording(shareUrl, "How estimates should work", 120,
+                    "WEBVTT\n\n1\n00:00.000 --> 00:02.000\nStart from the technician's hours\n\n2\n00:02.000 --> 00:04.000\nStart from the technician's hours\n\n3\n00:04.000 --> 00:06.000\nthen add the truck fees",
+                    "Start from the technician's hours then add the truck fees")
+                : null);
+    }
+
     public sealed class NoOpScreenshotBlobService : IScreenshotBlobService
     {
         public Task<string> UploadAsync(Stream data, string extension, long ticketId, CancellationToken ct = default)

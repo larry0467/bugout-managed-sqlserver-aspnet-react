@@ -35,7 +35,8 @@ public class DevelopmentFixTests
             new TicketNoteService(db, new HttpClient(), NullLogger<TicketNoteService>.Instance),
             new TestDoubles.NoOpVideoBlobService(), new TestDoubles.NoOpScreenshotBlobService(), new TestDoubles.NoOpAuditLogger(),
             Options.Create(new DevelopmentTrackerOptions { BoardBaseUrl = "https://board.test", TimeZone = "UTC" }),
-            NullLogger<DevelopmentFixController>.Instance);
+            NullLogger<DevelopmentFixController>.Instance,
+            new TestDoubles.FakeVideosManagedClient(), new TestDoubles.RecordingNotificationService());
         ctrl.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Principal(role, email, name, serviceScopes) } };
         return (ctrl, db, org);
     }
@@ -255,6 +256,103 @@ public class DevelopmentFixTests
 
         var claimed = SeedBug(db, "busy", FixStatuses.Claimed);
         Assert.IsType<ConflictObjectResult>(await ctrl.RequestFix(claimed.Id, null));
+    }
+
+    // ===== triage: a human watches the video and decides =====
+
+    [Fact]
+    public async Task Triage_Develop_WithGuidanceVideo_QueuesAndKeepsTheTranscript()
+    {
+        var (ctrl, db, _) = Build(role: "DEVELOPER", email: "dev@x.com", name: "Dilpreet");
+        var bug = SeedBug(db, fixStatus: null);
+
+        var item = Item(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest(
+            "develop", "Keep the technician's hours; only fix the drag handler",
+            "https://videos-dev.managedplatform.com/larry-baxter/r/how-dispatch-should-work")));
+
+        Assert.Equal(FixStatuses.Requested, item.FixStatus);
+        Assert.Equal("Keep the technician's hours; only fix the drag handler", item.FixFeedback);
+        Assert.Equal(TriageDecisions.Develop, item.TriageDecision);
+        Assert.Equal("Develop with Claude", item.TriageDecisionLabel);
+        Assert.Equal("Dilpreet", item.TriagedBy);
+        Assert.NotNull(item.TriagedAt);
+        Assert.Equal("https://videos-dev.managedplatform.com/larry-baxter/r/how-dispatch-should-work", item.GuidanceVideoUrl);
+        Assert.Equal("Start from the technician's hours then add the truck fees", item.GuidanceTranscript);
+        Assert.Contains(item.Links, l => l.Kind == "VIDEO" && l.Name.Contains("How it should work") && l.Url == item.GuidanceVideoUrl);
+
+        var kinds = db.TicketActivities.IgnoreQueryFilters().Where(a => a.TicketId == bug.Id).Select(a => a.Kind).ToList();
+        Assert.Contains("GUIDANCE_VIDEO_ADDED", kinds);
+        Assert.Contains("TRIAGE_DEVELOP", kinds);
+
+        // The dispatcher sees the guidance in the queue item.
+        var queue = Assert.IsType<List<DevelopmentFixController.FixQueueItemDto>>(Assert.IsType<OkObjectResult>(await ctrl.Queue(null, null, 20)).Value);
+        Assert.Single(queue);
+        Assert.Equal(item.GuidanceTranscript, queue[0].GuidanceTranscript);
+    }
+
+    [Fact]
+    public async Task Triage_UserError_ResolvesWithTheExplanation_AndDropsAnyQueuedFix()
+    {
+        var (ctrl, db, _) = Build();
+        var bug = SeedBug(db, fixStatus: FixStatuses.Requested);
+
+        var item = Item(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest(
+            "USER_ERROR", "The dispatch board filters by the technician's region; switch the region picker first.", null)));
+
+        Assert.Null(item.FixStatus);
+        Assert.Equal(TriageDecisions.UserError, item.TriageDecision);
+        var t = await db.Tickets.IgnoreQueryFilters().SingleAsync(x => x.Id == bug.Id);
+        Assert.Equal("RESOLVED", t.Status);
+        Assert.NotNull(t.ResolvedAt);
+        Assert.Contains("region picker", t.Resolution);
+        Assert.Contains("TRIAGE_USER_ERROR", db.TicketActivities.IgnoreQueryFilters().Where(a => a.TicketId == bug.Id).Select(a => a.Kind));
+        Assert.Empty(Assert.IsType<List<DevelopmentFixController.FixQueueItemDto>>(Assert.IsType<OkObjectResult>(await ctrl.Queue(null, null, 20)).Value));
+    }
+
+    [Fact]
+    public async Task Triage_Declined_ClosesWithReason()
+    {
+        var (ctrl, db, _) = Build();
+        var bug = SeedBug(db, fixStatus: null);
+
+        var item = Item(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest("declined", "Bad idea: this would hide overdue jobs.", null)));
+
+        Assert.Equal(TriageDecisions.Declined, item.TriageDecision);
+        var t = await db.Tickets.IgnoreQueryFilters().SingleAsync(x => x.Id == bug.Id);
+        Assert.Equal("CLOSED", t.Status);
+        Assert.Equal("Bad idea: this would hide overdue jobs.", t.Resolution);
+    }
+
+    [Fact]
+    public async Task Triage_Rerecord_RecordsTheDecision_QueuesNothing()
+    {
+        var (ctrl, db, _) = Build();
+        var bug = SeedBug(db, fixStatus: null);
+
+        var item = Item(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest("rerecord", "Show the whole flow from the work order", null)));
+
+        Assert.Equal(TriageDecisions.Rerecord, item.TriageDecision);
+        Assert.Null(item.FixStatus);
+        Assert.Equal("OPEN", (await db.Tickets.IgnoreQueryFilters().SingleAsync(x => x.Id == bug.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Triage_RejectsBadDecision_AndDevelopWhileClaimed()
+    {
+        var (ctrl, db, _) = Build();
+        var bug = SeedBug(db, fixStatus: FixStatuses.Claimed);
+        Assert.IsType<BadRequestObjectResult>(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest("MAYBE", null, null)));
+        Assert.IsType<ConflictObjectResult>(await ctrl.Triage(bug.Id, new DevelopmentFixController.TriageRequest("DEVELOP", null, null)));
+    }
+
+    [Fact]
+    public void VttToText_StripsTimingsAndRepeats()
+    {
+        var text = VideosManagedClient.VttToText("WEBVTT\n\n1\n00:00.000 --> 00:01.000\n<v Larry>hello there\n\n2\n00:01.000 --> 00:02.000\nhello there\n\n3\n00:02.000 --> 00:03.000\ngeneral kenobi\n");
+        Assert.Equal("hello there general kenobi", text);
+        Assert.Null(VideosManagedClient.VttToText(""));
+        Assert.True(VideosManagedClient.LooksLikeShareLink("https://videos-dev.managedplatform.com/larry-baxter/r/first-ai-drafted-estimate"));
+        Assert.False(VideosManagedClient.LooksLikeShareLink("https://acct.blob.core.windows.net/videos/x.webm"));
     }
 
     // ===== per-app switch =====

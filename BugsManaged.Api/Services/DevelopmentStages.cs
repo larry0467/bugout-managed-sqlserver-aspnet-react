@@ -97,6 +97,32 @@ public static class FixStatuses
     }
 }
 
+// What a human decided after watching the video (Ticket.TriageDecision).
+public static class TriageDecisions
+{
+    public const string Develop = "DEVELOP";
+    public const string Rerecord = "RERECORD";
+    public const string UserError = "USER_ERROR";
+    public const string Declined = "DECLINED";
+
+    public static readonly string[] All = { Develop, Rerecord, UserError, Declined };
+
+    public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
+    {
+        [Develop] = "Develop with Claude",
+        [Rerecord] = "Needs a better video",
+        [UserError] = "User error — retrain",
+        [Declined] = "Not doing this",
+    };
+
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var key = value.Trim().ToUpperInvariant().Replace(' ', '_').Replace('-', '_');
+        return Array.IndexOf(All, key) >= 0 ? key : null;
+    }
+}
+
 // Bound from the "DevelopmentTracker" configuration section. Every setting
 // has a default so an unconfigured environment still runs the board; only
 // the digest recipients need a real value (and they fall back to the org's
@@ -121,6 +147,10 @@ public class DevelopmentTrackerOptions
     // Where the board lives, for the links in the digest email. Falls back to
     // BugsManaged:DashboardBaseUrl at startup when empty.
     public string BoardBaseUrl { get; set; } = string.Empty;
+
+    // Videos Managed public API, used to read the captions of a guidance video
+    // (share links are a JS app; the recording JSON lives here).
+    public string VideosApiBase { get; set; } = "https://videos-api-dev.managedplatform.com";
 
     // ----- Azure DevOps webhook (POST /api/development/webhooks/azure-devops) -----
 

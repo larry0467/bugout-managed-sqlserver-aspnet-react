@@ -178,6 +178,22 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
     }
   };
 
+  // Widget recordings live in private blob storage and need a short-lived SAS
+  // link from the API; Videos Managed links open directly.
+  const openVideo = async (o: DevelopmentOrder) => {
+    if (!o.videoUrl) return;
+    if (o.videoUrl.includes('.blob.core.windows.net')) {
+      try {
+        const url = await ticketApi.getVideoUrl(o.id);
+        window.open(url, '_blank', 'noopener');
+      } catch (e) {
+        message.error(errMsg(e, 'Could not open the recording'));
+      }
+      return;
+    }
+    window.open(o.videoUrl, '_blank', 'noopener');
+  };
+
   const nextStageOf = (stage: DevelopmentStage): DevelopmentStage | null => {
     const i = developmentStages.findIndex((s) => s.key === stage);
     return i >= 0 && i < developmentStages.length - 1 ? developmentStages[i + 1].key : null;
@@ -446,13 +462,22 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
       {
         title: 'Video',
         key: 'video',
-        width: 80,
+        width: 90,
         align: 'center' as const,
-        render: (_: any, r: DevelopmentOrder) => r.videoUrl ? (
-          <Tooltip title={r.hasTranscript ? 'Ordering video (transcript on file)' : 'Ordering video'}>
-            <Button type="link" size="small" icon={<PlayCircleOutlined />} href={r.videoUrl} target="_blank" rel="noopener" />
-          </Tooltip>
-        ) : <Text type="secondary">—</Text>,
+        render: (_: any, r: DevelopmentOrder) => (
+          <Space size={0}>
+            {r.videoUrl ? (
+              <Tooltip title={r.ticketType === 'BUG' ? 'Reporter\'s screen recording' : (r.hasTranscript ? 'Ordering video (transcript on file)' : 'Ordering video')}>
+                <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={(e) => { e.stopPropagation(); openVideo(r); }} />
+              </Tooltip>
+            ) : <Text type="secondary">—</Text>}
+            {r.guidanceVideoUrl && (
+              <Tooltip title="How it should work (re-recorded at triage)">
+                <Button type="link" size="small" icon={<VideoCameraAddOutlined />} href={r.guidanceVideoUrl} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} />
+              </Tooltip>
+            )}
+          </Space>
+        ),
       },
       {
         title: 'Session log',
@@ -708,10 +733,13 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
             <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="Ordered">{fmtDateTime(order.orderedAt)}{order.orderedBy ? ` by ${order.orderedBy}` : ''}</Descriptions.Item>
               <Descriptions.Item label="Priority / status"><Tag>{order.priority}</Tag><Tag>{order.status}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Ordering video">
+              <Descriptions.Item label={order.ticketType === 'BUG' ? 'Reporter\'s recording' : 'Ordering video'}>
                 {order.videoUrl
-                  ? <Link href={order.videoUrl} target="_blank" rel="noopener"><PlayCircleOutlined /> {order.videoUrl}</Link>
+                  ? <Link onClick={() => openVideo(order)}><PlayCircleOutlined /> {order.videoUrl.includes('.blob.core.windows.net') ? 'open the screen recording' : order.videoUrl}</Link>
                   : <Text type="secondary">none</Text>}
+                {order.guidanceVideoUrl && (
+                  <div><Link href={order.guidanceVideoUrl} target="_blank" rel="noopener"><VideoCameraAddOutlined /> How it should work: {order.guidanceVideoUrl}</Link></div>
+                )}
               </Descriptions.Item>
               <Descriptions.Item label="Session log">
                 {order.sessionLogUrl

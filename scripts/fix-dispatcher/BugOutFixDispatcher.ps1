@@ -207,10 +207,12 @@ try {
 - Browser: $($item.browserInfo) ($($item.screenWidth)x$($item.screenHeight))
 - Tenant: $($item.tenantName) ($($item.tenantId)) db $($item.databaseName) · app version $($item.applicationVersion) · environment $($item.environment)
 - Bug Out board: $($item.boardUrl)
-$(if ($item.fixFeedback) { "- Feedback from a previous attempt / requester note: $($item.fixFeedback)" })
+$(if ($item.triageDecision) { "- Triage: $($item.triageDecisionLabel) by $($item.triagedBy) at $($item.triagedAt)" })
+$(if ($item.fixFeedback) { "- Guidance from the person who sent this (or feedback on a previous attempt): $($item.fixFeedback)" })
 
 ## Description
 $($item.description)
+$(if ($item.guidanceVideoUrl) { "`n## How it should work (a second video recorded by Larry or a developer)`nVideo: $($item.guidanceVideoUrl)`n`n$(if ($item.guidanceTranscript) { $item.guidanceTranscript } else { '(no transcript available; follow the guidance note above)' })`n`nThis video describes the intended behaviour and overrides anything in the original report that conflicts with it." })
 
 ## What the reporter said (voice transcript of the screen recording)
 $($item.transcript)
