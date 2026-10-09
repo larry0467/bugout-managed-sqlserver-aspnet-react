@@ -365,6 +365,32 @@ Nothing is ever merged or deployed by the dispatcher. If the devbox is off, requ
 | POST | `{ticketId}/result` `{ outcome: READY_TO_TEST \| FAILED, summary, testingNotes, links[] }` | key (dispatcher) |
 | POST | `{ticketId}/approve` / `{ticketId}/reject` `{ reason, requeue }` | human admin only |
 
+### The whole team, each on their own Claude plan (`scripts\dev-kit`)
+
+Every developer works tickets in **their own** Claude Code session, so drafting runs on their own
+Claude plan, not the devbox's.
+
+- **Routing.** "Develop with Claude" has a *Who builds it* pick: the devbox, or a developer
+  (`TriageRequest.assignTo` = their email; sets `AssignedTo` / `AssigneeType = HUMAN` /
+  `EscalationStage = ASSIGNED_HUMAN` and emails them). `GET fixes/queue?assignedTo=<email>` is that
+  developer's queue; `assignedTo=none` is everything not handed to a person, which is what the devbox
+  dispatcher takes (`"assignedTo": "none"` in its config).
+- **Kit.** `scripts\dev-kit\Build-DevKit.ps1 -OutFile ...zip` packages `BugOutDev.psm1`, the dispatcher,
+  `Install-BugOutDevKit.ps1` and the `/bugout` Claude Code skill. The installer saves the developer's own
+  service key (with `me` = their Bug Out email and `name`), installs the skill to
+  `%USERPROFILE%\.claude\skills\bugout`, records their repository paths in `fix-dispatcher.json` and checks
+  the key, Claude Code and the Azure DevOps credential. In Claude Code: `/bugout mine`, `/bugout take <id>`
+  (claim, `Export-BugOutTicketBrief`, branch `BugOut_Fix_<id>` from `origin/dev` or continue it),
+  `/bugout done <id>` (push, `New-BugOutPullRequest`, `Complete-BugOutFix READY_TO_TEST`), `release`, `log`, `stage`.
+- **Rework updates the same PR.** A rejected-and-re-queued fix continues on the existing
+  `BugOut_Fix_<id>` branch (dispatcher and skill alike), pushes without force, and `New-BugOutPullRequest`
+  returns the PR already open for that branch instead of creating another.
+- **No duplicate orders.** When a PR names a ticket that is not on the board yet (a `/development/<id>`
+  link in its description, or a `BugOut_Fix_<id>` source branch), the webhook promotes that ticket to an
+  order at `PR_OPEN` instead of creating a second one. Abandoned PRs never promote.
+- Approve / reject stays with Platform Owner and Super Admin. Developers (and their keys) can triage,
+  claim, report and move stages; nothing merges or deploys automatically.
+
 ### From PowerShell (what a Claude Code session does)
 
 ```powershell

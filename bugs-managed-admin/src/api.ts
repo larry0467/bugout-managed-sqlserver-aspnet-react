@@ -867,6 +867,8 @@ export interface FixQueueItem {
   boardUrl: string;
   links: DevelopmentLink[];
   attachments: FixAttachment[];
+  assignedTo?: string | null;
+  assigneeType?: string | null;
 }
 
 export interface AppFixSetting {
@@ -896,8 +898,10 @@ export const fixApi = {
   get: (ticketId: number) => api.get<FixQueueItem>(`/development/fixes/${ticketId}`).then(r => r.data),
   request: (ticketId: number, note?: string) =>
     api.post<FixQueueItem>(`/development/fixes/${ticketId}/request`, { note }).then(r => r.data),
-  triage: (ticketId: number, decision: TriageDecision, note?: string, guidanceVideoUrl?: string) =>
-    api.post<FixQueueItem>(`/development/fixes/${ticketId}/triage`, { decision, note, guidanceVideoUrl }).then(r => r.data),
+  // assignTo (DEVELOP only): a developer's email = they build it in their own
+  // Claude Code session; 'devbox' = the devbox dispatcher; omitted = unchanged.
+  triage: (ticketId: number, decision: TriageDecision, note?: string, guidanceVideoUrl?: string, assignTo?: string) =>
+    api.post<FixQueueItem>(`/development/fixes/${ticketId}/triage`, { decision, note, guidanceVideoUrl, assignTo }).then(r => r.data),
   claim: (ticketId: number, worker?: string) =>
     api.post<FixQueueItem>(`/development/fixes/${ticketId}/claim`, { worker }).then(r => r.data),
   release: (ticketId: number) => api.post<FixQueueItem>(`/development/fixes/${ticketId}/release`).then(r => r.data),

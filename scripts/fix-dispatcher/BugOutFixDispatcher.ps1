@@ -5,10 +5,17 @@
 .DESCRIPTION
   Polls Bug Out (through the service key) for tickets flagged "fix requested" on the
   configured apps, claims the oldest, prepares git worktrees for the app's repos on a
-  branch BugOut_Fix_<ticketId> from origin/dev, writes the ticket context to a folder,
-  runs Claude Code headlessly there, then pushes whatever was committed, opens Azure
-  DevOps pull requests against dev and reports READY_TO_TEST (or FAILED) back to Bug Out.
-  It never merges. One ticket per run; a scheduled task runs it every few minutes.
+  branch BugOut_Fix_<ticketId> (from origin/dev, or continuing that branch when an
+  earlier attempt already pushed it), writes the ticket context to a folder, runs
+  Claude Code headlessly there, then pushes what this run committed (never force),
+  opens the Azure DevOps pull request against dev (or reuses the one already open)
+  and reports READY_TO_TEST (or FAILED) back to Bug Out. It never merges. One ticket
+  per run; a scheduled task runs it every few minutes.
+
+  Any developer can run it on their own machine: Claude Code runs under whoever is
+  logged in, so it uses that person's Claude plan. Set "assignedTo" in the config to
+  your Bug Out email to take only the tickets triage handed to you ("none" on the
+  shared devbox = only tickets nobody was assigned).
 
   Config: %USERPROFILE%\.bugout\fix-dispatcher.json (see fix-dispatcher.sample.json).
   Key:    %USERPROFILE%\.bugout\service-key.json
@@ -66,26 +73,14 @@ function Write-Utf8([string]$Path, [string]$Content) {
     [System.IO.File]::WriteAllText([System.IO.Path]::GetFullPath($Path), $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-function Get-DevOpsPat {
-    # Git Credential Manager holds a PAT for dev.azure.com (user protocall). The
-    # PowerShell pipe into `git credential fill` mangles the trailing blank line,
-    # so ask Git Bash. Never log the result.
-    $bash = 'C:\Program Files\Git\bin\bash.exe'
-    if (-not (Test-Path $bash)) { throw 'Git Bash not found; cannot read the Azure DevOps credential' }
-    $pat = & $bash -c "printf 'protocol=https\nhost=dev.azure.com\nusername=protocall\n\n' | GCM_INTERACTIVE=never git credential fill 2>/dev/null | grep '^password=' | cut -d= -f2-"
-    $pat = ("$pat").Trim()
-    if (-not $pat) { throw 'No Azure DevOps credential in Git Credential Manager' }
-    return $pat
-}
+# Pull requests go through New-BugOutPullRequest (BugOutDev.psm1): it reads
+# the credential for the repository's own remote and returns the PR that is
+# already open for the branch instead of failing on a duplicate, so a re-run
+# after "Reject and re-queue" updates the same PR.
 
-function New-DevOpsPullRequest([string]$Org, [string]$Project, [string]$Repo, [string]$Source, [string]$Target, [string]$Title, [string]$Description) {
-    $pat = Get-DevOpsPat
-    $auth = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
-    if ($Description.Length -gt 3900) { $Description = $Description.Substring(0, 3900) + "`n…" }
-    $body = @{ sourceRefName = "refs/heads/$Source"; targetRefName = "refs/heads/$Target"; title = $Title; description = $Description } | ConvertTo-Json -Depth 4
-    $uri = "https://dev.azure.com/$Org/$Project/_apis/git/repositories/$Repo/pullrequests?api-version=7.1"
-    $resp = Invoke-RestMethod -Method Post -Uri $uri -Headers @{ Authorization = $auth } -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
-    return [pscustomobject]@{ id = $resp.pullRequestId; url = "https://dev.azure.com/$Org/$Project/_git/$Repo/pullrequest/$($resp.pullRequestId)" }
+function Test-RemoteBranch([string]$Dir, [string]$Branch) {
+    $out = @(Invoke-Git $Dir @('ls-remote', '--heads', 'origin', $Branch))
+    return (@($out | Where-Object { $_ -match "refs/heads/$([regex]::Escape($Branch))$" }).Count -gt 0)
 }
 
 function Resolve-ClaudeCommand {
@@ -106,6 +101,10 @@ $maxMinutes = [int](Prop $cfg 'maxMinutesPerFix' 45)
 $workRoot = Prop $cfg 'workRoot' (Join-Path $env:USERPROFILE '.bugout\work')
 $claudeCfg = Prop $cfg 'claude' $null
 $devops = Prop $cfg 'devops' $null
+# Who this dispatcher works for: "none" = tickets nobody was assigned (the
+# devbox), an email = tickets triage handed to that developer (their machine,
+# their Claude plan). Empty = every queued ticket (the old behaviour).
+$assignedTo = [string](Prop $cfg 'assignedTo' '')
 
 # ---------- lock + daily cap ----------
 $lock = Join-Path $bugoutDir 'fix-dispatcher.lock'
@@ -133,7 +132,13 @@ try {
     }
     else {
         $queue = @()
-        foreach ($slug in $pollProjects) { $queue += @(Get-BugOutFixQueue -ProjectSlug $slug -Status REQUESTED -Take 20 -ConfigPath $KeyPath) }
+        foreach ($slug in $pollProjects) {
+            if ($assignedTo) { $queue += @(Get-BugOutFixQueue -ProjectSlug $slug -Status REQUESTED -Take 20 -AssignedTo $assignedTo -ConfigPath $KeyPath) }
+            else { $queue += @(Get-BugOutFixQueue -ProjectSlug $slug -Status REQUESTED -Take 20 -ConfigPath $KeyPath) }
+        }
+        # Belt and braces: an older API ignores assignedTo, so filter here too.
+        if ($assignedTo -eq 'none') { $queue = @($queue | Where-Object { -not ((Prop $_ 'assigneeType' $null) -eq 'HUMAN' -and (Prop $_ 'assignedTo' $null)) }) }
+        elseif ($assignedTo) { $queue = @($queue | Where-Object { (Prop $_ 'assigneeType' $null) -eq 'HUMAN' -and ([string](Prop $_ 'assignedTo' '')).ToLower() -eq $assignedTo.ToLower() }) }
         $queue = @($queue | Sort-Object fixRequestedAt)
         if ($DryRun) {
             Log "queue: $($queue.Count) item(s)"
@@ -175,12 +180,25 @@ try {
         if (Test-Path $ticketRoot) { Remove-Item $ticketRoot -Recurse -Force -ErrorAction SilentlyContinue }
         New-Item -ItemType Directory -Path $ticketRoot -Force | Out-Null
         $wtPaths = @()
+        $startShas = @{}
+        $continued = @()
         foreach ($repo in $repos) {
             $wt = Join-Path $ticketRoot $repo.folder
-            Log "worktree $($repo.name): $wt from origin/$($repo.baseBranch)"
             Invoke-Git $repo.git @('fetch', 'origin', $repo.baseBranch, '--quiet') | Out-Null
             Invoke-Git $repo.git @('worktree', 'prune') | Out-Null
-            Invoke-Git $repo.git @('worktree', 'add', '-B', $branch, $wt, "origin/$($repo.baseBranch)", '--quiet') | Out-Null
+            # A previous attempt (or a developer) already pushed this branch:
+            # continue on it so rework lands in the same branch and PR.
+            if (Test-RemoteBranch $repo.git $branch) {
+                Invoke-Git $repo.git @('fetch', 'origin', "+refs/heads/${branch}:refs/remotes/origin/$branch", '--quiet') | Out-Null
+                Log "worktree $($repo.name): $wt continuing origin/$branch"
+                Invoke-Git $repo.git @('worktree', 'add', '-B', $branch, $wt, "origin/$branch", '--quiet') | Out-Null
+                $continued += $repo.name
+            }
+            else {
+                Log "worktree $($repo.name): $wt from origin/$($repo.baseBranch)"
+                Invoke-Git $repo.git @('worktree', 'add', '-B', $branch, $wt, "origin/$($repo.baseBranch)", '--quiet') | Out-Null
+            }
+            $startShas[$repo.name] = (@(Invoke-Git $wt @('rev-parse', 'HEAD')) | Select-Object -First 1).Trim()
             $wtPaths += $wt
         }
 
@@ -234,10 +252,17 @@ $(if ($item.testingNotes) { "## Existing testing notes`n$($item.testingNotes)" }
 "@
         Write-Utf8 (Join-Path $ticketRoot 'TICKET.md') $ticketMd
 
-        $repoLines = foreach ($r in $repos) { "- ``$($r.folder)\`` = $($r.name) ($($r.kind)), branch ``$branch`` from ``origin/$($r.baseBranch)``. Build: ``$($r.build)``" }
+        $repoLines = foreach ($r in $repos) {
+            $from = if ($continued -contains $r.name) { "continuing the existing ``origin/$branch`` (a previous attempt)" } else { "from ``origin/$($r.baseBranch)``" }
+            "- ``$($r.folder)\`` = $($r.name) ($($r.kind)), branch ``$branch`` $from. Build: ``$($r.build)``"
+        }
+        $reworkNote = ''
+        if ($continued.Count -gt 0) {
+            $reworkNote = "`nThis is REWORK: a previous attempt is already on the branch and its PR is open. Read the feedback in TICKET.md, look at what the earlier commits did (git log origin/$($repos[0].baseBranch)..HEAD), and change only what the feedback asks for. Add new commits; do not rewrite or revert history unless the feedback says the earlier approach was wrong.`n"
+        }
         $instructions = @"
 You are drafting a fix for Bug Out ticket #$id in $($item.projectName). Read TICKET.md in this folder first; screenshots are in attachments\.
-
+$reworkNote
 Repositories (git worktrees in this folder; each is already on branch $branch):
 $($repoLines -join "`n")
 
@@ -307,7 +332,8 @@ Rules
         $touched = @()
         foreach ($repo in $repos) {
             $wt = Join-Path $ticketRoot $repo.folder
-            $ahead = @(Invoke-Git $wt @('log', '--oneline', "origin/$($repo.baseBranch)..HEAD")) | Where-Object { $_ }
+            # Only what THIS run committed counts (a continued branch already has commits).
+            $ahead = @(Invoke-Git $wt @('log', '--oneline', "$($startShas[$repo.name])..HEAD")) | Where-Object { $_ }
             if ($ahead.Count -gt 0) { $touched += [pscustomobject]@{ repo = $repo; wt = $wt; commits = $ahead } }
         }
 
@@ -318,14 +344,17 @@ Rules
 
         if ($declared -eq 'READY_TO_TEST') {
             foreach ($t in $touched) {
-                Log "pushing $($t.repo.name) $branch ($($t.commits.Count) commit(s))"
-                Invoke-Git $t.wt @('push', '--force-with-lease', '-u', 'origin', $branch, '--quiet') | Out-Null
+                Log "pushing $($t.repo.name) $branch ($($t.commits.Count) new commit(s))"
+                # Plain push, never force: the branch either did not exist or we
+                # built on top of it, so this is a fast-forward and nobody's
+                # commits are overwritten.
+                Invoke-Git $t.wt @('push', '-u', 'origin', $branch, '--quiet') | Out-Null
                 $links += @{ kind = 'BRANCH'; repo = $t.repo.name; name = $branch; url = "https://dev.azure.com/$($devops.org)/$($devops.project)/_git/$($t.repo.name)?version=GB$branch" }
 
                 $prTitle = "BugOut #${id}: $($item.title)"
                 if ($prTitle.Length -gt 250) { $prTitle = $prTitle.Substring(0, 250) }
                 $prBody = @"
-Drafted by Claude Code on the devbox from Bug Out ticket #$id ($($item.projectName)). **Review before merging** — nothing is merged or deployed automatically.
+Drafted by Claude Code ($worker) from Bug Out ticket #$id ($($item.projectName)). **Review before merging** — nothing is merged or deployed automatically.
 
 Deploy target: beta
 
@@ -343,8 +372,8 @@ Commits: $($t.commits -join '; ')
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 "@
                 try {
-                    $pr = New-DevOpsPullRequest -Org $devops.org -Project $devops.project -Repo $t.repo.name -Source $branch -Target $t.repo.baseBranch -Title $prTitle -Description $prBody
-                    Log "PR $($pr.id) opened: $($pr.url)"
+                    $pr = New-BugOutPullRequest -RepoPath $t.wt -Branch $branch -Target $t.repo.baseBranch -Title $prTitle -Description $prBody
+                    if ($pr.existing) { Log "PR $($pr.id) already open; the push updated it: $($pr.url)" } else { Log "PR $($pr.id) opened: $($pr.url)" }
                     $links += @{ kind = 'PR'; repo = $t.repo.name; name = "PR $($pr.id)"; url = $pr.url; note = "into $($t.repo.baseBranch)" }
                 }
                 catch {

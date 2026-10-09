@@ -84,7 +84,11 @@ public class DevelopmentFixController : ControllerBase
         string? TriageDecision, string? TriageDecisionLabel, string? TriagedBy, DateTime? TriagedAt,
         string? GuidanceVideoUrl, string? GuidanceTranscript,
         bool IsDevelopmentOrder, string? DevelopmentStage, string BoardUrl,
-        List<DevelopmentController.LinkDto> Links, List<FixAttachmentDto> Attachments);
+        List<DevelopmentController.LinkDto> Links, List<FixAttachmentDto> Attachments,
+        // Who builds it: a developer's email when triage (or the escalation
+        // panel) handed it to a person, so their own Claude Code session picks
+        // it up; null / CLAUDE means whoever's dispatcher gets there first.
+        string? AssignedTo = null, string? AssigneeType = null);
 
     public record AppFixSettingDto(long Id, string Name, string Slug, bool AutoDraftFixes, int Requested, int Claimed, int ReadyToTest,
         bool VideosManagedRecorder = false, string? VideosManagedKeyPrefix = null);
@@ -92,7 +96,14 @@ public class DevelopmentFixController : ControllerBase
     // Null or empty clears the key.
     public record RecorderKeyRequest(string? ApiKey);
     public record RequestFixRequest(string? Note);
-    public record TriageRequest(string Decision, string? Note, string? GuidanceVideoUrl);
+    // AssignTo (DEVELOP only): a developer's email hands the work to that
+    // person's own Claude Code session; "devbox" clears a person so the devbox
+    // dispatcher takes it; null leaves the assignment as it is.
+    public record TriageRequest(string Decision, string? Note, string? GuidanceVideoUrl, string? AssignTo = null);
+
+    public const string AssignToDevbox = "devbox";
+    // Queue filter value for "nobody in particular" (unassigned or assigned to Claude).
+    public const string AssignedToNone = "none";
     public record ClaimRequest(string? Worker);
     public record FixResultRequest(string Outcome, string? Summary, List<DevelopmentController.LinkRequest>? Links, string? TestingNotes);
     public record RejectRequest(string? Reason, bool Requeue);
@@ -192,13 +203,27 @@ public class DevelopmentFixController : ControllerBase
 
     // ===== queue =====
 
+    // assignedTo: omitted = everything; "none" = not handed to a person (what
+    // the devbox dispatcher takes); an email = that developer's work (what
+    // their own session or dispatcher takes).
     [HttpGet("queue")]
-    public async Task<IActionResult> Queue([FromQuery] string? projectSlug, [FromQuery] string? status, [FromQuery] int take = 20)
+    public async Task<IActionResult> Queue([FromQuery] string? projectSlug, [FromQuery] string? status, [FromQuery] int take = 20, [FromQuery] string? assignedTo = null)
     {
         if (_org.CurrentOrganizationId == null) return Unauthorized(new { message = "No organization context" });
 
         var wanted = FixStatuses.Normalize(status) ?? FixStatuses.Requested;
         var q = _db.Tickets.Where(t => t.FixStatus == wanted);
+        var assignee = assignedTo?.Trim();
+        if (!string.IsNullOrEmpty(assignee))
+        {
+            if (string.Equals(assignee, AssignedToNone, StringComparison.OrdinalIgnoreCase))
+                q = q.Where(t => t.AssignedTo == null || t.AssigneeType != "HUMAN");
+            else
+            {
+                var email = assignee.ToLower();
+                q = q.Where(t => t.AssigneeType == "HUMAN" && t.AssignedTo != null && t.AssignedTo.ToLower() == email);
+            }
+        }
         if (!string.IsNullOrWhiteSpace(projectSlug))
         {
             var slug = projectSlug.Trim();
@@ -261,6 +286,18 @@ public class DevelopmentFixController : ControllerBase
         if (decision == TriageDecisions.Develop && ticket.FixStatus == FixStatuses.Claimed)
             return Conflict(new { message = "A fix is being drafted right now; release it first", fixStatus = ticket.FixStatus });
 
+        // Who builds it (DEVELOP only). Resolved before anything changes so a
+        // bad email is a clean 400.
+        var assignTo = decision == TriageDecisions.Develop ? DevelopmentOrderService.Clean(body.AssignTo) : null;
+        User? assignee = null;
+        if (assignTo != null && !string.Equals(assignTo, AssignToDevbox, StringComparison.OrdinalIgnoreCase))
+        {
+            var email = assignTo.ToLower();
+            assignee = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+            if (assignee == null || assignee.Role is not ("DEVELOPER" or "PLATFORM_OWNER" or "SUPER_ADMIN"))
+                return BadRequest(new { message = $"{assignTo} is not a developer on this team" });
+        }
+
         var now = DateTime.UtcNow;
         var actorEmail = CallerEmail();
         var actorName = CallerName();
@@ -293,9 +330,22 @@ public class DevelopmentFixController : ControllerBase
         {
             case TriageDecisions.Develop:
                 QueueForFix(ticket, note, now);
+                if (assignee != null)
+                {
+                    AssignToDeveloper(ticket, assignee, actorEmail, now);
+                }
+                else if (assignTo != null && ticket.AssigneeType == "HUMAN")
+                {
+                    // "devbox": hand it back to whoever's dispatcher gets there first.
+                    ticket.AssignedTo = null;
+                    ticket.AssigneeType = null;
+                    ticket.AssignedAt = null;
+                    ticket.AssignedBy = null;
+                }
+                var builder = assignee != null ? $"{assignee.FullName} ({assignee.Email}) to build with their own Claude Code" : "Claude to develop";
                 _activity.Log(ticket, "TRIAGE_DEVELOP",
-                    $"{actorName} watched the video and sent this to Claude to develop" + (note != null ? $" — {note}" : ""),
-                    actorEmail, actorName, payload: new { decision, note, guidanceUrl });
+                    $"{actorName} watched the video and sent this to {builder}" + (note != null ? $" — {note}" : ""),
+                    actorEmail, actorName, payload: new { decision, note, guidanceUrl, assignedTo = assignee?.Email });
                 break;
 
             case TriageDecisions.Rerecord:
@@ -331,11 +381,39 @@ public class DevelopmentFixController : ControllerBase
         // today (Comms email with the resolution text); best effort.
         if (decision == TriageDecisions.UserError || decision == TriageDecisions.Declined)
             _ = _notify.NotifyReporterResolvedAsync(ticket);
+        // The developer it was handed to gets the usual assignment email.
+        if (assignee != null)
+            _ = _notify.NotifyTicketAssignedToDevAsync(ticket, assignee.Email);
 
         _audit.Record(action: "development.triage", outcome: "success", actorEmail: actorEmail, organizationId: ticket.OrganizationId,
             targetTicketId: ticket.Id, extra: new Dictionary<string, object?> { ["decision"] = decision, ["label"] = label, ["guidanceVideo"] = guidanceUrl != null });
 
         return Ok(await ToItemAsync(ticket, withBlobUrls: false));
+    }
+
+    // Same columns and stage row as TicketController.AssignToHuman, so the
+    // escalation panel and the board both show who has it.
+    private void AssignToDeveloper(Ticket ticket, User dev, string actorEmail, DateTime now)
+    {
+        var fromStage = ticket.EscalationStage;
+        ticket.AssignedTo = dev.Email;
+        ticket.AssigneeType = "HUMAN";
+        ticket.AssignedAt = now;
+        ticket.AssignedBy = actorEmail;
+        if (fromStage != "ASSIGNED_HUMAN")
+        {
+            ticket.EscalationStage = "ASSIGNED_HUMAN";
+            _db.TicketStageHistory.Add(new TicketStageHistory
+            {
+                TicketId = ticket.Id,
+                OrganizationId = ticket.OrganizationId,
+                FromStage = fromStage,
+                ToStage = "ASSIGNED_HUMAN",
+                ChangedBy = actorEmail,
+                ChangedAt = now,
+                Note = "assigned at triage (Develop with Claude)",
+            });
+        }
     }
 
     private static void QueueForFix(Ticket ticket, string? note, DateTime now)
@@ -571,7 +649,7 @@ public class DevelopmentFixController : ControllerBase
             t.TriageDecision, t.TriageDecision != null && TriageDecisions.Labels.TryGetValue(t.TriageDecision, out var tl) ? tl : null,
             t.TriagedBy, t.TriagedAt, t.GuidanceVideoUrl, t.GuidanceTranscript,
             t.IsDevelopmentOrder, t.DevelopmentStage, BoardUrl(t.Id),
-            links, attachmentDtos);
+            links, attachmentDtos, t.AssignedTo, t.AssigneeType);
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";

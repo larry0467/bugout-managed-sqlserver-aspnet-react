@@ -354,6 +354,10 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
   const [triageModal, setTriageModal] = useState<{ ticket: Ticket; decision: TriageDecision } | null>(null);
   const [triageNote, setTriageNote] = useState('');
   const [triageVideoUrl, setTriageVideoUrl] = useState('');
+  // Who builds it ("Develop with Claude" only): 'devbox' = the devbox
+  // dispatcher on Larry's Claude account; an email = that developer, in their
+  // own Claude Code session on their own plan.
+  const [triageAssignTo, setTriageAssignTo] = useState<string>('devbox');
   const canDecideFix = (() => {
     try {
       const raw = localStorage.getItem('bom_user');
@@ -662,15 +666,22 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
     setTriageModal({ ticket: t, decision });
     setTriageNote('');
     setTriageVideoUrl(t.guidanceVideoUrl ?? '');
+    setTriageAssignTo(t.assigneeType === 'HUMAN' && t.assignedTo ? t.assignedTo : 'devbox');
   };
+
+  const developerOptions = teamMembers.filter((m) => m.role === 'DEVELOPER' || m.role === 'PLATFORM_OWNER' || m.role === 'SUPER_ADMIN');
 
   const handleTriage = async () => {
     if (!triageModal) return;
     const { ticket, decision } = triageModal;
     try {
-      await fixApi.triage(ticket.id, decision, triageNote.trim() || undefined, triageVideoUrl.trim() || undefined);
+      await fixApi.triage(ticket.id, decision, triageNote.trim() || undefined, triageVideoUrl.trim() || undefined,
+        decision === 'DEVELOP' ? triageAssignTo : undefined);
+      const builder = developerOptions.find((m) => m.email === triageAssignTo);
       const done: Record<TriageDecision, string> = {
-        DEVELOP: `#${ticket.id} sent to Claude — the devbox picks it up on its next pass`,
+        DEVELOP: builder
+          ? `#${ticket.id} sent to ${builder.fullName} — it is in their queue for their own Claude Code session`
+          : `#${ticket.id} sent to Claude — the devbox picks it up on its next pass`,
         RERECORD: `#${ticket.id} marked as needing a better video`,
         USER_ERROR: `#${ticket.id} resolved as user error; the reporter gets your note`,
         DECLINED: `#${ticket.id} declined; the reporter gets your reason`,
@@ -1720,8 +1731,9 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
               disabled={record.fixStatus === 'REQUESTED' || record.fixStatus === 'CLAIMED'}
               onClick={() => openTriage(record, 'DEVELOP')}
             >
-              {record.fixStatus === 'REQUESTED' ? 'Queued for Claude'
-                : record.fixStatus === 'CLAIMED' ? 'Claude is working on it'
+              {record.fixStatus === 'REQUESTED'
+                ? (record.assigneeType === 'HUMAN' && record.assignedTo ? `Queued for ${record.assignedTo}` : 'Queued for Claude')
+                : record.fixStatus === 'CLAIMED' ? `${record.fixClaimedBy || 'Claude'} is working on it`
                 : record.fixStatus === 'FAILED' || record.fixStatus === 'REJECTED' ? 'Send to Claude again'
                 : 'Develop with Claude'}
             </Button>
@@ -2255,6 +2267,22 @@ const TicketsPage: React.FC<TicketsPageProps> = ({ isPlatformAdmin }) => {
         {triageModal && (
           <>
             <Text type="secondary">{triageDecisionMeta[triageModal.decision].help}</Text>
+            {triageModal.decision === 'DEVELOP' && (
+              <div style={{ marginTop: 12 }}>
+                <Text strong style={{ display: 'block', marginBottom: 4 }}>Who builds it</Text>
+                <Select
+                  style={{ width: '100%' }}
+                  value={triageAssignTo}
+                  onChange={setTriageAssignTo}
+                  showSearch
+                  optionFilterProp="label"
+                  options={[
+                    { value: 'devbox', label: 'The devbox (Claude Code on the devbox, runs by itself)' },
+                    ...developerOptions.map((m) => ({ value: m.email, label: `${m.fullName} (${m.email}) — their own Claude Code session` })),
+                  ]}
+                />
+              </div>
+            )}
             {(triageModal.decision === 'DEVELOP' || triageModal.decision === 'RERECORD') && (
               <Input
                 style={{ marginTop: 12 }}

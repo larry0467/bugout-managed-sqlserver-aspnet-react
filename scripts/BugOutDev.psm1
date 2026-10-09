@@ -40,18 +40,39 @@ function Get-BugOutDevConfig {
 }
 
 function Set-BugOutDevConfig {
+    # -Me is your Bug Out login email: tickets handed to you at triage are the
+    # ones "Get-BugOutFixQueue -Mine" returns. -Name labels your claims
+    # ("Dilpreet - laptop"). Omitted values keep what the file already has.
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$Key,
-        [string]$ApiBase = $script:DefaultApiBase,
+        [string]$Key,
+        [string]$ApiBase,
         [string]$Org,
+        [string]$Me,
+        [string]$Name,
         [string]$Path = $script:DefaultConfigPath
     )
+    $existing = $null
+    if (Test-Path -LiteralPath $Path) {
+        try { $existing = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $existing = $null }
+    }
+    function Old([string]$n) { if ($null -ne $existing -and ($existing.PSObject.Properties.Name -contains $n)) { return [string]$existing.$n } return $null }
+
+    if (-not $Key) { $Key = Old 'key' }
+    if (-not $Key) { throw 'Pass -Key (the bsk_ service key) the first time.' }
     if (-not $Key.StartsWith('bsk_')) { throw "That does not look like a Bug Out service key (expected the bsk_ prefix)." }
+    if (-not $ApiBase) { $ApiBase = Old 'apiBase' }
+    if (-not $ApiBase) { $ApiBase = $script:DefaultApiBase }
+    if (-not $Org) { $Org = Old 'org' }
+    if (-not $Me) { $Me = Old 'me' }
+    if (-not $Name) { $Name = Old 'name' }
+
     $dir = Split-Path -Parent $Path
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $obj = [ordered]@{ key = $Key; apiBase = $ApiBase.TrimEnd('/') }
     if ($Org) { $obj.org = $Org }
+    if ($Me) { $obj.me = $Me.Trim() }
+    if ($Name) { $obj.name = $Name.Trim() }
     $json = $obj | ConvertTo-Json
     # Absolute path + explicit UTF-8 without BOM: Set-Content in 5.1 writes ANSI.
     $full = [System.IO.Path]::GetFullPath($Path)
@@ -274,16 +295,38 @@ function ConvertTo-BugOutLinkBody {
 # ---------- drafted-fix queue (the devbox dispatcher's verbs) ----------
 
 function Get-BugOutFixQueue {
+    # -Mine: tickets triage handed to you (the "me" email in your key file).
+    # -AssignedTo none: tickets not handed to anybody (what the devbox takes).
     [CmdletBinding()]
     param(
         [string]$ProjectSlug,
         [ValidateSet('REQUESTED', 'CLAIMED', 'READY_TO_TEST', 'FAILED', 'APPROVED', 'REJECTED')][string]$Status = 'REQUESTED',
         [int]$Take = 20,
+        [string]$AssignedTo,
+        [switch]$Mine,
         [string]$ConfigPath = $script:DefaultConfigPath
     )
     $q = @{ status = $Status; take = $Take }
     if ($ProjectSlug) { $q.projectSlug = $ProjectSlug }
+    if ($Mine) {
+        $cfg = Get-BugOutDevConfig -Path $ConfigPath
+        if (-not ($cfg.PSObject.Properties.Name -contains 'me') -or -not $cfg.me) { throw "Your key file has no 'me' email. Run: Set-BugOutDevConfig -Me 'you@protocall.co'" }
+        $AssignedTo = $cfg.me
+    }
+    if ($AssignedTo) { $q.assignedTo = $AssignedTo }
     Invoke-BugOutDev -Method GET -Path 'fixes/queue' -Query $q -ConfigPath $ConfigPath
+}
+
+function Get-BugOutWorkerName {
+    # "Dilpreet - LAPTOP-7" from the key file's name, else "<user> on <computer>".
+    param([string]$ConfigPath = $script:DefaultConfigPath)
+    $name = $null
+    try {
+        $cfg = Get-BugOutDevConfig -Path $ConfigPath
+        if ($cfg.PSObject.Properties.Name -contains 'name' -and $cfg.name) { $name = [string]$cfg.name }
+    } catch { }
+    if ($name) { return "$name - $env:COMPUTERNAME" }
+    return "$env:USERNAME on $env:COMPUTERNAME"
 }
 
 function Get-BugOutFix {
@@ -306,7 +349,8 @@ function Request-BugOutFix {
 
 function Start-BugOutFix {
     # Claim a REQUESTED ticket for this worker. 409 when someone else got it first.
-    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$Worker = "devbox $env:COMPUTERNAME", [string]$ConfigPath = $script:DefaultConfigPath)
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$Worker, [string]$ConfigPath = $script:DefaultConfigPath)
+    if (-not $Worker) { $Worker = Get-BugOutWorkerName -ConfigPath $ConfigPath }
     Invoke-BugOutDev -Method POST -Path "fixes/$Id/claim" -Body @{ worker = $Worker } -ConfigPath $ConfigPath
 }
 
@@ -332,6 +376,174 @@ function Complete-BugOutFix {
     if ($TestingNotes) { $body.testingNotes = $TestingNotes }
     if ($Links) { $body.links = @($Links | ForEach-Object { ConvertTo-BugOutLinkBody $_ }) }
     Invoke-BugOutDev -Method POST -Path "fixes/$Id/result" -Body $body -ConfigPath $ConfigPath
+}
+
+# ---------- working a ticket in your own session ----------
+
+function Export-BugOutTicketBrief {
+    # Writes TICKET.md (what the reporter said and saw, console/network errors,
+    # page, tenant, triage guidance, feedback from a rejected attempt) and
+    # downloads the screenshots, so a Claude Code session reads one file instead
+    # of the API. Default folder: %USERPROFILE%\.bugout\tickets\<id>.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][long]$Id, [string]$Folder, [string]$ConfigPath = $script:DefaultConfigPath)
+    $t = Get-BugOutFix -Id $Id -ConfigPath $ConfigPath
+    if (-not $Folder) { $Folder = Join-Path $env:USERPROFILE (".bugout\tickets\{0}" -f $Id) }
+    $att = Join-Path $Folder 'attachments'
+    if (-not (Test-Path -LiteralPath $att)) { New-Item -ItemType Directory -Path $att -Force | Out-Null }
+
+    function V($o, [string]$n) { if ($null -ne $o -and ($o.PSObject.Properties.Name -contains $n) -and $null -ne $o.$n) { return [string]$o.$n } return '' }
+
+    $attLines = @()
+    foreach ($a in @($t.attachments)) {
+        if ($null -eq $a) { continue }
+        $file = (V $a 'fileName') -replace '[^\w\.\-]', '_'
+        if (V $a 'url') {
+            try { Invoke-WebRequest -Uri $a.url -OutFile (Join-Path $att $file) -UseBasicParsing -TimeoutSec 60; $attLines += "- attachments\$file ($(V $a 'contentType'))" }
+            catch { $attLines += "- $(V $a 'fileName'): could not download ($($_.Exception.Message))" }
+        }
+        else { $attLines += "- $(V $a 'fileName') (no url)" }
+    }
+    $links = @($t.links | Where-Object { $_ } | ForEach-Object { "- $($_.kind) $(V $_ 'repo') $($_.name) $(V $_ 'url')" })
+    $fence = '```'
+    $md = @"
+# Bug Out ticket #$Id - $(V $t 'title')
+
+- App: $(V $t 'projectName') ($(V $t 'projectSlug'))
+- Type / priority / status: $(V $t 'ticketType') / $(V $t 'priority') / $(V $t 'status') - fix status $(V $t 'fixStatus')
+- Reported by: $(V $t 'submittedBy') at $(V $t 'createdAt')
+- Page: $(V $t 'currentPageName') - $(V $t 'currentPageUrl')
+- Browser: $(V $t 'browserInfo') ($(V $t 'screenWidth')x$(V $t 'screenHeight'))
+- Tenant: $(V $t 'tenantName') ($(V $t 'tenantId')) db $(V $t 'databaseName') - app version $(V $t 'applicationVersion') - environment $(V $t 'environment')
+- Recording: $(V $t 'videoUrl')
+- Assigned to: $(V $t 'assignedTo')
+- Board: $(V $t 'boardUrl')
+- Triage: $(V $t 'triageDecisionLabel') by $(V $t 'triagedBy') at $(V $t 'triagedAt')
+
+## Guidance / feedback from the person who sent this (overrides the original report where they conflict)
+$(V $t 'fixFeedback')
+
+## How it should work (second video)
+$(V $t 'guidanceVideoUrl')
+
+$(V $t 'guidanceTranscript')
+
+## Description
+$(V $t 'description')
+
+## What the reporter said (voice transcript of the screen recording)
+$(V $t 'transcript')
+
+## Console errors
+$fence
+$(V $t 'consoleErrors')
+$fence
+
+## Network errors
+$fence
+$(V $t 'networkErrors')
+$fence
+
+## Attachments
+$($attLines -join "`n")
+
+## Previous attempt
+$(V $t 'fixSummary')
+
+## Links already on the ticket
+$($links -join "`n")
+
+## Testing notes so far
+$(V $t 'testingNotes')
+"@
+    $path = Join-Path $Folder 'TICKET.md'
+    [System.IO.File]::WriteAllText([System.IO.Path]::GetFullPath($path), $md, (New-Object System.Text.UTF8Encoding($false)))
+    return [pscustomobject]@{ ticketId = $Id; folder = (Resolve-Path -LiteralPath $Folder).Path; brief = (Resolve-Path -LiteralPath $path).Path; ticket = $t }
+}
+
+function Get-BugOutDevOpsToken {
+    # The Azure DevOps credential Git Credential Manager already holds for this
+    # repository's remote (the one `git push` uses). The request (just the
+    # remote url, no secret) goes to `git credential fill` from a temp file via
+    # cmd's < redirect: PowerShell's pipe mangles the trailing blank line the
+    # protocol needs, and .NET's stdin writer prepends a byte-order mark that
+    # corrupts the first field. The answer is read from a pipe, never written
+    # to disk, never printed. $env:AZURE_DEVOPS_EXT_PAT wins when set.
+    [CmdletBinding()] param([Parameter(Mandatory)][string]$RepoPath)
+    if ($env:AZURE_DEVOPS_EXT_PAT) { return $env:AZURE_DEVOPS_EXT_PAT }
+    $remote = (& git -C $RepoPath remote get-url origin 2>$null | Select-Object -First 1)
+    if (-not $remote) { throw "No 'origin' remote in $RepoPath" }
+    $request = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($request, "url=$remote`n`n", (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = 'cmd.exe'
+        $psi.Arguments = ('/d /c git credential fill < "{0}"' -f $request)
+        $psi.WorkingDirectory = (Resolve-Path -LiteralPath $RepoPath).Path
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.EnvironmentVariables['GCM_INTERACTIVE'] = 'never'
+        $psi.EnvironmentVariables['GIT_TERMINAL_PROMPT'] = '0'
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $out = $p.StandardOutput.ReadToEnd()
+        [void]$p.StandardError.ReadToEnd()
+        $p.WaitForExit(30000) | Out-Null
+    }
+    finally { [System.IO.File]::Delete($request) }
+    foreach ($line in ($out -split "`n")) {
+        if ($line.StartsWith('password=')) { return $line.Substring(9).Trim() }
+    }
+    throw "Git Credential Manager has no credential for $remote. Run 'git fetch' in $RepoPath once (it signs you in), or set `$env:AZURE_DEVOPS_EXT_PAT."
+}
+
+function Get-BugOutDevOpsRepo {
+    # org / project / repository from an Azure DevOps remote:
+    #   https://protocall@dev.azure.com/protocall/WebbasedLLC/_git/ServiceManagerUI
+    #   https://protocall.visualstudio.com/WebbasedLLC/_git/ServiceManagerUI
+    [CmdletBinding()] param([Parameter(Mandatory)][string]$RepoPath)
+    $remote = (& git -C $RepoPath remote get-url origin 2>$null | Select-Object -First 1)
+    $m = [regex]::Match("$remote", 'dev\.azure\.com/(?<org>[^/]+)/(?<project>[^/]+)/_git/(?<repo>[^/?#]+)')
+    if (-not $m.Success) { $m = [regex]::Match("$remote", '//(?:[^@/]+@)?(?<org>[^./]+)\.visualstudio\.com/(?:DefaultCollection/)?(?<project>[^/]+)/_git/(?<repo>[^/?#]+)') }
+    if (-not $m.Success) { throw "origin of $RepoPath is not an Azure DevOps repository: $remote" }
+    $repoName = ($m.Groups['repo'].Value -replace '\.git$', '')
+    return [pscustomobject]@{
+        org = [uri]::UnescapeDataString($m.Groups['org'].Value)
+        project = [uri]::UnescapeDataString($m.Groups['project'].Value)
+        repo = [uri]::UnescapeDataString($repoName)
+    }
+}
+
+function New-BugOutPullRequest {
+    # Opens the pull request for -Branch into -Target, or returns the one that
+    # is already open for that branch (re-runs and rework update the same PR:
+    # pushing to the branch is what updates it). Returns id, url, existing.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter(Mandatory)][string]$Branch,
+        [string]$Target = 'dev',
+        [Parameter(Mandatory)][string]$Title,
+        [string]$Description = ''
+    )
+    $r = Get-BugOutDevOpsRepo -RepoPath $RepoPath
+    $pat = Get-BugOutDevOpsToken -RepoPath $RepoPath
+    $auth = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
+    $base = 'https://dev.azure.com/{0}/{1}/_apis/git/repositories/{2}/pullrequests' -f [uri]::EscapeDataString($r.org), [uri]::EscapeDataString($r.project), [uri]::EscapeDataString($r.repo)
+    $web = 'https://dev.azure.com/{0}/{1}/_git/{2}/pullrequest/' -f $r.org, $r.project, $r.repo
+
+    $find = '{0}?searchCriteria.sourceRefName={1}&searchCriteria.targetRefName={2}&searchCriteria.status=active&api-version=7.1' -f $base, [uri]::EscapeDataString("refs/heads/$Branch"), [uri]::EscapeDataString("refs/heads/$Target")
+    $open = Invoke-RestMethod -Method Get -Uri $find -Headers @{ Authorization = $auth }
+    if ($open.count -gt 0) {
+        $pr = @($open.value)[0]
+        return [pscustomobject]@{ id = $pr.pullRequestId; url = "$web$($pr.pullRequestId)"; repo = $r.repo; existing = $true }
+    }
+    if ($Description.Length -gt 3900) { $Description = $Description.Substring(0, 3900) + "`n..." }
+    if ($Title.Length -gt 250) { $Title = $Title.Substring(0, 250) }
+    $body = @{ sourceRefName = "refs/heads/$Branch"; targetRefName = "refs/heads/$Target"; title = $Title; description = $Description } | ConvertTo-Json -Depth 4
+    $resp = Invoke-RestMethod -Method Post -Uri "$base`?api-version=7.1" -Headers @{ Authorization = $auth } -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+    return [pscustomobject]@{ id = $resp.pullRequestId; url = "$web$($resp.pullRequestId)"; repo = $r.repo; existing = $false }
 }
 
 # ---------- Videos Managed ----------
@@ -409,4 +621,5 @@ Export-ModuleMember -Function Get-BugOutDevConfig, Set-BugOutDevConfig, Invoke-B
     Get-BugOutOrders, Get-BugOutOrder, New-BugOutOrder, Set-BugOutOrderStage, Update-BugOutOrder,
     Add-BugOutOrderLink, Remove-BugOutOrderLink, Get-BugOutShipped,
     Get-BugOutFixQueue, Get-BugOutFix, Get-BugOutFixApps, Request-BugOutFix, Start-BugOutFix, Reset-BugOutFix, Complete-BugOutFix,
+    Get-BugOutWorkerName, Export-BugOutTicketBrief, Get-BugOutDevOpsToken, Get-BugOutDevOpsRepo, New-BugOutPullRequest,
     Get-VideosManagedRecording, ConvertFrom-WebVtt, New-BugOutOrderFromVideo

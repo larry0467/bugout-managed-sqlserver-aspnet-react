@@ -116,6 +116,29 @@ public class AzureDevOpsWebhookService
 
         var ticket = await FindOrderForPullRequestAsync(pr, ct);
         var created = false;
+        var promoted = false;
+
+        // The PR names a ticket that is not on the board yet: a drafted fix or a
+        // developer's own session opened the PR before reporting back (the
+        // dispatcher reports only after every PR exists). Put THAT ticket on the
+        // board instead of creating a second order for the same work.
+        if (ticket == null && pr.Status != "abandoned")
+        {
+            var referenced = await FindReferencedTicketAsync(pr, ct);
+            if (referenced != null)
+            {
+                var keysForPromotion = await _orders.StatusKeysAsync();
+                referenced.IsDevelopmentOrder = true;
+                referenced.DevelopmentStage = DevelopmentStages.PrOpen;
+                DevelopmentOrderService.ApplyStageSideEffects(referenced, null, DevelopmentStages.PrOpen, now, keysForPromotion);
+                _orders.RecordStage(referenced, null, DevelopmentStages.PrOpen, actorEmail, now, $"{pr.Repo} PR {pr.Id} opened by {who}");
+                _activity.Log(referenced, "DEV_ORDER_CREATED",
+                    $"{actorName} put ticket #{referenced.Id} on the Development board from {pr.Repo} PR {pr.Id} opened by {who}",
+                    actorEmail, actorName, payload: new { source = "azure-devops", pr.Repo, pullRequestId = pr.Id, author = who, promoted = true });
+                ticket = referenced;
+                promoted = true;
+            }
+        }
 
         if (ticket == null)
         {
@@ -181,7 +204,7 @@ public class AzureDevOpsWebhookService
                 actorEmail, actorName, payload: new { source = "azure-devops", pr.Repo, pullRequestId = pr.Id, links = addedLinks });
         }
 
-        var action = created ? "order-created" : "order-matched";
+        var action = created ? "order-created" : promoted ? "ticket-promoted" : "order-matched";
         var keys = await _orders.StatusKeysAsync();
 
         switch (pr.Status)
@@ -276,6 +299,27 @@ public class AzureDevOpsWebhookService
         }
 
         return null;
+    }
+
+    // A ticket (not yet a development order) named by the PR: the board url in
+    // the description, or a BugOut_Fix_<id> source branch (the dispatcher's and
+    // the developer kit's branch name).
+    private async Task<Ticket?> FindReferencedTicketAsync(PullRequestInfo pr, CancellationToken ct)
+    {
+        long? id = null;
+        if (!string.IsNullOrWhiteSpace(pr.Description))
+        {
+            var m = Regex.Match(pr.Description, @"/development/(\d+)\b");
+            if (m.Success && long.TryParse(m.Groups[1].Value, out var fromDescription)) id = fromDescription;
+        }
+        if (id == null && pr.SourceBranch.Length > 0)
+        {
+            var b = Regex.Match(pr.SourceBranch, @"(?:^|/)BugOut_Fix_(\d+)$", RegexOptions.IgnoreCase);
+            if (b.Success && long.TryParse(b.Groups[1].Value, out var fromBranch)) id = fromBranch;
+        }
+        if (id == null) return null;
+        // Org-scoped by the global query filter.
+        return await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id.Value && !t.IsDevelopmentOrder, ct);
     }
 
     private async Task<Project?> ResolveProjectForRepoAsync(string repo, CancellationToken ct)

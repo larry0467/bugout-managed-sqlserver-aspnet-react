@@ -1,5 +1,6 @@
 {
   "worker": "devbox",
+  "assignedTo": "none",
   "pollProjects": [ "service-managed" ],
   "maxPerDay": 6,
   "maxMinutesPerFix": 45,
