@@ -1,6 +1,6 @@
 ---
 name: bugout
-description: Work Bug Out Managed tickets and development orders from this Claude Code session on the developer's own Claude plan. List the tickets assigned to me, take one (claim it, read the brief, branch), finish it (push, open or update the Azure DevOps PR, report "fix ready to test"), release it, rework it after a rejection, log my own work and move stages on the Development board. Use when the user mentions Bug Out, a ticket number to fix, the Development board, or says mine / take / done / release / log / stage.
+description: Work Bug Out Managed tickets and development orders from this Claude Code session on the developer's own Claude plan. List the tickets assigned to me, take one (claim it, read the brief, branch), finish it (write the test checklist, push, open or update the Azure DevOps PR, report "fix ready to test"), release it, rework it after a rejection, log my own work (as a phase of an initiative when it continues one) and move stages on the Development board. Use when the user mentions Bug Out, a ticket number to fix, the Development board, a test checklist, or says mine / take / done / release / log / stage.
 ---
 
 # Bug Out: working tickets in your own Claude Code session
@@ -66,8 +66,17 @@ tickets (`Get-BugOutFixQueue -AssignedTo none`) belong to the devbox unless Larr
    no unrelated refactors or new packages. A schema change needs a migration script in the same PR and a
    "run the migration first" line in the testing notes.
 5. Build what you touched (the repo's `build` command) and run the quick tests near the change.
-6. Show the user the diff and a two-line summary, and **wait for their OK** before pushing. The developer
-   owns what goes up.
+6. Write the **test checklist** for whoever tests it: 3-10 concrete lines from what you actually changed, each
+   with what to do, what they should see, and where it can be tried (LOCAL, DEV, BETA or ANY). Include the
+   regression check next to the change (what must still work). Real record numbers when you know them.
+   ```powershell
+   Add-BugOutTests -Id <id> -Replace -Tests @(
+     @{ text = 'Open WO 90001 > Estimates, click Draft with AI'; expected = 'The draft lists This price assumes / Not included'; environment = 'LOCAL' },
+     @{ text = 'Approve the quote, then reopen it'; expected = 'Totals unchanged (regression)'; environment = 'ANY' }
+   )
+   ```
+7. Show the user the diff, a two-line summary and the checklist, and **wait for their OK** before pushing.
+   The developer owns what goes up.
 
 ## done <id> (after the user said OK)
 
@@ -78,7 +87,8 @@ tickets (`Get-BugOutFixQueue -AssignedTo none`) belong to the devbox unless Larr
    $pr = New-BugOutPullRequest -RepoPath '<repo path>' -Branch 'BugOut_Fix_<id>' -Target dev `
            -Title 'BugOut #<id>: <ticket title>' -Description $body
    ```
-   `$body` (markdown) must contain: what was wrong and what changed; `## How to test` with steps;
+   `$body` (markdown) must contain: what was wrong and what changed; the test checklist from
+   `Get-BugOutTestChecklistMarkdown -Id <id>` (testers record Pass / Fail on the board, not in the PR);
    the line `Deploy target: beta`; `**Ticket:** <boardUrl>`; `**Recording:** <videoUrl>` when there is one;
    and end with `Generated with Claude Code`. If `$pr.existing` is true the PR was already open and the
    push updated it.
@@ -119,6 +129,23 @@ $o.order.boardUrl   # put this in the PR description; the webhook then links the
 ```
 
 Add links by hand when needed: `Add-BugOutOrderLink -Id <id> -Kind PR -Repo ServiceManagerUI -Name 'PR 4401' -Url '<url>' -Note 'into dev'`.
+
+**One effort, several videos = one initiative.** Before logging, look for an existing initiative or order the new
+video continues (`Get-BugOutOrders -ProjectSlug <app> -Search '<keyword>'`; initiatives have `isInitiative`). If it
+continues one, log it as the next phase and say what it is stacked on (the order whose branch you branch from):
+
+```powershell
+$o = New-BugOutOrderFromVideo -VideoUrl '<share link>' -ProjectSlug service-managed -ParentOrderId <initiative id> -DependsOnOrderId <base order id>
+# Related orders that are not grouped yet:
+New-BugOutInitiative -Title '<the whole effort>' -OrderIds <oldest>, <next>, <next>    # each builds on the one before
+# Waits for another order to be LIVE (a mobile build on its API), not just merged:
+Set-BugOutOrderPlacement -Id <id> -InitiativeId <initiative id> -DependsOnOrderId <api order> -DependsOnStage PRODUCTION
+```
+
+The board flags a phase **ahead of** its base (merged or deployed before what it is stacked on); merge in phase order.
+An initiative's stage follows its phases: move the phases, never the initiative.
+
+Every logged order gets a test checklist (`Add-BugOutTests`, see `take` step 6) before it reaches local demo / PR open.
 
 ## stage <id> <STAGE>
 

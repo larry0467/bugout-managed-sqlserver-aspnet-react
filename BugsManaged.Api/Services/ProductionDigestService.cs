@@ -49,8 +49,10 @@ public class ProductionDigestService
         var today = localNow.Date;
 
         // Runs from a hosted service: no org context, so filters must be off.
+        // Initiatives are left out: each of their phases is announced on its own.
         var pending = await _db.Tickets.IgnoreQueryFilters()
             .Where(t => t.IsDevelopmentOrder && t.ProductionAt != null && t.DigestSentAt == null)
+            .Where(t => !_db.Tickets.Any(c => c.ParentOrderId == t.Id && c.IsDevelopmentOrder))
             .OrderBy(t => t.ProductionAt)
             .ToListAsync(ct);
         if (pending.Count == 0) return 0;

@@ -662,6 +662,93 @@ export interface DevelopmentOrder {
   boardUrl: string;
   updatedAt: string;
   links: DevelopmentLink[];
+  // Initiatives: an order holding numbered phases. Its stage follows its
+  // least-advanced phase; a phase names its initiative and position.
+  isInitiative?: boolean;
+  parentOrderId?: number | null;
+  parentTitle?: string | null;
+  phaseNumber?: number | null;
+  phaseCount?: number | null;
+  // "Builds on": the order that has to reach dependsOnStage (default merged
+  // to dev) before this one moves past PR open.
+  dependsOnOrderId?: number | null;
+  dependsOnStage?: DevelopmentStage | null;
+  sequence?: DevelopmentSequence | null;
+  phases?: DevelopmentPhase[] | null;
+  tests?: DevelopmentTestSummary | null;
+}
+
+export type DevelopmentSequenceState = 'NONE' | 'WAITING' | 'READY' | 'AHEAD' | 'DONE';
+
+export interface DevelopmentSequence {
+  state: DevelopmentSequenceState;
+  baseOrderId?: number | null;
+  baseTitle?: string | null;
+  baseStage?: DevelopmentStage | null;
+  gate: DevelopmentStage;
+  gateLabel: string;
+  message?: string | null;
+}
+
+export interface DevelopmentTestSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  untested: number;
+}
+
+export interface DevelopmentPhase {
+  id: number;
+  phaseNumber?: number | null;
+  title: string;
+  stage: DevelopmentStage;
+  stageLabel: string;
+  stageOrder: number;
+  dependsOnOrderId?: number | null;
+  dependsOnStage?: DevelopmentStage | null;
+  sequenceState: DevelopmentSequenceState;
+  sequenceMessage?: string | null;
+  tests: DevelopmentTestSummary;
+}
+
+export type DevelopmentTestEnvironment = 'ANY' | 'LOCAL' | 'DEV' | 'BETA';
+export type DevelopmentTestResult = 'PASS' | 'FAIL';
+
+export const developmentTestEnvironments: { key: DevelopmentTestEnvironment; label: string }[] = [
+  { key: 'ANY', label: 'Anywhere' },
+  { key: 'LOCAL', label: 'Local' },
+  { key: 'DEV', label: 'Dev' },
+  { key: 'BETA', label: 'Beta' },
+];
+
+export interface DevelopmentTestItem {
+  id: number;
+  text: string;
+  expected?: string | null;
+  environment: DevelopmentTestEnvironment;
+  environmentLabel: string;
+  sortOrder: number;
+  result?: DevelopmentTestResult | null;
+  resultNote?: string | null;
+  testedIn?: DevelopmentTestEnvironment | null;
+  testedBy?: string | null;
+  testedAt?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export interface DevelopmentPhaseTests {
+  orderId: number;
+  phaseNumber?: number | null;
+  title: string;
+  stage: DevelopmentStage;
+  items: DevelopmentTestItem[];
+}
+
+export interface DevelopmentTestItemInput {
+  text: string;
+  expected?: string;
+  environment?: DevelopmentTestEnvironment;
 }
 
 export interface DevelopmentStageChange {
@@ -677,6 +764,9 @@ export interface DevelopmentOrderDetail {
   transcript?: string | null;
   stageHistory: DevelopmentStageChange[];
   activity: TicketActivity[];
+  tests?: DevelopmentTestItem[] | null;
+  // An initiative's drawer shows every phase's checklist.
+  phaseTests?: DevelopmentPhaseTests[] | null;
 }
 
 export interface DevelopmentProject {
@@ -707,6 +797,31 @@ export interface CreateDevelopmentOrderInput {
   priority?: string;
   links?: DevelopmentLinkInput[];
   testingNotes?: string;
+  parentOrderId?: number;
+  phaseNumber?: number;
+  dependsOnOrderId?: number;
+  dependsOnStage?: DevelopmentStage;
+  tests?: DevelopmentTestItemInput[];
+}
+
+// Full replacement: null parentOrderId = standalone, null dependsOnOrderId = builds on nothing.
+export interface DevelopmentPlacementInput {
+  parentOrderId: number | null;
+  phaseNumber?: number | null;
+  dependsOnOrderId: number | null;
+  dependsOnStage?: DevelopmentStage | null;
+}
+
+export interface DevelopmentGroupInput {
+  orderIds: number[];
+  // A new initiative needs a title; pass initiativeId to append instead.
+  title?: string;
+  summary?: string;
+  projectId?: number;
+  initiativeId?: number;
+  // Each phase builds on the one before it (stacked branches).
+  chain?: boolean;
+  dependsOnStage?: DevelopmentStage;
 }
 
 // PATCH semantics: omit a field to leave it, send '' to clear it.
@@ -730,6 +845,8 @@ export interface DevelopmentListParams {
   needsAnnouncement?: boolean;
   search?: string;
   includeAnnounced?: boolean;
+  // An initiative brings every phase along, even ones the filters hide.
+  includePhases?: boolean;
 }
 
 export const developmentApi = {
@@ -746,7 +863,26 @@ export const developmentApi = {
     if (params.needsAnnouncement) q.needsAnnouncement = true;
     if (params.search) q.search = params.search;
     if (params.includeAnnounced === false) q.includeAnnounced = false;
+    if (params.includePhases) q.includePhases = true;
     return api.get<DevelopmentOrder[]>('/development/orders', { params: q }).then(r => r.data);
+  },
+  setPlacement: (id: number, input: DevelopmentPlacementInput) =>
+    api.put<DevelopmentOrderDetail>(`/development/orders/${id}/placement`, input).then(r => r.data),
+  group: (input: DevelopmentGroupInput) =>
+    api.post<DevelopmentOrderDetail>('/development/initiatives', input).then(r => r.data),
+  tests: {
+    list: (orderId: number) =>
+      api.get<DevelopmentTestItem[]>(`/development/orders/${orderId}/tests`).then(r => r.data),
+    add: (orderId: number, items: DevelopmentTestItemInput[], replace = false) =>
+      api.post<DevelopmentTestItem[]>(`/development/orders/${orderId}/tests`, { items, replace }).then(r => r.data),
+    update: (orderId: number, itemId: number, input: { text?: string; expected?: string; environment?: DevelopmentTestEnvironment; position?: number }) =>
+      api.put<DevelopmentTestItem[]>(`/development/orders/${orderId}/tests/${itemId}`, input).then(r => r.data),
+    record: (orderId: number, itemId: number, result: DevelopmentTestResult | '', note?: string, testedIn?: DevelopmentTestEnvironment) =>
+      api.put<DevelopmentTestItem[]>(`/development/orders/${orderId}/tests/${itemId}/result`, { result, note, testedIn }).then(r => r.data),
+    remove: (orderId: number, itemId: number) =>
+      api.delete(`/development/orders/${orderId}/tests/${itemId}`).then(r => r.data),
+    newRound: (orderId: number, note?: string) =>
+      api.post<DevelopmentTestItem[]>(`/development/orders/${orderId}/tests/new-round`, { note }).then(r => r.data),
   },
   get: (id: number) => api.get<DevelopmentOrderDetail>(`/development/orders/${id}`).then(r => r.data),
   create: (input: CreateDevelopmentOrderInput) =>

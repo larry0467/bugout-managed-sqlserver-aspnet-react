@@ -65,6 +65,97 @@ public static class DevelopmentStages
     };
 }
 
+// Where an order stands against the order it builds on (Ticket.DependsOnOrderId):
+// the board's answer to "which one is ahead of the other". The base has to
+// reach its gate (Ticket.DependsOnStage, default merged to dev) before this
+// order moves past PR open.
+public static class DevelopmentSequence
+{
+    public const string None = "NONE";        // builds on nothing
+    public const string Waiting = "WAITING";  // base has not reached the gate; this one is still at or before PR open
+    public const string Ready = "READY";      // base reached the gate; this one can move on
+    public const string Ahead = "AHEAD";      // this one moved past PR open before its base reached the gate
+    public const string Done = "DONE";        // base reached the gate and this one moved on: nothing to flag
+
+    public const string DefaultGate = DevelopmentStages.MergedDev;
+
+    public record Result(string State, string Gate, string? Message);
+
+    public static Result Evaluate(long id, string? stage, long? baseId, string? baseStage, string? gate)
+    {
+        var g = DevelopmentStages.Normalize(gate) ?? DefaultGate;
+        if (baseId == null || baseStage == null) return new Result(None, g, null);
+
+        var baseLabel = Label(baseStage);
+        var gateLabel = Label(g);
+        var baseReached = DevelopmentStages.OrderOf(baseStage) >= DevelopmentStages.OrderOf(g);
+        var movedOn = DevelopmentStages.OrderOf(stage) > DevelopmentStages.OrderOf(DevelopmentStages.PrOpen);
+
+        if (baseReached)
+            return movedOn
+                ? new Result(Done, g, null)
+                : new Result(Ready, g, $"#{baseId} is at {baseLabel}: #{id} can go ahead");
+        return movedOn
+            ? new Result(Ahead, g, $"#{id} moved ahead of #{baseId}, which it builds on: #{baseId} is at {baseLabel} and should reach {gateLabel} first")
+            : new Result(Waiting, g, $"Waits for #{baseId} to reach {gateLabel} (now {baseLabel})");
+    }
+
+    private static string Label(string stage) =>
+        DevelopmentStages.Labels.TryGetValue(stage, out var l) ? l : stage;
+}
+
+// The test checklist on a development order (TicketTestItem): where an item
+// can be tried and what the tester found.
+public static class DevelopmentTests
+{
+    public const string Any = "ANY";
+    public const string Local = "LOCAL";
+    public const string Dev = "DEV";
+    public const string Beta = "BETA";
+
+    public static readonly string[] Environments = { Any, Local, Dev, Beta };
+
+    public static readonly IReadOnlyDictionary<string, string> EnvironmentLabels = new Dictionary<string, string>
+    {
+        [Any] = "Anywhere",
+        [Local] = "Local",
+        [Dev] = "Dev",
+        [Beta] = "Beta",
+    };
+
+    public const string Pass = "PASS";
+    public const string Fail = "FAIL";
+
+    public static readonly string[] Results = { Pass, Fail };
+
+    public static string? NormalizeEnvironment(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var key = value.Trim().ToUpperInvariant();
+        if (key == "LOCAL_DEMO") key = Local;
+        if (key == "MERGED_DEV") key = Dev;
+        return Array.IndexOf(Environments, key) >= 0 ? key : null;
+    }
+
+    public static string? NormalizeResult(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var key = value.Trim().ToUpperInvariant();
+        if (key == "PASSED" || key == "OK") key = Pass;
+        if (key == "FAILED") key = Fail;
+        return Array.IndexOf(Results, key) >= 0 ? key : null;
+    }
+
+    // Where a tester is most likely standing when an order is at this stage.
+    public static string? EnvironmentForStage(string? stage) => stage switch
+    {
+        DevelopmentStages.LocalDemo or DevelopmentStages.PrOpen => Local,
+        DevelopmentStages.MergedDev => Dev,
+        DevelopmentStages.Beta => Beta,
+        _ => null,
+    };
+}
+
 // Lifecycle of a drafted fix (Ticket.FixStatus). The dispatcher on the devbox
 // moves REQUESTED -> CLAIMED -> READY_TO_TEST | FAILED; a human moves
 // READY_TO_TEST -> APPROVED | REJECTED (and REJECTED may go back to REQUESTED).

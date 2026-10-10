@@ -74,6 +74,16 @@ public class DevelopmentController : ControllerBase
     public record LinkDto(long Id, string Kind, string? Repo, string Name, string? Url, string? Note, string? CreatedBy, DateTime CreatedAt);
     public record StageChangeDto(string? FromStage, string ToStage, string? Note, string? ChangedBy, DateTime ChangedAt);
 
+    // Where an order stands against the one it builds on (DevelopmentSequence).
+    public record SequenceDto(string State, long? BaseOrderId, string? BaseTitle, string? BaseStage, string Gate, string GateLabel, string? Message);
+
+    public record TestSummaryDto(int Total, int Passed, int Failed, int Untested);
+
+    // One phase of an initiative, as the initiative's row shows it.
+    public record PhaseDto(
+        long Id, int? PhaseNumber, string Title, string Stage, string StageLabel, int StageOrder,
+        long? DependsOnOrderId, string? DependsOnStage, string SequenceState, string? SequenceMessage, TestSummaryDto Tests);
+
     public record OrderSummaryDto(
         long Id, long ProjectId, string ProjectName, string ProjectSlug,
         string Title, string? Summary, string? TestingNotes, string TicketType, string? FixStatus, string Priority, string Status,
@@ -83,19 +93,53 @@ public class DevelopmentController : ControllerBase
         string? SessionLogUrl, string? SessionId,
         DateTime? ProductionAt, string? AnnouncementVideoUrl, DateTime? AnnouncedAt, DateTime? DigestSentAt,
         bool NeedsAnnouncement, string BoardUrl, DateTime UpdatedAt,
-        List<LinkDto> Links);
+        List<LinkDto> Links,
+        // Initiatives: an initiative lists its Phases (in order); a phase names
+        // its initiative and its number; either may build on another order.
+        bool IsInitiative = false, long? ParentOrderId = null, string? ParentTitle = null,
+        int? PhaseNumber = null, int? PhaseCount = null,
+        long? DependsOnOrderId = null, string? DependsOnStage = null, SequenceDto? Sequence = null,
+        List<PhaseDto>? Phases = null,
+        // Test checklist counts (an initiative's include its phases').
+        TestSummaryDto? Tests = null);
+
+    public record TestItemDto(
+        long Id, string Text, string? Expected, string Environment, string EnvironmentLabel, int SortOrder,
+        string? Result, string? ResultNote, string? TestedIn, string? TestedBy, DateTime? TestedAt,
+        string? CreatedBy, DateTime CreatedAt);
+
+    // An initiative's drawer shows every phase's checklist.
+    public record PhaseTestsDto(long OrderId, int? PhaseNumber, string Title, string Stage, List<TestItemDto> Items);
 
     public record OrderDetailDto(
         OrderSummaryDto Order, string? Transcript,
-        List<StageChangeDto> StageHistory, List<TicketActivity> Activity);
+        List<StageChangeDto> StageHistory, List<TicketActivity> Activity,
+        List<TestItemDto>? Tests = null, List<PhaseTestsDto>? PhaseTests = null);
 
     public record LinkRequest(string Kind, string? Repo, string Name, string? Url, string? Note);
+
+    public record TestItemRequest(string Text, string? Expected = null, string? Environment = null);
 
     public record CreateOrderRequest(
         long? ProjectId, string? ProjectSlug, string Title, string? Summary,
         string? VideoUrl, string? Transcript, string? SessionLogUrl, string? SessionId,
         string? OrderedBy, string? Stage, string? Priority, List<LinkRequest>? Links,
-        string? TestingNotes = null);
+        string? TestingNotes = null,
+        // Log the order straight into an initiative (null phase = last) and/or
+        // say what it builds on; gate default MERGED_DEV.
+        long? ParentOrderId = null, int? PhaseNumber = null,
+        long? DependsOnOrderId = null, string? DependsOnStage = null,
+        List<TestItemRequest>? Tests = null);
+
+    // Full replacement: a null ParentOrderId makes the order standalone, a
+    // null DependsOnOrderId clears "builds on".
+    public record PlacementRequest(long? ParentOrderId, int? PhaseNumber, long? DependsOnOrderId, string? DependsOnStage);
+
+    // Group orders into one initiative: a new one (Title) or an existing one
+    // (InitiativeId). Chain = each phase builds on the one before it.
+    public record GroupRequest(
+        List<long>? OrderIds, string? Title, string? Summary, long? ProjectId, string? ProjectSlug,
+        long? InitiativeId, bool Chain = true, string? DependsOnStage = null, string? OrderedBy = null, string? Priority = null);
 
     public record PromoteRequest(string? Stage, string? SessionLogUrl, string? SessionId);
 
@@ -172,7 +216,10 @@ public class DevelopmentController : ControllerBase
         [FromQuery] string? stage,
         [FromQuery] bool? needsAnnouncement,
         [FromQuery] string? search,
-        [FromQuery] bool includeAnnounced = true)
+        [FromQuery] bool includeAnnounced = true,
+        // The board passes true: an initiative brings all its phases along, even
+        // the ones the filters would hide, so the whole progression shows.
+        [FromQuery] bool includePhases = false)
     {
         if (_org.CurrentOrganizationId == null) return Unauthorized(new { message = "No organization context" });
 
@@ -214,6 +261,16 @@ public class DevelopmentController : ControllerBase
         }
 
         var tickets = await q.OrderByDescending(t => t.CreatedAt).ToListAsync();
+
+        if (includePhases && tickets.Count > 0)
+        {
+            var listed = tickets.Select(t => t.Id).ToList();
+            var hidden = await _db.Tickets
+                .Where(t => t.IsDevelopmentOrder && t.ParentOrderId != null && listed.Contains(t.ParentOrderId.Value) && !listed.Contains(t.Id))
+                .ToListAsync();
+            tickets.AddRange(hidden);
+        }
+
         return Ok(await ToSummariesAsync(tickets));
     }
 
@@ -242,8 +299,10 @@ public class DevelopmentController : ControllerBase
         var startUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day, DateTimeKind.Unspecified), tz);
         var endUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day.AddDays(1), DateTimeKind.Unspecified), tz);
 
+        // Initiatives are not announced themselves: each phase is.
         var tickets = await _db.Tickets
             .Where(t => t.IsDevelopmentOrder && t.ProductionAt != null && t.ProductionAt >= startUtc && t.ProductionAt < endUtc)
+            .Where(t => !_db.Tickets.Any(c => c.ParentOrderId == t.Id && c.IsDevelopmentOrder))
             .OrderBy(t => t.ProductionAt)
             .ToListAsync();
 
@@ -275,6 +334,23 @@ public class DevelopmentController : ControllerBase
         var linkError = ValidateLinks(body.Links);
         if (linkError != null) return BadRequest(new { message = linkError });
 
+        var testError = DevelopmentTestsController.ValidateItems(body.Tests);
+        if (testError != null) return BadRequest(new { message = testError });
+
+        Ticket? initiative = null;
+        if (body.ParentOrderId.HasValue)
+        {
+            initiative = await FindOrderAsync(body.ParentOrderId.Value);
+            if (initiative == null) return BadRequest(new { message = $"parentOrderId #{body.ParentOrderId} is not a development order" });
+            if (initiative.ParentOrderId != null)
+                return BadRequest(new { message = $"#{initiative.Id} is itself a phase of #{initiative.ParentOrderId}; phases cannot hold phases" });
+        }
+
+        var (gate, gateError) = NormalizeGate(body.DependsOnStage);
+        if (gateError != null) return BadRequest(new { message = gateError });
+        if (body.DependsOnOrderId.HasValue && await FindOrderAsync(body.DependsOnOrderId.Value) == null)
+            return BadRequest(new { message = $"dependsOnOrderId #{body.DependsOnOrderId} is not a development order" });
+
         var project = await ResolveProjectAsync(body.ProjectId, body.ProjectSlug);
         if (project == null)
         {
@@ -291,30 +367,16 @@ public class DevelopmentController : ControllerBase
         var actorName = CallerName();
         var statusKeys = await StatusKeysAsync();
 
-        var ticket = new Ticket
-        {
-            OrganizationId = orgId,
-            ProjectId = project.Id,
-            TicketType = "FEATURE_REQUEST",
-            Title = title,
-            Description = Clean(body.Summary),
-            Priority = priority,
-            Status = OpenStatus(statusKeys),
-            Visibility = "PLATFORM",
-            // Orders are not bug reports; keep them out of the triage chain.
-            EscalationStage = "NONE",
-            SubmittedBy = Clean(body.OrderedBy) ?? actorName,
-            VideoUrl = Clean(body.VideoUrl),
-            Transcript = Clean(body.Transcript),
-            IsDevelopmentOrder = true,
-            DevelopmentStage = stage,
-            SessionLogUrl = Clean(body.SessionLogUrl),
-            SessionId = Clean(body.SessionId),
-            TestingNotes = Clean(body.TestingNotes),
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-        ApplyStageSideEffects(ticket, null, stage, now, statusKeys);
+        var ticket = NewOrderTicket(orgId, project.Id, title, Clean(body.Summary), priority, stage,
+            Clean(body.OrderedBy) ?? actorName, statusKeys, now);
+        ticket.VideoUrl = Clean(body.VideoUrl);
+        ticket.Transcript = Clean(body.Transcript);
+        ticket.SessionLogUrl = Clean(body.SessionLogUrl);
+        ticket.SessionId = Clean(body.SessionId);
+        ticket.TestingNotes = Clean(body.TestingNotes);
+        // A new order cannot close a loop: nothing builds on it yet.
+        ticket.DependsOnOrderId = body.DependsOnOrderId;
+        ticket.DependsOnStage = body.DependsOnOrderId.HasValue ? gate : null;
 
         _db.Tickets.Add(ticket);
         await _db.SaveChangesAsync();
@@ -328,7 +390,19 @@ public class DevelopmentController : ControllerBase
         foreach (var l in body.Links ?? new List<LinkRequest>())
             _db.TicketDevelopmentLinks.Add(NewLink(ticket, l, actorEmail));
 
+        var tests = body.Tests ?? new List<TestItemRequest>();
+        for (var i = 0; i < tests.Count; i++)
+            _db.TicketTestItems.Add(DevelopmentTestsController.NewItem(ticket, tests[i], i, actorEmail));
+
         await _db.SaveChangesAsync();
+
+        if (initiative != null)
+        {
+            var placeError = await _orders.PlaceAsync(ticket, initiative, body.PhaseNumber, actorEmail, actorName);
+            if (placeError != null) return BadRequest(new { message = placeError, id = ticket.Id });
+            await _orders.RollUpInitiativesAsync(new long?[] { initiative.Id }, actorEmail, actorName, DateTime.UtcNow);
+            await _db.SaveChangesAsync();
+        }
 
         _audit.Record(
             action: "development.order-created",
@@ -437,13 +511,15 @@ public class DevelopmentController : ControllerBase
                 changed.Add("announcementVideoUrl");
 
                 var statusKeys = await StatusKeysAsync();
-                if (after != null && ticket.DevelopmentStage == DevelopmentStages.Production)
+                // An initiative's stage follows its phases; the video is just kept.
+                var movesStage = !await _orders.HasPhasesAsync(ticket.Id);
+                if (movesStage && after != null && ticket.DevelopmentStage == DevelopmentStages.Production)
                 {
                     MoveStage(ticket, DevelopmentStages.Announced, actorEmail, actorName, now, statusKeys,
                         "announcement video attached");
                     stageNote = "stage -> " + DevelopmentStages.Labels[DevelopmentStages.Announced];
                 }
-                else if (after == null && ticket.DevelopmentStage == DevelopmentStages.Announced)
+                else if (movesStage && after == null && ticket.DevelopmentStage == DevelopmentStages.Announced)
                 {
                     MoveStage(ticket, DevelopmentStages.Production, actorEmail, actorName, now, statusKeys,
                         "announcement video removed");
@@ -460,6 +536,11 @@ public class DevelopmentController : ControllerBase
             actorEmail, actorName, payload: new { fields = changed });
 
         await _db.SaveChangesAsync();
+        if (stageNote != null && ticket.ParentOrderId != null)
+        {
+            await _orders.RollUpInitiativesAsync(new[] { ticket.ParentOrderId }, actorEmail, actorName, now);
+            await _db.SaveChangesAsync();
+        }
         return Ok(await ToDetailAsync(ticket));
     }
 
@@ -482,6 +563,9 @@ public class DevelopmentController : ControllerBase
         if (ticket.DevelopmentStage == stage)
             return Ok(await ToDetailAsync(ticket));
 
+        if (await _orders.HasPhasesAsync(ticket.Id))
+            return Conflict(new { message = $"#{ticket.Id} is an initiative: its stage follows its least-advanced phase. Move a phase instead." });
+
         var now = DateTime.UtcNow;
         var actorEmail = CallerEmail();
         var actorName = CallerName();
@@ -490,6 +574,12 @@ public class DevelopmentController : ControllerBase
 
         MoveStage(ticket, stage, actorEmail, actorName, now, statusKeys, Clean(body.Note));
         await _db.SaveChangesAsync();
+
+        if (ticket.ParentOrderId != null)
+        {
+            await _orders.RollUpInitiativesAsync(new[] { ticket.ParentOrderId }, actorEmail, actorName, now);
+            await _db.SaveChangesAsync();
+        }
 
         _audit.Record(
             action: "development.stage-changed",
@@ -549,9 +639,232 @@ public class DevelopmentController : ControllerBase
         return NoContent();
     }
 
+    // ===== Initiatives =====
+    // Related orders (one effort, several videos) become numbered phases of
+    // one initiative order. Each phase keeps its own video, PRs and stage; the
+    // initiative's stage follows its least-advanced phase. "Builds on" says
+    // which order has to get where first, and the board flags a phase that
+    // is waiting on it or moved ahead of it.
+
+    // Where an order sits: which initiative, which phase, what it builds on.
+    [HttpPut("orders/{id}/placement")]
+    public async Task<IActionResult> SetPlacement(long id, [FromBody] PlacementRequest body)
+    {
+        if (!CanWrite()) return Forbidden();
+        if (body == null) return BadRequest(new { message = "body is required" });
+
+        var ticket = await FindOrderAsync(id);
+        if (ticket == null) return NotFound(new { message = "Development order not found" });
+
+        Ticket? initiative = null;
+        if (body.ParentOrderId.HasValue)
+        {
+            initiative = await FindOrderAsync(body.ParentOrderId.Value);
+            if (initiative == null) return BadRequest(new { message = $"#{body.ParentOrderId} is not a development order" });
+        }
+
+        var (gate, gateError) = NormalizeGate(body.DependsOnStage);
+        if (gateError != null) return BadRequest(new { message = gateError });
+        var dependencyError = await _orders.ValidateDependencyAsync(ticket.Id, body.DependsOnOrderId);
+        if (dependencyError != null) return BadRequest(new { message = dependencyError });
+
+        var actorEmail = CallerEmail();
+        var actorName = CallerName();
+        var oldParent = ticket.ParentOrderId;
+
+        SetDependency(ticket, body.DependsOnOrderId, gate, actorEmail, actorName);
+
+        var placeError = await _orders.PlaceAsync(ticket, initiative, body.PhaseNumber, actorEmail, actorName);
+        if (placeError != null) return BadRequest(new { message = placeError });
+
+        await _orders.RollUpInitiativesAsync(new[] { oldParent, initiative?.Id }, actorEmail, actorName, DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+
+        _audit.Record(
+            action: "development.order-placed",
+            outcome: "success",
+            actorEmail: actorEmail,
+            organizationId: ticket.OrganizationId,
+            targetTicketId: ticket.Id,
+            extra: new Dictionary<string, object?>
+            {
+                ["initiative"] = initiative?.Id, ["fromInitiative"] = oldParent, ["phase"] = ticket.PhaseNumber,
+                ["dependsOn"] = ticket.DependsOnOrderId, ["service"] = IsService(),
+            });
+
+        return Ok(await ToDetailAsync(ticket));
+    }
+
+    // Group orders into a new initiative (Title) or append them to an existing
+    // one (InitiativeId), as phases in the order given.
+    [HttpPost("initiatives")]
+    public async Task<IActionResult> Group([FromBody] GroupRequest body)
+    {
+        if (_org.CurrentOrganizationId == null) return Unauthorized(new { message = "No organization context" });
+        if (!CanWrite()) return Forbidden();
+        if (body?.OrderIds == null || body.OrderIds.Count == 0)
+            return BadRequest(new { message = "orderIds must name at least one order" });
+
+        var orderIds = body.OrderIds.Distinct().ToList();
+        if (orderIds.Count > 50) return BadRequest(new { message = "at most 50 orders per call" });
+
+        var (gate, gateError) = NormalizeGate(body.DependsOnStage);
+        if (gateError != null) return BadRequest(new { message = gateError });
+
+        var phases = new List<Ticket>();
+        foreach (var oid in orderIds)
+        {
+            var t = await FindOrderAsync(oid);
+            if (t == null) return BadRequest(new { message = $"#{oid} is not a development order" });
+            if (await _orders.HasPhasesAsync(t.Id))
+                return BadRequest(new { message = $"#{oid} holds phases of its own; an initiative cannot become a phase" });
+            phases.Add(t);
+        }
+
+        var actorEmail = CallerEmail();
+        var actorName = CallerName();
+        var now = DateTime.UtcNow;
+        Ticket initiative;
+        var created = false;
+
+        if (body.InitiativeId.HasValue)
+        {
+            var existing = await FindOrderAsync(body.InitiativeId.Value);
+            if (existing == null) return NotFound(new { message = $"Initiative #{body.InitiativeId} not found" });
+            if (orderIds.Contains(existing.Id)) return BadRequest(new { message = "An initiative cannot be one of its own phases" });
+            if (existing.ParentOrderId != null)
+                return BadRequest(new { message = $"#{existing.Id} is itself a phase of #{existing.ParentOrderId}; phases cannot hold phases" });
+            initiative = existing;
+        }
+        else
+        {
+            var title = (body.Title ?? string.Empty).Trim();
+            if (title.Length == 0) return BadRequest(new { message = "title is required for a new initiative (or pass initiativeId)" });
+            if (title.Length > 500) return BadRequest(new { message = "title must be 500 characters or fewer" });
+
+            var priority = NormalizePriority(body.Priority);
+            if (priority == null) return BadRequest(new { message = $"Unknown priority '{body.Priority}'. Valid: {string.Join(", ", Priorities)}" });
+
+            var project = body.ProjectId.HasValue || !string.IsNullOrWhiteSpace(body.ProjectSlug)
+                ? await ResolveProjectAsync(body.ProjectId, body.ProjectSlug)
+                : await _db.Projects.FirstOrDefaultAsync(p => p.Id == phases[0].ProjectId);
+            if (project == null) return BadRequest(new { message = "projectId or projectSlug must name an application in your organization" });
+
+            var orgId = _org.CurrentOrganizationId.Value;
+            var (allowed, reason) = await _billing.CheckTicketLimitAsync(orgId);
+            if (!allowed) return StatusCode(402, new { message = reason });
+
+            var statusKeys = await StatusKeysAsync();
+            var startStage = phases.Select(p => p.DevelopmentStage ?? DevelopmentStages.Ordered).OrderBy(DevelopmentStages.OrderOf).First();
+            initiative = NewOrderTicket(orgId, project.Id, title, Clean(body.Summary), priority, startStage,
+                Clean(body.OrderedBy) ?? actorName, statusKeys, now);
+            _db.Tickets.Add(initiative);
+            await _db.SaveChangesAsync();
+
+            RecordStage(initiative, null, startStage, actorEmail, now, "initiative created; follows its phases");
+            _activity.Log(initiative, "DEV_ORDER_CREATED",
+                $"{actorName} created the initiative {title} from #{string.Join(", #", orderIds)}",
+                actorEmail, actorName, payload: new { stage = startStage, initiative = true, phases = orderIds });
+            await _db.SaveChangesAsync();
+            created = true;
+        }
+
+        // Appending to an initiative: the first new phase builds on its last one.
+        Ticket? previous = null;
+        if (body.Chain && !created)
+        {
+            previous = await _db.Tickets
+                .Where(t => t.ParentOrderId == initiative.Id && t.IsDevelopmentOrder && !orderIds.Contains(t.Id))
+                .OrderByDescending(t => t.PhaseNumber)
+                .FirstOrDefaultAsync();
+        }
+
+        var oldParents = phases.Select(p => p.ParentOrderId).ToList();
+        foreach (var phase in phases)
+        {
+            if (body.Chain && previous != null && await _orders.ValidateDependencyAsync(phase.Id, previous.Id) == null)
+                SetDependency(phase, previous.Id, gate, actorEmail, actorName);
+
+            var placeError = await _orders.PlaceAsync(phase, initiative, null, actorEmail, actorName);
+            if (placeError != null) return BadRequest(new { message = placeError });
+            previous = phase;
+        }
+
+        if (!created)
+        {
+            _activity.Log(initiative, "DEV_PHASES_ADDED",
+                $"{actorName} added #{string.Join(", #", orderIds)} as phases", actorEmail, actorName,
+                payload: new { phases = orderIds });
+        }
+
+        await _orders.RollUpInitiativesAsync(oldParents.Append(initiative.Id), actorEmail, actorName, DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+
+        _audit.Record(
+            action: created ? "development.initiative-created" : "development.initiative-phases-added",
+            outcome: "success",
+            actorEmail: actorEmail,
+            organizationId: initiative.OrganizationId,
+            targetTicketId: initiative.Id,
+            extra: new Dictionary<string, object?> { ["phases"] = string.Join(",", orderIds), ["chain"] = body.Chain, ["service"] = IsService() });
+
+        var detail = await ToDetailAsync(initiative);
+        return created ? CreatedAtAction(nameof(GetOrder), new { id = initiative.Id }, detail) : Ok(detail);
+    }
+
     // ===== Internals =====
     // The stage / link / status rules are in DevelopmentOrderService so the
     // Azure DevOps webhook applies exactly the same ones.
+
+    private Ticket NewOrderTicket(long orgId, long projectId, string title, string? summary, string priority, string stage,
+        string submittedBy, HashSet<string> statusKeys, DateTime now)
+    {
+        var ticket = new Ticket
+        {
+            OrganizationId = orgId,
+            ProjectId = projectId,
+            TicketType = "FEATURE_REQUEST",
+            Title = title,
+            Description = summary,
+            Priority = priority,
+            Status = OpenStatus(statusKeys),
+            Visibility = "PLATFORM",
+            // Orders are not bug reports; keep them out of the triage chain.
+            EscalationStage = "NONE",
+            SubmittedBy = submittedBy,
+            IsDevelopmentOrder = true,
+            DevelopmentStage = stage,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        ApplyStageSideEffects(ticket, null, stage, now, statusKeys);
+        return ticket;
+    }
+
+    private static (string? Gate, string? Error) NormalizeGate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return (null, null);
+        var gate = DevelopmentStages.Normalize(value);
+        return gate == null
+            ? (null, $"Unknown dependsOnStage '{value}'. Valid: {string.Join(", ", DevelopmentStages.All)}")
+            : (gate == DevelopmentSequence.DefaultGate ? null : gate, null);
+    }
+
+    // Caller has validated the base (ValidateDependencyAsync). Caller saves.
+    private void SetDependency(Ticket ticket, long? baseId, string? gate, string actorEmail, string actorName)
+    {
+        gate = baseId == null ? null : gate;
+        if (ticket.DependsOnOrderId == baseId && ticket.DependsOnStage == gate) return;
+        ticket.DependsOnOrderId = baseId;
+        ticket.DependsOnStage = gate;
+        ticket.UpdatedAt = DateTime.UtcNow;
+        var gateLabel = DevelopmentStages.Labels[gate ?? DevelopmentSequence.DefaultGate].ToLowerInvariant();
+        _activity.Log(ticket, "DEV_DEPENDENCY_SET",
+            baseId == null
+                ? $"{actorName} cleared what this order builds on"
+                : $"{actorName} set this order to build on #{baseId} (#{baseId} reaches {gateLabel} first)",
+            actorEmail, actorName, payload: new { dependsOn = baseId, gate });
+    }
 
     private Task<Ticket?> FindOrderAsync(long id) => _orders.FindOrderAsync(id);
 
@@ -634,20 +947,77 @@ public class DevelopmentController : ControllerBase
     private static LinkDto ToLinkDto(TicketDevelopmentLink l) =>
         new(l.Id, l.Kind, l.Repo, l.Name, l.Url, l.Note, l.CreatedBy, l.CreatedAt);
 
-    private OrderSummaryDto ToSummary(Ticket t, Project? p, List<LinkDto> links)
+    private static string StageLabel(string stage) =>
+        DevelopmentStages.Labels.TryGetValue(stage, out var label) ? label : stage;
+
+    // A lightweight view of an order for the initiative / builds-on lookups.
+    private record OrderRef(long Id, string Title, string? Stage, long? ParentOrderId, int? PhaseNumber,
+        long? DependsOnOrderId, string? DependsOnStage, DateTime CreatedAt);
+
+    private record SummaryContext(
+        Dictionary<long, Project> Projects,
+        Dictionary<long, List<LinkDto>> Links,
+        Dictionary<long, List<OrderRef>> PhasesByInitiative,
+        Dictionary<long, OrderRef> Refs,
+        Dictionary<long, TestSummaryDto> Tests);
+
+    private static readonly TestSummaryDto NoTests = new(0, 0, 0, 0);
+
+    private static SequenceDto ToSequence(long id, string? stage, long? baseId, string? gate, Dictionary<long, OrderRef> refs)
     {
+        var baseRef = baseId.HasValue ? refs.GetValueOrDefault(baseId.Value) : null;
+        var r = DevelopmentSequence.Evaluate(id, stage, baseRef?.Id, baseRef == null ? null : baseRef.Stage ?? DevelopmentStages.Ordered, gate);
+        return new SequenceDto(r.State, baseRef?.Id, baseRef?.Title, baseRef?.Stage, r.Gate, StageLabel(r.Gate), r.Message);
+    }
+
+    private OrderSummaryDto ToSummary(Ticket t, SummaryContext ctx)
+    {
+        var p = ctx.Projects.GetValueOrDefault(t.ProjectId);
         var stage = t.DevelopmentStage ?? DevelopmentStages.Ordered;
+
+        var phaseRefs = ctx.PhasesByInitiative.GetValueOrDefault(t.Id);
+        var isInitiative = phaseRefs is { Count: > 0 };
+        List<PhaseDto>? phases = null;
+        var tests = ctx.Tests.GetValueOrDefault(t.Id) ?? NoTests;
+        if (isInitiative)
+        {
+            phases = phaseRefs!.Select(ph =>
+            {
+                var phStage = ph.Stage ?? DevelopmentStages.Ordered;
+                var seq = ToSequence(ph.Id, phStage, ph.DependsOnOrderId, ph.DependsOnStage, ctx.Refs);
+                return new PhaseDto(ph.Id, ph.PhaseNumber, ph.Title, phStage, StageLabel(phStage), DevelopmentStages.OrderOf(phStage),
+                    ph.DependsOnOrderId, ph.DependsOnStage, seq.State, seq.Message, ctx.Tests.GetValueOrDefault(ph.Id) ?? NoTests);
+            }).ToList();
+            tests = phases.Aggregate(tests, (sum, ph) => new TestSummaryDto(
+                sum.Total + ph.Tests.Total, sum.Passed + ph.Tests.Passed, sum.Failed + ph.Tests.Failed, sum.Untested + ph.Tests.Untested));
+        }
+
+        var parent = t.ParentOrderId.HasValue ? ctx.Refs.GetValueOrDefault(t.ParentOrderId.Value) : null;
+        var phaseCount = isInitiative ? phases!.Count
+            : parent != null ? ctx.PhasesByInitiative.GetValueOrDefault(parent.Id)?.Count : null;
+
         return new OrderSummaryDto(
             t.Id, t.ProjectId, p?.Name ?? $"Project {t.ProjectId}", p?.Slug ?? string.Empty,
             t.Title, t.Description, t.TestingNotes, t.TicketType, t.FixStatus, t.Priority, t.Status,
-            stage, DevelopmentStages.Labels.TryGetValue(stage, out var label) ? label : stage, DevelopmentStages.OrderOf(stage),
+            stage, StageLabel(stage), DevelopmentStages.OrderOf(stage),
             t.SubmittedBy, t.CreatedAt,
             t.VideoUrl, !string.IsNullOrWhiteSpace(t.Transcript), t.GuidanceVideoUrl,
             t.SessionLogUrl, t.SessionId,
             t.ProductionAt, t.AnnouncementVideoUrl, t.AnnouncedAt, t.DigestSentAt,
-            stage == DevelopmentStages.Production && string.IsNullOrWhiteSpace(t.AnnouncementVideoUrl),
+            // Each phase gets its own what-shipped video; the initiative does not.
+            !isInitiative && stage == DevelopmentStages.Production && string.IsNullOrWhiteSpace(t.AnnouncementVideoUrl),
             BoardUrl(t.Id), t.UpdatedAt,
-            links);
+            ctx.Links.GetValueOrDefault(t.Id) ?? new List<LinkDto>(),
+            IsInitiative: isInitiative,
+            ParentOrderId: parent?.Id,
+            ParentTitle: parent?.Title,
+            PhaseNumber: parent != null ? t.PhaseNumber : null,
+            PhaseCount: phaseCount,
+            DependsOnOrderId: t.DependsOnOrderId,
+            DependsOnStage: t.DependsOnStage,
+            Sequence: ToSequence(t.Id, stage, t.DependsOnOrderId, t.DependsOnStage, ctx.Refs),
+            Phases: phases,
+            Tests: tests);
     }
 
     private async Task<List<OrderSummaryDto>> ToSummariesAsync(List<Ticket> tickets)
@@ -665,14 +1035,67 @@ public class DevelopmentController : ControllerBase
         var linksByTicket = links.GroupBy(l => l.TicketId)
             .ToDictionary(g => g.Key, g => g.Select(ToLinkDto).ToList());
 
-        return tickets
-            .Select(t => ToSummary(t, projects.GetValueOrDefault(t.ProjectId), linksByTicket.GetValueOrDefault(t.Id) ?? new List<LinkDto>()))
-            .ToList();
+        // The phases of every listed order (it may be an initiative) and of the
+        // initiative of every listed phase (for "phase 2 of 5").
+        var initiativeIds = ids
+            .Concat(tickets.Where(t => t.ParentOrderId != null).Select(t => t.ParentOrderId!.Value))
+            .Distinct().ToList();
+        var family = await _db.Tickets
+            .Where(t => t.IsDevelopmentOrder && t.ParentOrderId != null && initiativeIds.Contains(t.ParentOrderId.Value))
+            .Select(t => new OrderRef(t.Id, t.Title, t.DevelopmentStage, t.ParentOrderId, t.PhaseNumber, t.DependsOnOrderId, t.DependsOnStage, t.CreatedAt))
+            .ToListAsync();
+        var phasesByInitiative = family
+            .GroupBy(f => f.ParentOrderId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(f => f.PhaseNumber ?? int.MaxValue).ThenBy(f => f.CreatedAt).ThenBy(f => f.Id).ToList());
+
+        // Every initiative and every "builds on" base named above.
+        var refIds = tickets.Select(t => t.ParentOrderId)
+            .Concat(tickets.Select(t => t.DependsOnOrderId))
+            .Concat(family.Select(f => f.DependsOnOrderId))
+            .Where(x => x != null).Select(x => x!.Value)
+            .Distinct().ToList();
+        var refs = refIds.Count == 0
+            ? new Dictionary<long, OrderRef>()
+            : await _db.Tickets
+                .Where(t => t.IsDevelopmentOrder && refIds.Contains(t.Id))
+                .Select(t => new OrderRef(t.Id, t.Title, t.DevelopmentStage, t.ParentOrderId, t.PhaseNumber, t.DependsOnOrderId, t.DependsOnStage, t.CreatedAt))
+                .ToDictionaryAsync(r => r.Id);
+
+        var testIds = ids.Concat(family.Select(f => f.Id)).Distinct().ToList();
+        var testRows = await _db.TicketTestItems
+            .Where(i => testIds.Contains(i.TicketId))
+            .Select(i => new { i.TicketId, i.Result })
+            .ToListAsync();
+        var tests = testRows.GroupBy(r => r.TicketId).ToDictionary(g => g.Key, g =>
+        {
+            var passed = g.Count(r => r.Result == DevelopmentTests.Pass);
+            var failed = g.Count(r => r.Result == DevelopmentTests.Fail);
+            return new TestSummaryDto(g.Count(), passed, failed, g.Count() - passed - failed);
+        });
+
+        var ctx = new SummaryContext(projects, linksByTicket, phasesByInitiative, refs, tests);
+        return tickets.Select(t => ToSummary(t, ctx)).ToList();
     }
+
+    public static TestItemDto ToTestItemDto(TicketTestItem i) =>
+        new(i.Id, i.Text, i.Expected, i.Environment,
+            DevelopmentTests.EnvironmentLabels.TryGetValue(i.Environment, out var env) ? env : i.Environment,
+            i.SortOrder, i.Result, i.ResultNote, i.TestedIn, i.TestedBy, i.TestedAt, i.CreatedBy, i.CreatedAt);
 
     private async Task<OrderDetailDto> ToDetailAsync(Ticket ticket)
     {
         var summary = (await ToSummariesAsync(new List<Ticket> { ticket }))[0];
+
+        var phaseIds = summary.Phases?.Select(p => p.Id).ToList() ?? new List<long>();
+        var testItems = await _db.TicketTestItems
+            .Where(i => i.TicketId == ticket.Id || phaseIds.Contains(i.TicketId))
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.Id)
+            .ToListAsync();
+        var own = testItems.Where(i => i.TicketId == ticket.Id).Select(ToTestItemDto).ToList();
+        var phaseTests = summary.Phases?
+            .Select(p => new PhaseTestsDto(p.Id, p.PhaseNumber, p.Title, p.Stage,
+                testItems.Where(i => i.TicketId == p.Id).Select(ToTestItemDto).ToList()))
+            .ToList();
 
         var history = await _db.TicketStageHistory
             .Where(h => h.TicketId == ticket.Id && DevelopmentStages.All.Contains(h.ToStage))
@@ -686,6 +1109,6 @@ public class DevelopmentController : ControllerBase
             .Take(200)
             .ToListAsync();
 
-        return new OrderDetailDto(summary, ticket.Transcript, history, activity);
+        return new OrderDetailDto(summary, ticket.Transcript, history, activity, own, phaseTests);
     }
 }

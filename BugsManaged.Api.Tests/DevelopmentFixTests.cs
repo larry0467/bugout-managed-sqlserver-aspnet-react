@@ -150,7 +150,11 @@ public class DevelopmentFixTests
                 new("BRANCH", "ServiceManagedWeb", "BugOut_Fix_" + bug.Id, null, null),
                 new("PR", "ServiceManagedWeb", "PR 4410", "https://dev.azure.com/protocall/WebbasedLLC/_git/ServiceManagedWeb/pullrequest/4410", null),
             },
-            "Drag a job on the dispatch board: no flicker, job lands in the new slot.")));
+            "- Drag a job on the dispatch board: no flicker\n- The job lands in the new slot")));
+
+        // The tester gets the "how to test" lines as a checklist.
+        var checklist = db.TicketTestItems.IgnoreQueryFilters().Where(i => i.TicketId == bug.Id).OrderBy(i => i.SortOrder).Select(i => i.Text).ToList();
+        Assert.Equal(new[] { "Drag a job on the dispatch board: no flicker", "The job lands in the new slot" }, checklist);
 
         Assert.Equal(FixStatuses.ReadyToTest, result.FixStatus);
         Assert.True(result.IsDevelopmentOrder);

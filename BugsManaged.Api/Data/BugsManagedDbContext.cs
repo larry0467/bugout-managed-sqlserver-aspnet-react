@@ -29,6 +29,7 @@ public class BugsManagedDbContext : DbContext
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
     public DbSet<TicketStatusDef> TicketStatusDefs => Set<TicketStatusDef>();
     public DbSet<TicketDevelopmentLink> TicketDevelopmentLinks => Set<TicketDevelopmentLink>();
+    public DbSet<TicketTestItem> TicketTestItems => Set<TicketTestItem>();
     public DbSet<ServiceApiKey> ServiceApiKeys => Set<ServiceApiKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -116,12 +117,18 @@ public class BugsManagedDbContext : DbContext
             .HasIndex(t => new { t.OrganizationId, t.IsDevelopmentOrder, t.DevelopmentStage });
         modelBuilder.Entity<Ticket>()
             .HasIndex(t => new { t.IsDevelopmentOrder, t.ProductionAt, t.DigestSentAt });
+        // Initiatives: "the phases of #N" and "what builds on #N".
+        modelBuilder.Entity<Ticket>().HasIndex(t => t.ParentOrderId);
+        modelBuilder.Entity<Ticket>().HasIndex(t => t.DependsOnOrderId);
         // The devbox dispatcher polls for REQUESTED fixes.
         modelBuilder.Entity<Ticket>()
             .HasIndex(t => new { t.OrganizationId, t.FixStatus });
 
         modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.TicketId);
         modelBuilder.Entity<TicketDevelopmentLink>().HasIndex(l => l.OrganizationId);
+
+        modelBuilder.Entity<TicketTestItem>().HasIndex(i => i.TicketId);
+        modelBuilder.Entity<TicketTestItem>().HasIndex(i => i.OrganizationId);
 
         // The auth handler looks a key up by hash before any org is known.
         modelBuilder.Entity<ServiceApiKey>().HasIndex(k => k.KeyHash).IsUnique();
@@ -179,6 +186,9 @@ public class BugsManagedDbContext : DbContext
 
         modelBuilder.Entity<TicketDevelopmentLink>()
             .HasQueryFilter(l => _orgContext.CurrentOrganizationId != null && l.OrganizationId == _orgContext.CurrentOrganizationId);
+
+        modelBuilder.Entity<TicketTestItem>()
+            .HasQueryFilter(i => _orgContext.CurrentOrganizationId != null && i.OrganizationId == _orgContext.CurrentOrganizationId);
 
         // ServiceKeyAuthenticationHandler reads this table with
         // IgnoreQueryFilters because it runs before the org is resolved.

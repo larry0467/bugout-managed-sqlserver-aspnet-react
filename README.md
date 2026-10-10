@@ -292,6 +292,31 @@ the stage, the Claude Code session log, and the what-shipped announcement video.
   `DevelopmentTracker:DigestRecipients` (or every `PLATFORM_OWNER` in the org when empty), asking for the
   what-shipped video. One digest per organization per day; nothing is stamped unless Comms accepted the message.
 
+### Initiatives, phases and "builds on"
+
+Related orders (one effort, several videos) become numbered **phases** of one **initiative** order.
+
+- One level: `Ticket.ParentOrderId` + `PhaseNumber` (kept 1..N by the API). An initiative is never itself a phase.
+- Each phase keeps its own video, PRs, stage and test checklist. The initiative's stage **follows its least-advanced
+  phase** (`DevelopmentOrderService.RollUpInitiativesAsync`, run after every phase move: board, sessions, webhook,
+  fix queue). Moving an initiative by hand is refused (409); deployments skip it; it is never announced or put in
+  the digest itself (its phases are).
+- **Builds on** (`DependsOnOrderId` + `DependsOnStage`, default `MERGED_DEV`): the order this one is stacked on or
+  waits for, and how far that one must get first. The board flags each order (`DevelopmentSequence`):
+  *after #N* (waiting), *ready* (base got there), **ahead of #N** (this one moved past PR open before its base
+  reached the gate - the out-of-order case). A mobile build waiting on its API uses gate `PRODUCTION`.
+- Board: initiatives are expandable rows with a phase strip (one tag per phase, colored by stage, `!` = ahead);
+  tick rows and **Group into an initiative**; the drawer has Phases (reorder, take out, add) or
+  "Initiative and sequence" (part of / builds on / previous-next phase).
+
+### Test checklist
+
+Every order has a checklist for whoever tests it when it is ready (local demo, dev, beta): `TicketTestItems`
+(`Text`, `Expected`, `Environment` ANY / LOCAL / DEV / BETA, latest `Result` PASS / FAIL with `ResultNote`,
+`TestedIn`, `TestedBy`). The session that built the order writes it; any signed-in user (viewers included) records
+results; **New round** clears results (old ones stay in Activity). The board shows "3/7 tested · 1 failed"; an
+initiative counts and lists every phase's checklist. "Copy" gives a text version for chat or a PR.
+
 ### Service keys (machine access)
 
 Claude Code sessions write to the tracker with a **service key** (Settings → Service Keys; `PLATFORM_OWNER` /
@@ -306,9 +331,15 @@ and the scopes `development:read` / `development:write`. On the devbox it lives 
 |--------|-------|---------|
 | GET | `stages` | stage keys and labels |
 | GET / POST | `projects` | list apps / ensure an app exists (`{ name, slug? }`) |
-| GET | `orders?projectSlug=&stage=A,B&needsAnnouncement=&search=&includeAnnounced=` | the board |
-| GET | `orders/{id}` | detail: links, stage history, activity, transcript |
-| POST | `orders` | create: `projectSlug` or `projectId`, `title`, `summary`, `videoUrl`, `transcript`, `sessionLogUrl`, `sessionId`, `orderedBy`, `stage`, `priority`, `links[]` |
+| GET | `orders?projectSlug=&stage=A,B&needsAnnouncement=&search=&includeAnnounced=&includePhases=` | the board (`includePhases=true`: a listed initiative brings every phase) |
+| GET | `orders/{id}` | detail: links, stage history, activity, transcript, test checklist (an initiative: every phase's) |
+| POST | `orders` | create: `projectSlug` or `projectId`, `title`, `summary`, `videoUrl`, `transcript`, `sessionLogUrl`, `sessionId`, `orderedBy`, `stage`, `priority`, `links[]`, `parentOrderId`, `phaseNumber`, `dependsOnOrderId`, `dependsOnStage`, `tests[]` |
+| POST | `initiatives` | `{ orderIds[], title \| initiativeId, summary, chain }`: group orders as phases (new or existing initiative) |
+| PUT | `orders/{id}/placement` | `{ parentOrderId, phaseNumber, dependsOnOrderId, dependsOnStage }` (full replacement; null = standalone / nothing) |
+| GET / POST | `orders/{id}/tests` | checklist / add `{ items: [{ text, expected, environment }], replace }` |
+| PUT / DELETE | `orders/{id}/tests/{itemId}` | edit `{ text, expected, environment, position }` / remove |
+| PUT | `orders/{id}/tests/{itemId}/result` | `{ result: PASS \| FAIL \| "", note, testedIn }` (any signed-in user) |
+| POST | `orders/{id}/tests/new-round` | clear every result |
 | POST | `orders/from-ticket/{ticketId}` | promote an existing ticket |
 | PATCH | `orders/{id}` | `title`, `summary`, `videoUrl`, `transcript`, `sessionLogUrl`, `sessionId`, `announcementVideoUrl`, `priority`, `orderedBy` (`""` clears) |
 | PUT | `orders/{id}/stage` | `{ stage, note }` |
@@ -405,6 +436,16 @@ Update-BugOutOrder -Id $o.order.id -SessionLogUrl 'https://.../SESSION-2026-10-0
 
 `New-BugOutOrderFromVideo` reads the recording through `videos-api-dev.managedplatform.com/public/<account>/r/<slug>`
 and stores the captions as the transcript. `$o.order.boardUrl` is the link to put in the PR description.
+
+```powershell
+# The next video of an effort that is already an initiative: log it as its next phase, stacked on the last one.
+$o = New-BugOutOrderFromVideo -VideoUrl '<share link>' -ProjectSlug service-managed -ParentOrderId 445 -DependsOnOrderId 437
+New-BugOutInitiative -Title 'Estimates, change orders + AI quoting' -OrderIds 427, 434, 435, 437   # chained phases
+Set-BugOutOrderPlacement -Id 438 -InitiativeId 445 -DependsOnOrderId 434 -DependsOnStage PRODUCTION
+# The test checklist (write it when the work reaches local demo / PR open; put it in the PR too).
+Add-BugOutTests -Id $o.order.id -Tests @('Open WO 90001 > Estimates', @{ text = 'Click Draft with AI'; expected = 'Shows This price assumes'; environment = 'LOCAL' })
+Get-BugOutTestChecklistMarkdown -Id $o.order.id    # markdown for the PR description
+```
 `scripts\Seed-DevelopmentOrders.ps1` creates one app per Managed Platform product and the first orders; it is idempotent.
 
 ---

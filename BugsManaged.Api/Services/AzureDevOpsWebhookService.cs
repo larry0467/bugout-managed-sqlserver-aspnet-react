@@ -253,6 +253,9 @@ public class AzureDevOpsWebhookService
         }
 
         await _db.SaveChangesAsync(ct);
+        if (ticket.ParentOrderId != null
+            && (await _orders.RollUpInitiativesAsync(new[] { ticket.ParentOrderId }, actorEmail, actorName, now, ct)).Count > 0)
+            await _db.SaveChangesAsync(ct);
         return new WebhookOutcome(true, action, ticket.Id, $"{pr.Repo} PR {pr.Id} ({pr.Status}) -> order #{ticket.Id} at {ticket.DevelopmentStage}");
     }
 
@@ -441,8 +444,10 @@ public class AzureDevOpsWebhookService
             ? new[] { DevelopmentStages.MergedDev, DevelopmentStages.Beta }
             : new[] { DevelopmentStages.MergedDev };
 
+        // Initiatives are skipped: their stage follows their phases.
         var tickets = await _db.Tickets
             .Where(t => t.IsDevelopmentOrder && t.ProjectId == project.Id && t.DevelopmentStage != null && waiting.Contains(t.DevelopmentStage))
+            .Where(t => !_db.Tickets.Any(c => c.ParentOrderId == t.Id && c.IsDevelopmentOrder))
             .OrderBy(t => t.Id)
             .ToListAsync(ct);
 
@@ -454,6 +459,8 @@ public class AzureDevOpsWebhookService
         foreach (var t in tickets)
             _orders.MoveStage(t, targetStage, actorEmail, actorName, now, keys, description);
         await _db.SaveChangesAsync(ct);
+        if ((await _orders.RollUpInitiativesAsync(tickets.Select(t => t.ParentOrderId), actorEmail, actorName, now, ct)).Count > 0)
+            await _db.SaveChangesAsync(ct);
 
         return new WebhookOutcome(true, $"stage-{targetStage.ToLowerInvariant()}", tickets.Count == 1 ? tickets[0].Id : null,
             $"{description}: moved {tickets.Count} {project.Name} order(s) to {DevelopmentStages.Labels[targetStage]} (#{string.Join(", #", tickets.Select(t => t.Id))})");

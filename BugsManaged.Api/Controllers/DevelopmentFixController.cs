@@ -523,6 +523,14 @@ public class DevelopmentFixController : ControllerBase
             _orders.MoveStage(ticket, DevelopmentStages.PrOpen, actorEmail, actorName, now, statusKeys, "drafted fix ready to test");
         }
 
+        // The tester gets a checklist: the run's "how to test" lines, unless one exists already.
+        if (!string.IsNullOrWhiteSpace(ticket.TestingNotes) && !await _db.TicketTestItems.AnyAsync(i => i.TicketId == ticket.Id))
+        {
+            var fromNotes = DevelopmentTestsController.FromNotes(ticket.TestingNotes);
+            for (var i = 0; i < fromNotes.Count; i++)
+                _db.TicketTestItems.Add(DevelopmentTestsController.NewItem(ticket, fromNotes[i], i, actorEmail));
+        }
+
         var existing = await _db.TicketDevelopmentLinks.Where(l => l.TicketId == ticket.Id).ToListAsync();
         foreach (var l in links)
         {
@@ -536,6 +544,9 @@ public class DevelopmentFixController : ControllerBase
         _activity.Log(ticket, "FIX_READY", $"{actorName} drafted a fix: ready to test" + (links.Count > 0 ? $" ({string.Join(", ", links.Select(l => l.Name))})" : ""),
             actorEmail, actorName, payload: new { links = links.Select(l => new { l.Kind, l.Repo, l.Name, l.Url }) });
         await _db.SaveChangesAsync();
+        if (ticket.ParentOrderId != null
+            && (await _orders.RollUpInitiativesAsync(new[] { ticket.ParentOrderId }, actorEmail, actorName, now)).Count > 0)
+            await _db.SaveChangesAsync();
 
         // Internal note so the chat / Google Chat / email readers see the analysis too.
         try

@@ -193,6 +193,14 @@ function New-BugOutOrder {
         [ValidateSet('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')][string]$Priority = 'MEDIUM',
         # Array of hashtables: @{ kind='PR'; repo='ServiceManagerUI'; name='PR 4347'; url='https://...'; note='' }
         [object[]]$Links,
+        # The next video of an existing effort: log it as the next phase of that initiative.
+        [long]$ParentOrderId,
+        # The order this one is stacked on / waits for, and how far that one must get first.
+        [long]$DependsOnOrderId,
+        [ValidateSet('IN_PROGRESS', 'LOCAL_DEMO', 'PR_OPEN', 'MERGED_DEV', 'BETA', 'PRODUCTION')]
+        [string]$DependsOnStage,
+        # Test checklist: strings, or hashtables @{ text='...'; expected='...'; environment='LOCAL|DEV|BETA|ANY' }
+        [object[]]$Tests,
         [string]$ConfigPath = $script:DefaultConfigPath
     )
     $body = @{ projectSlug = $ProjectSlug; title = $Title; stage = $Stage; priority = $Priority }
@@ -203,7 +211,138 @@ function New-BugOutOrder {
     if ($SessionId) { $body.sessionId = $SessionId }
     if ($OrderedBy) { $body.orderedBy = $OrderedBy }
     if ($Links) { $body.links = @($Links | ForEach-Object { ConvertTo-BugOutLinkBody $_ }) }
+    if ($ParentOrderId) { $body.parentOrderId = $ParentOrderId }
+    if ($DependsOnOrderId) { $body.dependsOnOrderId = $DependsOnOrderId }
+    if ($DependsOnStage) { $body.dependsOnStage = $DependsOnStage }
+    if ($Tests) { $body.tests = @($Tests | ForEach-Object { ConvertTo-BugOutTestBody $_ }) }
     Invoke-BugOutDev -Method POST -Path 'orders' -Body $body -ConfigPath $ConfigPath
+}
+
+# ---------- initiatives (one effort, several videos = numbered phases) ----------
+
+function New-BugOutInitiative {
+    # Groups existing orders, in the order given, as phases of a new initiative.
+    # Each phase builds on the one before it unless -NoChain (stacked branches merge in phase order).
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][long[]]$OrderIds,
+        [string]$Summary,
+        [string]$ProjectSlug,
+        [switch]$NoChain,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ title = $Title; orderIds = @($OrderIds); chain = (-not $NoChain) }
+    if ($Summary) { $body.summary = $Summary }
+    if ($ProjectSlug) { $body.projectSlug = $ProjectSlug }
+    Invoke-BugOutDev -Method POST -Path 'initiatives' -Body $body -ConfigPath $ConfigPath
+}
+
+function Add-BugOutPhase {
+    # Appends orders to an existing initiative; the first one builds on its current last phase unless -NoChain.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$InitiativeId,
+        [Parameter(Mandatory)][long[]]$OrderIds,
+        [switch]$NoChain,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ initiativeId = $InitiativeId; orderIds = @($OrderIds); chain = (-not $NoChain) }
+    Invoke-BugOutDev -Method POST -Path 'initiatives' -Body $body -ConfigPath $ConfigPath
+}
+
+function Set-BugOutOrderPlacement {
+    # Full replacement of where an order sits: -InitiativeId (omit = standalone), -PhaseNumber
+    # (omit = last), -DependsOnOrderId (omit = builds on nothing), -DependsOnStage (default MERGED_DEV).
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$Id,
+        [long]$InitiativeId,
+        [int]$PhaseNumber,
+        [long]$DependsOnOrderId,
+        [ValidateSet('IN_PROGRESS', 'LOCAL_DEMO', 'PR_OPEN', 'MERGED_DEV', 'BETA', 'PRODUCTION')]
+        [string]$DependsOnStage,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ parentOrderId = $null; phaseNumber = $null; dependsOnOrderId = $null; dependsOnStage = $null }
+    if ($InitiativeId) { $body.parentOrderId = $InitiativeId }
+    if ($PhaseNumber) { $body.phaseNumber = $PhaseNumber }
+    if ($DependsOnOrderId) { $body.dependsOnOrderId = $DependsOnOrderId }
+    if ($DependsOnStage) { $body.dependsOnStage = $DependsOnStage }
+    Invoke-BugOutDev -Method PUT -Path "orders/$Id/placement" -Body $body -ConfigPath $ConfigPath
+}
+
+# ---------- test checklist (what the tester checks when it is ready to try) ----------
+
+function ConvertTo-BugOutTestBody {
+    param([Parameter(Mandatory)]$Test)
+    if ($Test -is [string]) { return @{ text = $Test } }
+    $h = @{}
+    foreach ($k in 'text', 'expected', 'environment') {
+        $v = $null
+        if ($Test -is [hashtable]) { if ($Test.ContainsKey($k)) { $v = $Test[$k] } }
+        elseif ($Test.PSObject.Properties.Name -contains $k) { $v = $Test.$k }
+        if ($null -ne $v -and "$v" -ne '') { $h[$k] = "$v" }
+    }
+    if (-not $h.ContainsKey('text')) { throw 'A test needs at least text.' }
+    return $h
+}
+
+function Get-BugOutTests {
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method GET -Path "orders/$Id/tests" -ConfigPath $ConfigPath
+}
+
+function Add-BugOutTests {
+    # Strings or @{ text; expected; environment = LOCAL | DEV | BETA | ANY }. -Replace rewrites the whole list.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$Id,
+        [Parameter(Mandatory)][object[]]$Tests,
+        [switch]$Replace,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ items = @($Tests | ForEach-Object { ConvertTo-BugOutTestBody $_ }); replace = [bool]$Replace }
+    Invoke-BugOutDev -Method POST -Path "orders/$Id/tests" -Body $body -ConfigPath $ConfigPath
+}
+
+function Set-BugOutTestResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][long]$Id,
+        [Parameter(Mandatory)][long]$ItemId,
+        [Parameter(Mandatory)][ValidateSet('PASS', 'FAIL', '')][AllowEmptyString()][string]$Result,
+        [string]$Note,
+        [ValidateSet('LOCAL', 'DEV', 'BETA')][string]$TestedIn,
+        [string]$ConfigPath = $script:DefaultConfigPath
+    )
+    $body = @{ result = $Result }
+    if ($Note) { $body.note = $Note }
+    if ($TestedIn) { $body.testedIn = $TestedIn }
+    Invoke-BugOutDev -Method PUT -Path "orders/$Id/tests/$ItemId/result" -Body $body -ConfigPath $ConfigPath
+}
+
+function Start-BugOutTestRound {
+    # Clears every result (e.g. local passed, now test in beta); the old ones stay in the activity feed.
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$Note, [string]$ConfigPath = $script:DefaultConfigPath)
+    Invoke-BugOutDev -Method POST -Path "orders/$Id/tests/new-round" -Body @{ note = $Note } -ConfigPath $ConfigPath
+}
+
+function Get-BugOutTestChecklistMarkdown {
+    # The checklist as markdown for a PR description: testers tick it on the board, not in the PR.
+    [CmdletBinding()] param([Parameter(Mandatory)][long]$Id, [string]$ConfigPath = $script:DefaultConfigPath)
+    $o = Get-BugOutOrder -Id $Id -ConfigPath $ConfigPath
+    $items = @($o.tests)
+    $lines = @("## Test checklist", "", "Record each result on the board: $($o.order.boardUrl)", "")
+    if ($items.Count -eq 0) { $lines += '_No checklist yet._' }
+    $n = 0
+    foreach ($i in $items) {
+        $n++
+        $where = if ($i.environment -and $i.environment -ne 'ANY') { " _($($i.environmentLabel))_" } else { '' }
+        $lines += "- [ ] $n. $($i.text)$where"
+        if ($i.expected) { $lines += "  - Expect: $($i.expected)" }
+    }
+    return ($lines -join "`n")
 }
 
 function Set-BugOutOrderStage {
@@ -597,6 +736,11 @@ function New-BugOutOrderFromVideo {
         [ValidateSet('ORDERED', 'IN_PROGRESS', 'LOCAL_DEMO', 'PR_OPEN', 'MERGED_DEV', 'BETA', 'PRODUCTION', 'ANNOUNCED')]
         [string]$Stage = 'ORDERED',
         [object[]]$Links,
+        [long]$ParentOrderId,
+        [long]$DependsOnOrderId,
+        [ValidateSet('IN_PROGRESS', 'LOCAL_DEMO', 'PR_OPEN', 'MERGED_DEV', 'BETA', 'PRODUCTION')]
+        [string]$DependsOnStage,
+        [object[]]$Tests,
         [string]$ConfigPath = $script:DefaultConfigPath
     )
     $transcript = $null
@@ -612,14 +756,20 @@ function New-BugOutOrderFromVideo {
     if (-not $Title) {
         if ($recTitle) { $Title = $recTitle } else { throw 'Pass -Title: the recording has no title.' }
     }
+    $extra = @{}
+    foreach ($p in 'ParentOrderId', 'DependsOnOrderId', 'DependsOnStage', 'Tests') {
+        if ($PSBoundParameters.ContainsKey($p)) { $extra[$p] = $PSBoundParameters[$p] }
+    }
     New-BugOutOrder -ProjectSlug $ProjectSlug -Title $Title -Summary $Summary -VideoUrl $VideoUrl -Transcript $transcript `
-        -SessionLogUrl $SessionLogUrl -SessionId $SessionId -OrderedBy $OrderedBy -Stage $Stage -Links $Links -ConfigPath $ConfigPath
+        -SessionLogUrl $SessionLogUrl -SessionId $SessionId -OrderedBy $OrderedBy -Stage $Stage -Links $Links -ConfigPath $ConfigPath @extra
 }
 
 Export-ModuleMember -Function Get-BugOutDevConfig, Set-BugOutDevConfig, Invoke-BugOutDev,
     Get-BugOutProjects, Set-BugOutProject, Get-BugOutStages,
     Get-BugOutOrders, Get-BugOutOrder, New-BugOutOrder, Set-BugOutOrderStage, Update-BugOutOrder,
     Add-BugOutOrderLink, Remove-BugOutOrderLink, Get-BugOutShipped,
+    New-BugOutInitiative, Add-BugOutPhase, Set-BugOutOrderPlacement,
+    Get-BugOutTests, Add-BugOutTests, Set-BugOutTestResult, Start-BugOutTestRound, Get-BugOutTestChecklistMarkdown,
     Get-BugOutFixQueue, Get-BugOutFix, Get-BugOutFixApps, Request-BugOutFix, Start-BugOutFix, Reset-BugOutFix, Complete-BugOutFix,
     Get-BugOutWorkerName, Export-BugOutTicketBrief, Get-BugOutDevOpsToken, Get-BugOutDevOpsRepo, New-BugOutPullRequest,
     Get-VideosManagedRecording, ConvertFrom-WebVtt, New-BugOutOrderFromVideo

@@ -184,6 +184,28 @@ public class Ticket
     // PR descriptions by sessions.
     public string? TestingNotes { get; set; }
 
+    // ===== Initiatives: one order holding several phases =====
+    // Related orders (one effort, several videos) hang under one initiative
+    // order as numbered phases. One level only: an initiative is never itself
+    // a phase. The initiative's DevelopmentStage follows its least-advanced
+    // phase (DevelopmentOrderService.RollUpInitiativesAsync). Plain ids, no FK:
+    // tickets are never deleted, and a dangling id reads as "no parent".
+    public long? ParentOrderId { get; set; }
+
+    // Position inside the initiative (1, 2, 3 ...). The board lists phases in
+    // this order; the API keeps the numbers contiguous.
+    public int? PhaseNumber { get; set; }
+
+    // The order this one builds on: its branch is stacked on that order's
+    // branch, or it needs that order live first (a mobile build waiting on its
+    // API). Any development order, not only a sibling phase.
+    public long? DependsOnOrderId { get; set; }
+
+    // How far DependsOnOrderId has to get before this order may move past
+    // PR open. Null = MERGED_DEV (merge the base first).
+    [MaxLength(50)]
+    public string? DependsOnStage { get; set; }
+
     // ===== Drafted-fix queue (Claude Code on the devbox) =====
     // One of FixStatuses: REQUESTED, CLAIMED, READY_TO_TEST, FAILED, APPROVED,
     // REJECTED. Null for tickets nobody asked a fix for. Set automatically on

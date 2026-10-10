@@ -9,6 +9,7 @@ import {
   AppstoreOutlined, BranchesOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LinkOutlined,
   PlayCircleOutlined, PlusOutlined, PullRequestOutlined, ReloadOutlined, RocketOutlined, SearchOutlined,
   VideoCameraAddOutlined, VideoCameraOutlined, ArrowRightOutlined, SwapOutlined, CheckSquareOutlined,
+  ApartmentOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -17,6 +18,9 @@ import {
   type DevelopmentProject, type DevelopmentStage, type Ticket,
 } from '../api';
 import TicketActivityTab from '../components/TicketActivityTab';
+import {
+  GroupModal, PhaseStrip, PhasesCard, PlacementCard, SequenceTag, TestChecklist, TestCountTag,
+} from '../components/DevelopmentPhases';
 
 const { Title, Text, Paragraph, Link } = Typography;
 
@@ -40,6 +44,29 @@ const linkKindIcon: Record<DevelopmentLinkKind, React.ReactNode> = {
   DOC: <FileTextOutlined />,
   VIDEO: <VideoCameraOutlined />,
 };
+
+// The board is a tree: an initiative row holds its phases (antd tree data).
+type BoardRow = DevelopmentOrder & { children?: BoardRow[] };
+
+const buildTree = (list: DevelopmentOrder[]): BoardRow[] => {
+  const byId = new Map<number, BoardRow>(list.map((o) => [o.id, { ...o }]));
+  const roots: BoardRow[] = [];
+  for (const row of byId.values()) {
+    const parent = row.parentOrderId ? byId.get(row.parentOrderId) : undefined;
+    if (parent) (parent.children ??= []).push(row);
+    else roots.push(row);
+  }
+  for (const row of byId.values()) row.children?.sort((a, b) => (a.phaseNumber ?? 999) - (b.phaseNumber ?? 999));
+  return roots;
+};
+
+// antd sorts nested rows with the column sorter too; phases of one initiative
+// keep their phase order whichever column or direction is active.
+const phaseAware = (cmp: (a: DevelopmentOrder, b: DevelopmentOrder) => number) =>
+  (a: DevelopmentOrder, b: DevelopmentOrder, order?: 'ascend' | 'descend' | null) =>
+    a.parentOrderId && a.parentOrderId === b.parentOrderId
+      ? ((a.phaseNumber ?? 999) - (b.phaseNumber ?? 999)) * (order === 'descend' ? -1 : 1)
+      : cmp(a, b);
 
 const fmtDate = (v?: string | null) => (v ? dayjs(v).format('MMM D, YYYY') : '—');
 const fmtDateTime = (v?: string | null) => (v ? dayjs(v).format('MMM D, YYYY h:mm A') : '—');
@@ -67,6 +94,10 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
   const [search, setSearch] = useState('');
   const [groupByApp, setGroupByApp] = useState(false);
   const [shippedToday, setShippedToday] = useState<DevelopmentOrder[] | null>(null);
+  // Every order regardless of filters: the pickers for initiative / builds on.
+  const [allOrders, setAllOrders] = useState<DevelopmentOrder[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const [groupOpen, setGroupOpen] = useState(false);
 
   // ----- detail state -----
   const [detail, setDetail] = useState<DevelopmentOrderDetail | null>(null);
@@ -103,10 +134,12 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         needsAnnouncement: needsVideoOnly,
         search: search || undefined,
         includeAnnounced: true,
+        includePhases: true,
       })
       .then(setOrders)
       .catch((e) => message.error(errMsg(e, 'Could not load development orders')))
       .finally(() => setLoading(false));
+    developmentApi.list({}).then(setAllOrders).catch(() => {});
   }, [projectFilter, stageFilter, needsVideoOnly, search, view]);
 
   useEffect(() => { load(); }, [load]);
@@ -158,6 +191,12 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
       return next;
     });
     developmentApi.shipped().then((r) => setShippedToday(r.items)).catch(() => {});
+  };
+
+  // After a change that can touch other rows (phases, roll-up, test counts).
+  const reloadDetail = () => {
+    if (detail) developmentApi.get(detail.order.id).then(applyDetail).catch(() => {});
+    load();
   };
 
   // ----- mutations -----
@@ -310,6 +349,8 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         orderedBy: v.orderedBy || undefined,
         stage: v.stage,
         priority: v.priority,
+        parentOrderId: v.parentOrderId || undefined,
+        dependsOnOrderId: v.dependsOnOrderId || undefined,
       });
       setCreateOpen(false);
       createForm.resetFields();
@@ -379,6 +420,8 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
     );
   };
 
+  const orderIds = useMemo(() => new Set(orders.map((o) => o.id)), [orders]);
+
   const columns = (withApp: boolean) => {
     const cols: any[] = [];
     if (withApp) {
@@ -388,18 +431,44 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         key: 'app',
         width: 160,
         render: (v: string) => <Tag icon={<AppstoreOutlined />}>{v}</Tag>,
-        sorter: (a: DevelopmentOrder, b: DevelopmentOrder) => a.projectName.localeCompare(b.projectName),
+        sorter: phaseAware((a, b) => a.projectName.localeCompare(b.projectName)),
       });
     }
     cols.push(
       {
         title: 'Ordered development',
         key: 'title',
-        render: (_: any, r: DevelopmentOrder) => (
-          <div style={{ minWidth: 240 }}>
+        render: (_: any, r: BoardRow) => (
+          <div style={{ minWidth: 240, display: 'inline-block', verticalAlign: 'top' }}>
+            {r.isInitiative && (
+              <Tag color="blue" icon={<ApartmentOutlined />} style={{ marginRight: 6, fontSize: 11 }}>initiative · {r.phaseCount} phases</Tag>
+            )}
+            {r.parentOrderId && (
+              orderIds.has(r.parentOrderId)
+                ? <Tag style={{ marginRight: 6, fontSize: 11 }}>Phase {r.phaseNumber}</Tag>
+                : (
+                  <Tooltip title={`Part of #${r.parentOrderId} ${r.parentTitle ?? ''}`}>
+                    <Tag style={{ marginRight: 6, fontSize: 11, cursor: 'pointer' }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/development/${r.parentOrderId}`); }}>
+                      Phase {r.phaseNumber}/{r.phaseCount} of #{r.parentOrderId}
+                    </Tag>
+                  </Tooltip>
+                )
+            )}
             <Text strong style={{ cursor: 'pointer' }} onClick={() => navigate(`/development/${r.id}`)}>
               #{r.id} {r.title}
             </Text>
+            {(r.sequence || r.tests) && (
+              <Space size={4} style={{ marginLeft: 8 }}>
+                <SequenceTag sequence={r.sequence} onOpen={(oid) => navigate(`/development/${oid}`)} />
+                <TestCountTag tests={r.tests} />
+              </Space>
+            )}
+            {r.isInitiative && r.phases && (
+              <div style={{ marginTop: 4 }}>
+                <PhaseStrip phases={r.phases} onOpen={(oid) => navigate(`/development/${oid}`)} />
+              </div>
+            )}
             {r.ticketType === 'BUG' && (
               <Tag color="volcano" style={{ marginLeft: 8, fontSize: 11 }}>
                 bug fix{r.fixStatus && fixStatusMeta[r.fixStatus] ? ` · ${fixStatusMeta[r.fixStatus].label}` : ''}
@@ -430,7 +499,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
             {r.orderedBy && <Text type="secondary" style={{ fontSize: 12 }}>{r.orderedBy}</Text>}
           </div>
         ),
-        sorter: (a: DevelopmentOrder, b: DevelopmentOrder) => dayjs(a.orderedAt).valueOf() - dayjs(b.orderedAt).valueOf(),
+        sorter: phaseAware((a, b) => dayjs(a.orderedAt).valueOf() - dayjs(b.orderedAt).valueOf()),
         defaultSortOrder: 'descend' as const,
       },
       {
@@ -439,6 +508,13 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         width: 170,
         render: (_: any, r: DevelopmentOrder) => {
           const next = nextStageOf(r.stage);
+          if (r.isInitiative) {
+            return (
+              <Tooltip title="An initiative is as far along as its least-advanced phase">
+                <span><StageTag stage={r.stage} style={{ margin: 0 }} /></span>
+              </Tooltip>
+            );
+          }
           return (
             <Space size={4}>
               <StageTag stage={r.stage} style={{ margin: 0 }} />
@@ -451,7 +527,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
             </Space>
           );
         },
-        sorter: (a: DevelopmentOrder, b: DevelopmentOrder) => a.stageOrder - b.stageOrder,
+        sorter: phaseAware((a, b) => a.stageOrder - b.stageOrder),
       },
       {
         title: 'PRs / branches',
@@ -495,8 +571,8 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         key: 'production',
         width: 130,
         render: (_: any, r: DevelopmentOrder) => fmtDate(r.productionAt),
-        sorter: (a: DevelopmentOrder, b: DevelopmentOrder) =>
-          (a.productionAt ? dayjs(a.productionAt).valueOf() : 0) - (b.productionAt ? dayjs(b.productionAt).valueOf() : 0),
+        sorter: phaseAware((a, b) =>
+          (a.productionAt ? dayjs(a.productionAt).valueOf() : 0) - (b.productionAt ? dayjs(b.productionAt).valueOf() : 0)),
       },
       {
         title: 'Announcement',
@@ -520,25 +596,39 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
     return cols;
   };
 
+  const tree = useMemo(() => buildTree(orders), [orders]);
+
   const grouped = useMemo(() => {
-    const map = new Map<string, DevelopmentOrder[]>();
-    for (const o of orders) {
+    const map = new Map<string, BoardRow[]>();
+    for (const o of tree) {
       const list = map.get(o.projectName) ?? [];
       list.push(o);
       map.set(o.projectName, list);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [orders]);
+  }, [tree]);
 
-  const tableProps = (rows: DevelopmentOrder[], withApp: boolean): TableProps<DevelopmentOrder> => ({
+  const selectedOrders = useMemo(
+    () => selectedKeys.map((k) => orders.find((o) => o.id === k)).filter((o): o is DevelopmentOrder => !!o),
+    [selectedKeys, orders],
+  );
+
+  const tableProps = (rows: BoardRow[], withApp: boolean): TableProps<BoardRow> => ({
     dataSource: rows,
     columns: columns(withApp),
     rowKey: 'id',
     size: 'small',
     loading,
     pagination: rows.length > 25 ? { pageSize: 25 } : false,
-    onRow: (r: DevelopmentOrder) => ({ onClick: () => navigate(`/development/${r.id}`), style: { cursor: 'pointer' } }),
+    onRow: (r: BoardRow) => ({ onClick: () => navigate(`/development/${r.id}`), style: { cursor: 'pointer' } }),
     scroll: { x: true },
+    // Expand icon and indent in the title column, so phases sit under their
+    // initiative. With row selection the checkbox column counts and antd then
+    // subtracts one from any index above 0, hence +2 rather than +1.
+    expandable: { indentSize: 28, expandIconColumnIndex: (withApp ? 1 : 0) + (writer ? 2 : 0) },
+    rowSelection: writer
+      ? { selectedRowKeys: selectedKeys, onChange: setSelectedKeys, checkStrictly: true, columnWidth: 36 }
+      : undefined,
   });
 
   const needsVideoCount = shippedToday?.filter((o) => o.needsAnnouncement).length ?? 0;
@@ -553,6 +643,13 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}><RocketOutlined /> Development</Title>
         <Space wrap>
+          {writer && selectedOrders.length > 0 && (
+            <Tooltip title="Make the ticked orders phases of one initiative (one effort, several videos)">
+              <Button icon={<ApartmentOutlined />} onClick={() => setGroupOpen(true)}>
+                Group {selectedOrders.length} into an initiative
+              </Button>
+            </Tooltip>
+          )}
           <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
           {writer && <Button icon={<SwapOutlined />} onClick={openPromote}>Promote a ticket</Button>}
           {writer && (
@@ -636,7 +733,7 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
         </Space>
       </Card>
 
-      {!groupByApp && <Table {...tableProps(orders, true)} />}
+      {!groupByApp && <Table {...tableProps(tree, true)} />}
 
       {groupByApp && (
         grouped.length === 0
@@ -674,7 +771,27 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
               items={developmentStages.map((s) => ({ title: s.label }))}
             />
 
-            {writer && (
+            {order.isInitiative && (
+              <Alert
+                style={{ marginBottom: 16 }}
+                type="info"
+                showIcon
+                icon={<ApartmentOutlined />}
+                message={`Initiative: ${order.phaseCount} phases. Its stage follows its least-advanced phase, so move the phases, not this.`}
+              />
+            )}
+
+            {order.isInitiative && (
+              <PhasesCard
+                initiative={order}
+                allOrders={allOrders}
+                writer={writer}
+                onOpen={(oid) => navigate(`/development/${oid}`)}
+                onChanged={reloadDetail}
+              />
+            )}
+
+            {writer && !order.isInitiative && (
               <Card size="small" style={{ marginBottom: 16 }} title="Move stage">
                 <Space wrap>
                   <Select
@@ -703,7 +820,17 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
               </Card>
             )}
 
-            {(order.stage === 'PRODUCTION' || order.stage === 'ANNOUNCED') && (
+            {!order.isInitiative && (
+              <PlacementCard
+                order={order}
+                allOrders={allOrders}
+                writer={writer}
+                onOpen={(oid) => navigate(`/development/${oid}`)}
+                onSaved={(d) => { applyDetail(d); load(); }}
+              />
+            )}
+
+            {!order.isInitiative && (order.stage === 'PRODUCTION' || order.stage === 'ANNOUNCED') && (
               <Card
                 size="small"
                 style={{ marginBottom: 16, borderColor: order.needsAnnouncement ? '#ff4d4f' : undefined }}
@@ -785,6 +912,48 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
                 </>
               ) : (
                 <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{order.testingNotes || <Text type="secondary">Nobody has written how to test this yet.</Text>}</Paragraph>
+              )}
+            </Card>
+
+            <Card
+              size="small"
+              style={{ marginBottom: 16 }}
+              title={<Space><ExperimentOutlined /> Test checklist <TestCountTag tests={order.tests} /></Space>}
+            >
+              {!order.isInitiative && (
+                <>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>
+                    When this is ready to try (local demo, dev, beta), whoever tests it works down this list and marks each line Passed or Failed.
+                  </Text>
+                  <TestChecklist order={order} items={detail!.tests ?? []} writer={writer} onChanged={reloadDetail} />
+                </>
+              )}
+              {order.isInitiative && (
+                <>
+                  {(detail!.tests?.length ?? 0) > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <TestChecklist order={order} items={detail!.tests ?? []} writer={writer} onChanged={reloadDetail}
+                        heading={<Text strong>Across the whole initiative</Text>} />
+                    </div>
+                  )}
+                  {(detail!.phaseTests ?? []).map((p) => (
+                    <div key={p.orderId} style={{ marginBottom: 16 }}>
+                      <TestChecklist
+                        order={{ id: p.orderId, title: p.title, stage: p.stage, boardUrl: order.boardUrl.replace(/\/\d+$/, `/${p.orderId}`), testingNotes: null }}
+                        items={p.items}
+                        writer={writer}
+                        onChanged={reloadDetail}
+                        heading={(
+                          <Space size={6}>
+                            <Tag style={{ margin: 0 }}>Phase {p.phaseNumber}</Tag>
+                            <Link onClick={() => navigate(`/development/${p.orderId}`)}>#{p.orderId} {p.title}</Link>
+                            <StageTag stage={p.stage} style={{ margin: 0 }} />
+                          </Space>
+                        )}
+                      />
+                    </div>
+                  ))}
+                </>
               )}
             </Card>
 
@@ -923,8 +1092,32 @@ const DevelopmentPage: React.FC<Props> = ({ user }) => {
           </Space>
           <Form.Item name="videoUrl" label="Ordering video (Videos Managed link)"><Input placeholder="https://videos-dev.managedplatform.com/<account>/r/<slug>" /></Form.Item>
           <Form.Item name="sessionLogUrl" label="Session log (markdown link)"><Input /></Form.Item>
+          <Space style={{ display: 'flex' }} align="start" wrap>
+            <Form.Item name="parentOrderId" label="Next phase of (optional)" style={{ width: 320 }}>
+              <Select allowClear showSearch optionFilterProp="label" placeholder="Standalone"
+                options={allOrders.filter((o) => o.isInitiative).map((o) => ({ label: `#${o.id} ${o.title}`, value: o.id }))} />
+            </Form.Item>
+            <Form.Item name="dependsOnOrderId" label="Builds on (optional)" style={{ width: 320 }}>
+              <Select allowClear showSearch optionFilterProp="label" placeholder="Nothing"
+                options={allOrders.filter((o) => !o.isInitiative).map((o) => ({ label: `#${o.id} ${o.title}`, value: o.id }))} />
+            </Form.Item>
+          </Space>
         </Form>
       </Modal>
+
+      <GroupModal
+        open={groupOpen}
+        selected={selectedOrders}
+        allOrders={allOrders}
+        onClose={() => setGroupOpen(false)}
+        onDone={(d) => {
+          setGroupOpen(false);
+          setSelectedKeys([]);
+          message.success(`Initiative #${d.order.id}: ${d.order.phaseCount} phases`);
+          load();
+          navigate(`/development/${d.order.id}`);
+        }}
+      />
 
       {/* ===== Promote modal ===== */}
       <Modal title="Promote a ticket to a development order" open={promoteOpen} onOk={promote} onCancel={() => setPromoteOpen(false)} okText="Promote" okButtonProps={{ loading: saving, disabled: !promoteId }}>

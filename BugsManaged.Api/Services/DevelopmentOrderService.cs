@@ -125,4 +125,132 @@ public class DevelopmentOrderService
 
     public static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    // ===== Initiatives (an order holding numbered phases) =====
+
+    public Task<bool> HasPhasesAsync(long orderId, CancellationToken ct = default) =>
+        _db.Tickets.AnyAsync(t => t.ParentOrderId == orderId && t.IsDevelopmentOrder, ct);
+
+    // An initiative's stage is its least-advanced phase: it reaches beta only
+    // when every phase has. Reads the phases as SAVED, so call it after
+    // SaveChanges; the caller saves again. Returns the initiatives that moved.
+    public async Task<List<Ticket>> RollUpInitiativesAsync(IEnumerable<long?> initiativeIds, string actorEmail, string actorName,
+        DateTime now, CancellationToken ct = default)
+    {
+        var moved = new List<Ticket>();
+        var ids = initiativeIds.Where(i => i.HasValue).Select(i => i!.Value).Distinct().ToList();
+        if (ids.Count == 0) return moved;
+
+        var parents = await _db.Tickets.Where(t => ids.Contains(t.Id) && t.IsDevelopmentOrder).ToListAsync(ct);
+        var phases = await _db.Tickets
+            .Where(t => t.IsDevelopmentOrder && t.ParentOrderId != null && ids.Contains(t.ParentOrderId.Value))
+            .Select(t => new { Parent = t.ParentOrderId!.Value, t.DevelopmentStage })
+            .ToListAsync(ct);
+
+        HashSet<string>? keys = null;
+        foreach (var parent in parents)
+        {
+            var stages = phases.Where(p => p.Parent == parent.Id).Select(p => p.DevelopmentStage ?? DevelopmentStages.Ordered).ToList();
+            if (stages.Count == 0) continue;
+            var lowest = stages.OrderBy(DevelopmentStages.OrderOf).First();
+            if (parent.DevelopmentStage == lowest) continue;
+            keys ??= await StatusKeysAsync();
+            MoveStage(parent, lowest, actorEmail, actorName, now, keys, "follows its phases");
+            moved.Add(parent);
+        }
+        return moved;
+    }
+
+    // Puts the order under `initiative` at `position` (1-based; null = last), or
+    // makes it standalone when `initiative` is null, and renumbers the phases
+    // of the old and the new initiative so they stay 1..N. Returns an error
+    // message instead when the move breaks the one-level rule. Saves.
+    public async Task<string?> PlaceAsync(Ticket order, Ticket? initiative, int? position, string actorEmail, string actorName,
+        CancellationToken ct = default)
+    {
+        if (initiative != null)
+        {
+            if (initiative.Id == order.Id) return "An order cannot be a phase of itself";
+            if (initiative.ParentOrderId != null)
+                return $"#{initiative.Id} is itself a phase of #{initiative.ParentOrderId}; phases cannot hold phases";
+            if (await HasPhasesAsync(order.Id, ct))
+                return $"#{order.Id} holds phases of its own; an initiative cannot become a phase";
+        }
+
+        var oldParentId = order.ParentOrderId;
+        var oldPhase = order.PhaseNumber;
+        var now = DateTime.UtcNow;
+
+        if (initiative == null)
+        {
+            order.ParentOrderId = null;
+            order.PhaseNumber = null;
+        }
+        else
+        {
+            var siblings = await _db.Tickets
+                .Where(t => t.ParentOrderId == initiative.Id && t.Id != order.Id && t.IsDevelopmentOrder)
+                .ToListAsync(ct);
+            var ordered = siblings.OrderBy(t => t.PhaseNumber ?? int.MaxValue).ThenBy(t => t.CreatedAt).ThenBy(t => t.Id).ToList();
+            var index = position.HasValue ? Math.Clamp(position.Value - 1, 0, ordered.Count) : ordered.Count;
+            ordered.Insert(index, order);
+            order.ParentOrderId = initiative.Id;
+            Renumber(ordered, now);
+        }
+        order.UpdatedAt = now;
+
+        if (oldParentId != null && oldParentId != initiative?.Id)
+        {
+            var left = await _db.Tickets
+                .Where(t => t.ParentOrderId == oldParentId && t.Id != order.Id && t.IsDevelopmentOrder)
+                .ToListAsync(ct);
+            Renumber(left.OrderBy(t => t.PhaseNumber ?? int.MaxValue).ThenBy(t => t.CreatedAt).ThenBy(t => t.Id).ToList(), now);
+        }
+
+        if (oldParentId != order.ParentOrderId || oldPhase != order.PhaseNumber)
+        {
+            var text = initiative == null
+                ? $"{actorName} took this order out of initiative #{oldParentId}"
+                : $"{actorName} placed this order in initiative #{initiative.Id} as phase {order.PhaseNumber}";
+            _activity.Log(order, "DEV_PHASE_PLACED", text, actorEmail, actorName,
+                payload: new { initiativeId = initiative?.Id, fromInitiativeId = oldParentId, phase = order.PhaseNumber });
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    private static void Renumber(List<Ticket> phases, DateTime now)
+    {
+        for (var i = 0; i < phases.Count; i++)
+        {
+            if (phases[i].PhaseNumber == i + 1) continue;
+            phases[i].PhaseNumber = i + 1;
+            phases[i].UpdatedAt = now;
+        }
+    }
+
+    // "Builds on" must name another development order and must not loop back
+    // to this one through the chain. Returns an error message or null.
+    public async Task<string?> ValidateDependencyAsync(long orderId, long? baseId, CancellationToken ct = default)
+    {
+        if (baseId == null) return null;
+        if (baseId == orderId) return "An order cannot build on itself";
+
+        var seen = new HashSet<long> { orderId };
+        long? cursor = baseId;
+        for (var hop = 0; cursor != null && hop < 100; hop++)
+        {
+            if (!seen.Add(cursor.Value))
+                return $"#{baseId} already builds on #{orderId} (directly or through other orders); that would be a loop";
+            var next = await _db.Tickets
+                .Where(t => t.Id == cursor.Value && t.IsDevelopmentOrder)
+                .Select(t => new { t.DependsOnOrderId })
+                .FirstOrDefaultAsync(ct);
+            if (next == null)
+                return hop == 0 ? $"#{baseId} is not a development order" : null;
+            cursor = next.DependsOnOrderId;
+        }
+        return null;
+    }
 }
